@@ -1,0 +1,220 @@
+"""FastAPI surface for bittle-agent."""
+
+from __future__ import annotations
+
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from . import joints as joints_mod
+from . import skills as skills_mod
+from .config import settings
+from .controller import Controller, TargetUnavailable
+from .safety import EStopEngaged, SafetyError
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger("bittle-agent")
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+controller = Controller(settings)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await controller.startup()
+    if settings.allow_real_hardware and not settings.requires_confirm_token:
+        logger.warning(
+            "REAL HARDWARE IS ENABLED WITH NO CONFIRM TOKEN. "
+            "Set BITTLE_CONFIRM_TOKEN to require per-request confirmation."
+        )
+    yield
+    await controller.shutdown()
+
+
+app = FastAPI(
+    title="bittle-agent",
+    description="Safety-gated control plane for a Petoi Bittle. The LLM never touches serial.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+
+# ── Error handling ────────────────────────────────────────────────────────
+# Safety refusals are surfaced as structured, machine-readable errors so an LLM
+# caller can tell "you asked for something unsafe" apart from "the service broke"
+# and correct itself rather than blindly retrying.
+
+
+@app.exception_handler(SafetyError)
+async def _safety_handler(_request, exc: SafetyError):
+    status = 409 if isinstance(exc, EStopEngaged) else 400
+    if exc.reason == "rate_limited":
+        status = 429
+    return JSONResponse(
+        status_code=status,
+        content={"error": "safety_refused", "reason": exc.reason, "detail": exc.detail},
+    )
+
+
+@app.exception_handler(TargetUnavailable)
+async def _target_handler(_request, exc: TargetUnavailable):
+    return JSONResponse(
+        status_code=403,
+        content={"error": "target_unavailable", "detail": str(exc)},
+    )
+
+
+# ── Models ────────────────────────────────────────────────────────────────
+
+
+class MoveRequest(BaseModel):
+    angles: dict[str, float] = Field(
+        ...,
+        description="Joint index or name -> angle in degrees, e.g. {\"8\": -40, \"head\": 20}",
+    )
+    target: str = Field("sim", description="'sim' (default) or 'real'")
+    simultaneous: bool = Field(True, description="Move joints together (safer) vs sequentially")
+    confirm: str | None = Field(None, description="Confirm token, required for target='real'")
+
+
+class SkillRequest(BaseModel):
+    skill: str = Field(..., description="Skill name, e.g. 'sit' or 'ksit'")
+    target: str = "sim"
+    ack_locomotion: bool = Field(
+        False, description="Required for gaits that drive the robot across the floor"
+    )
+    confirm: str | None = None
+
+
+class EStopRequest(BaseModel):
+    reason: str = "manual"
+
+
+# ── Routes ────────────────────────────────────────────────────────────────
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "bittle-agent"}
+
+
+@app.get("/api/status")
+async def status(target: str = Query("sim")):
+    return await controller.status(target)
+
+
+@app.get("/api/joints")
+async def list_joints():
+    return {
+        "dof": joints_mod.DOF,
+        "walking_dof": joints_mod.WALKING_DOF,
+        "wire_range": [joints_mod.WIRE_MIN, joints_mod.WIRE_MAX],
+        "joints": controller.describe_joints(),
+    }
+
+
+@app.get("/api/joints/state")
+async def joint_state(target: str = Query("sim"), confirm: str | None = Query(None)):
+    return {"target": target, "angles": await controller.joint_state(target, confirm)}
+
+
+@app.get("/api/skills")
+async def list_skills():
+    return {
+        "skills": [
+            {
+                "name": s.name,
+                "token": s.token,
+                "label": s.label,
+                "kind": s.kind,
+                "locomotes": s.locomotes,
+            }
+            for s in skills_mod.ALL
+        ]
+    }
+
+
+@app.post("/api/move")
+async def move(req: MoveRequest):
+    result, validated = await controller.move(
+        dict(req.angles),
+        target=req.target,
+        simultaneous=req.simultaneous,
+        confirm=req.confirm,
+    )
+    return {
+        "ok": result.ok,
+        "target": req.target,
+        "sent": result.sent,
+        "response": result.response,
+        "detail": result.detail,
+        "clamped": validated.clamped,
+        "adjustments": [a.__dict__ for a in validated.adjustments],
+        "applied": {str(i): a for i, a in validated.pairs},
+        "meta": result.meta,
+    }
+
+
+@app.post("/api/skill")
+async def skill(req: SkillRequest):
+    result, resolved = await controller.skill(
+        req.skill,
+        target=req.target,
+        ack_locomotion=req.ack_locomotion,
+        confirm=req.confirm,
+    )
+    return {
+        "ok": result.ok,
+        "target": req.target,
+        "skill": resolved.name,
+        "token": resolved.token,
+        "sent": result.sent,
+        "response": result.response,
+        "detail": result.detail,
+        "meta": result.meta,
+    }
+
+
+@app.post("/api/estop")
+async def estop(req: EStopRequest = Body(default=EStopRequest())):
+    """Trip the latching E-stop and relax servos on every backend.
+
+    Never rate-limited and never gated on a confirm token: an emergency stop
+    that can be refused is not one. Note `d` releases torque, so a standing
+    robot will sit down abruptly -- intended, and documented in SAFETY.md.
+    """
+    return await controller.estop(req.reason)
+
+
+@app.post("/api/estop/clear")
+async def clear_estop():
+    return controller.clear_estop()
+
+
+@app.post("/api/preview")
+async def preview(
+    angles: dict[str, int] = Body(...), simultaneous: bool = Body(True)
+):
+    """Show the exact wire bytes a move would produce, without sending anything.
+
+    Useful for a model or operator to inspect a command before committing to it.
+    """
+    try:
+        resolved = {joints_mod.resolve(k).index: v for k, v in angles.items()}
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"wire": controller.preview(resolved, simultaneous)}
+
+
+if STATIC_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")
+
+    @app.get("/")
+    async def index():
+        return FileResponse(str(STATIC_DIR / "index.html"))

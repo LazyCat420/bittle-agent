@@ -1,0 +1,40 @@
+services:
+  bittle-agent:
+    image: ${IMAGE_NAME:-bittle-agent}:latest
+    container_name: ${IMAGE_NAME:-bittle-agent}
+    ports:
+      - "${PORT:-8008}:8008"
+    env_file: .env
+    environment:
+      - TZ=America/Los_Angeles
+      # Safe defaults. Arming real hardware is a deliberate, documented act —
+      # set these in .env, not here. See SAFETY.md.
+      - BITTLE_ALLOW_REAL_HARDWARE=${BITTLE_ALLOW_REAL_HARDWARE:-false}
+      - BITTLE_ALLOW_LOCOMOTION=${BITTLE_ALLOW_LOCOMOTION:-true}
+      - BITTLE_SERIAL_PORT=${BITTLE_SERIAL_PORT:-/dev/ttyUSB0}
+    restart: unless-stopped
+
+    # ── Real hardware (disabled by default) ──────────────────────────────
+    # A sim-only deployment must NOT have a serial device mapped in: absence of
+    # the device is the outermost safety layer, below any application flag.
+    # To arm, uncomment BOTH and set BITTLE_ALLOW_REAL_HARDWARE=true in .env.
+    # devices:
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    # group_add:
+    #   - dialout
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8008/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M

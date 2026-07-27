@@ -1,0 +1,142 @@
+[
+  {
+    "name": "bittle_list_capabilities",
+    "description": "List what the Bittle robot can do right now: every callable skill (postures, gaits, behaviors), every controllable joint with its SAFE angle range, and whether real hardware is currently reachable. Call this FIRST before any movement command — skill names and joint limits are hardware-specific and guessing them gets the command rejected. Angle ranges returned here are the effective safe limits (firmware range intersected with the wire encoding's range); commanding outside them is clamped, not honoured.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 20000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "capabilities"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_status",
+    "description": "Current robot state: E-stop status, rate-limit headroom, active target (sim or real), connection state and last known joint angles. Use this to check whether a previous command actually took effect, or to find out why commands are being refused (a latched E-stop returns 'engaged' here and blocks all motion until cleared by a human).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": ["sim", "real"],
+          "description": "Which target to report on. Defaults to 'sim'."
+        }
+      },
+      "required": []
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 20000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "status"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_do_skill",
+    "description": "Run a named Bittle skill — a posture (sit, balance, rest), a behavior (hi, pushup, stretch) or a gait (wkF, trF). Skill names must come from bittle_list_capabilities; unknown names are REJECTED rather than ignored. Gaits physically drive the robot across whatever surface it is on, so they additionally require ack_locomotion=true, which you should only set once you have confirmed with the user that the area is clear. Defaults to the simulator: set target='real' only when the user has explicitly asked to move the physical robot.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "skill": {
+          "type": "string",
+          "description": "Skill name from bittle_list_capabilities, e.g. 'sit', 'balance', 'hi', 'wkF'. The leading 'k' is optional."
+        },
+        "target": {
+          "type": "string",
+          "enum": ["sim", "real"],
+          "description": "'sim' (default, safe) or 'real' (physical servos). Only use 'real' on explicit user instruction."
+        },
+        "ack_locomotion": {
+          "type": "boolean",
+          "description": "Set true ONLY for gaits, and only after confirming the robot has clear space to move. Walking on a table means walking off it."
+        }
+      },
+      "required": ["skill"]
+    },
+    "permission": "write",
+    "tier": 1,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": false,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "motion"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_move_joints",
+    "description": "Set specific joint angles, in degrees. Accepts joint indices or names ('head', 'knee_front_left') mapped to angles. Angles outside a joint's safe range are CLAMPED and the response reports every adjustment — read that back rather than assuming your requested angle was applied. Joints move simultaneously by default, which is safer than sequential motion because sequential motion passes through intermediate poses you did not request. Prefer bittle_do_skill for anything a named skill already covers; hand-built poses are for cases no skill fits.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "angles": {
+          "type": "object",
+          "description": "Map of joint index or name to angle in degrees, e.g. {\"head\": 20, \"12\": 60}. Only populated joints are accepted; slots 4-7 do not exist on Bittle.",
+          "additionalProperties": { "type": "number" }
+        },
+        "target": {
+          "type": "string",
+          "enum": ["sim", "real"],
+          "description": "'sim' (default, safe) or 'real'. Only use 'real' on explicit user instruction."
+        },
+        "simultaneous": {
+          "type": "boolean",
+          "description": "Move all joints together (default true). Set false only when a joint must lead deliberately."
+        }
+      },
+      "required": ["angles"]
+    },
+    "permission": "write",
+    "tier": 1,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": false,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "joints"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_estop",
+    "description": "EMERGENCY STOP. Immediately releases servo torque on every target and latches a block on all further motion until a human clears it. Call this the moment something looks wrong — a servo straining, the robot near an edge, or the user saying stop. It is never rate-limited and never refused. Be aware the robot goes limp, so a standing robot will drop into a crouch; that is the correct trade against a stalling servo.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "description": "Short note on why the stop was triggered, for the operator log."
+        }
+      },
+      "required": []
+    },
+    "permission": "write",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 4000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "safety", "estop"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  }
+]
