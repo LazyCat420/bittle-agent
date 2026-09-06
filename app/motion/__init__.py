@@ -1,7 +1,9 @@
 """Bittle Safe Motion and Skill Authoring Harness."""
 
 from .compiler import SkillCompiler, SkillCompilerError
+from .composer import MovesetComposer, get_composer
 from .lifecycle import LifecycleError, SkillLifecycleManager, get_lifecycle
+from .primitives import JOINT_GROUPS, CompositionError
 from .schema import (
     MotionBudget,
     SkillFrame,
@@ -30,7 +32,12 @@ __all__ = [
     "SkillLifecycleManager",
     "LifecycleError",
     "get_lifecycle",
+    "MovesetComposer",
+    "get_composer",
+    "JOINT_GROUPS",
+    "CompositionError",
     "MAX_STEP_DELTA_DEG",
     "MAX_SKILL_TRAVEL_DEG",
     "MAX_DIRECTION_REVERSALS",
 ]
+

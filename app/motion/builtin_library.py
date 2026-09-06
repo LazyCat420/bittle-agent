@@ -674,3 +674,298 @@ def get_builtin_moveset(name: str) -> dict[str, Any] | None:
 
 def list_builtin_movesets() -> list[dict[str, Any]]:
     return list(BUILTIN_MOVESETS.values())
+
+
+# ── Built-in Motion Primitives ──────────────────────────────────────────
+# Per-limb / per-region clips that GLM can compose into novel movesets.
+
+BUILTIN_PRIMITIVES: dict[str, dict[str, Any]] = {
+    # ── Head ──
+    "head_scan_left": {
+        "name": "head_scan_left",
+        "group": "head",
+        "joints": [0],
+        "description": "Pan head left 40° and return to center",
+        "tags": ["head", "scan", "look"],
+        "frames": [
+            {"angles": {0: 40}, "speed_deg_per_step": 6, "delay_ms": 300},
+            {"angles": {0: 0}, "speed_deg_per_step": 6, "delay_ms": 150},
+        ],
+    },
+    "head_scan_right": {
+        "name": "head_scan_right",
+        "group": "head",
+        "joints": [0],
+        "description": "Pan head right 40° and return to center",
+        "tags": ["head", "scan", "look"],
+        "frames": [
+            {"angles": {0: -40}, "speed_deg_per_step": 6, "delay_ms": 300},
+            {"angles": {0: 0}, "speed_deg_per_step": 6, "delay_ms": 150},
+        ],
+    },
+    "head_scan_full": {
+        "name": "head_scan_full",
+        "group": "head",
+        "joints": [0],
+        "description": "Scan left, right, then center",
+        "tags": ["head", "scan", "look"],
+        "frames": [
+            {"angles": {0: 40}, "speed_deg_per_step": 6, "delay_ms": 300},
+            {"angles": {0: -40}, "speed_deg_per_step": 6, "delay_ms": 300},
+            {"angles": {0: 20}, "speed_deg_per_step": 6, "delay_ms": 200},
+            {"angles": {0: 0}, "speed_deg_per_step": 6, "delay_ms": 150},
+        ],
+    },
+    "head_tilt_left": {
+        "name": "head_tilt_left",
+        "group": "head",
+        "joints": [0],
+        "description": "Curious head tilt to the left",
+        "tags": ["head", "curious", "emote"],
+        "frames": [
+            {"angles": {0: 25}, "speed_deg_per_step": 5, "delay_ms": 400},
+        ],
+    },
+    "head_tilt_right": {
+        "name": "head_tilt_right",
+        "group": "head",
+        "joints": [0],
+        "description": "Curious head tilt to the right",
+        "tags": ["head", "curious", "emote"],
+        "frames": [
+            {"angles": {0: -25}, "speed_deg_per_step": 5, "delay_ms": 400},
+        ],
+    },
+    "head_center": {
+        "name": "head_center",
+        "group": "head",
+        "joints": [0],
+        "description": "Return head to center position",
+        "tags": ["head", "reset"],
+        "frames": [
+            {"angles": {0: 0}, "speed_deg_per_step": 8, "delay_ms": 150},
+        ],
+    },
+
+    # ── Front Left Leg ──
+    "fl_paw_lift": {
+        "name": "fl_paw_lift",
+        "group": "front_left",
+        "joints": [8, 12],
+        "description": "Lift front-left paw off the ground",
+        "tags": ["paw", "lift", "front", "left"],
+        "frames": [
+            {"angles": {8: -20, 12: 30}, "speed_deg_per_step": 8, "delay_ms": 250},
+        ],
+    },
+    "fl_paw_down": {
+        "name": "fl_paw_down",
+        "group": "front_left",
+        "joints": [8, 12],
+        "description": "Place front-left paw back to standing position",
+        "tags": ["paw", "down", "front", "left"],
+        "frames": [
+            {"angles": {8: -45, 12: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+    "fl_paw_wave": {
+        "name": "fl_paw_wave",
+        "group": "front_left",
+        "joints": [8, 12],
+        "description": "Wave front-left paw in the air",
+        "tags": ["paw", "wave", "front", "left", "emote"],
+        "frames": [
+            {"angles": {8: -15, 12: 20}, "speed_deg_per_step": 8, "delay_ms": 200},
+            {"angles": {8: -5, 12: -20}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {8: -15, 12: 20}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {8: -5, 12: -20}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {8: -45, 12: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+
+    # ── Front Right Leg ──
+    "fr_paw_lift": {
+        "name": "fr_paw_lift",
+        "group": "front_right",
+        "joints": [9, 13],
+        "description": "Lift front-right paw off the ground",
+        "tags": ["paw", "lift", "front", "right"],
+        "frames": [
+            {"angles": {9: -20, 13: 30}, "speed_deg_per_step": 8, "delay_ms": 250},
+        ],
+    },
+    "fr_paw_down": {
+        "name": "fr_paw_down",
+        "group": "front_right",
+        "joints": [9, 13],
+        "description": "Place front-right paw back to standing position",
+        "tags": ["paw", "down", "front", "right"],
+        "frames": [
+            {"angles": {9: -45, 13: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+    "fr_paw_wave": {
+        "name": "fr_paw_wave",
+        "group": "front_right",
+        "joints": [9, 13],
+        "description": "Wave front-right paw in the air (classic wave hello)",
+        "tags": ["paw", "wave", "front", "right", "emote"],
+        "frames": [
+            {"angles": {9: -15, 13: 20}, "speed_deg_per_step": 8, "delay_ms": 200},
+            {"angles": {9: 5, 13: -25}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {9: -15, 13: 20}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {9: 5, 13: -25}, "speed_deg_per_step": 12, "delay_ms": 180},
+            {"angles": {9: -45, 13: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+
+    # ── Rear Left Leg ──
+    "rl_kick": {
+        "name": "rl_kick",
+        "group": "rear_left",
+        "joints": [11, 15],
+        "description": "Kick rear-left leg backward",
+        "tags": ["kick", "rear", "left"],
+        "frames": [
+            {"angles": {11: -30, 15: 100}, "speed_deg_per_step": 10, "delay_ms": 200},
+            {"angles": {11: -60, 15: 50}, "speed_deg_per_step": 12, "delay_ms": 150},
+            {"angles": {11: -45, 15: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+
+    # ── Rear Right Leg ──
+    "rr_kick": {
+        "name": "rr_kick",
+        "group": "rear_right",
+        "joints": [10, 14],
+        "description": "Kick rear-right leg backward",
+        "tags": ["kick", "rear", "right"],
+        "frames": [
+            {"angles": {10: -30, 14: 100}, "speed_deg_per_step": 10, "delay_ms": 200},
+            {"angles": {10: -60, 14: 50}, "speed_deg_per_step": 12, "delay_ms": 150},
+            {"angles": {10: -45, 14: 80}, "speed_deg_per_step": 8, "delay_ms": 200},
+        ],
+    },
+
+    # ── Rear Legs (both) ──
+    "rear_wiggle": {
+        "name": "rear_wiggle",
+        "group": "rear_legs",
+        "joints": [10, 11, 14, 15],
+        "description": "Wiggle rear end side-to-side (happy dog)",
+        "tags": ["wiggle", "rear", "emote", "happy"],
+        "frames": [
+            {"angles": {10: -30, 11: -60, 14: 65, 15: 95}, "speed_deg_per_step": 14, "delay_ms": 120},
+            {"angles": {10: -60, 11: -30, 14: 95, 15: 65}, "speed_deg_per_step": 14, "delay_ms": 120},
+            {"angles": {10: -30, 11: -60, 14: 65, 15: 95}, "speed_deg_per_step": 14, "delay_ms": 120},
+            {"angles": {10: -60, 11: -30, 14: 95, 15: 65}, "speed_deg_per_step": 14, "delay_ms": 120},
+            {"angles": {10: -45, 11: -45, 14: 80, 15: 80}, "speed_deg_per_step": 8, "delay_ms": 150},
+        ],
+    },
+
+    # ── Torso (all shoulders) ──
+    "torso_lower": {
+        "name": "torso_lower",
+        "group": "torso",
+        "joints": [8, 9, 10, 11],
+        "description": "Lower the torso into a crouch (shoulders down)",
+        "tags": ["torso", "crouch", "lower"],
+        "frames": [
+            {"angles": {8: -65, 9: -65, 10: -65, 11: -65}, "speed_deg_per_step": 6, "delay_ms": 300},
+        ],
+    },
+    "torso_raise": {
+        "name": "torso_raise",
+        "group": "torso",
+        "joints": [8, 9, 10, 11],
+        "description": "Raise the torso back to neutral standing",
+        "tags": ["torso", "stand", "raise"],
+        "frames": [
+            {"angles": {8: -45, 9: -45, 10: -45, 11: -45}, "speed_deg_per_step": 6, "delay_ms": 300},
+        ],
+    },
+    "front_bow": {
+        "name": "front_bow",
+        "group": "torso",
+        "joints": [8, 9, 10, 11],
+        "description": "Bow — front shoulders dip, rear stay",
+        "tags": ["bow", "torso", "emote"],
+        "frames": [
+            {"angles": {8: -70, 9: -70, 10: -35, 11: -35}, "speed_deg_per_step": 6, "delay_ms": 400},
+            {"angles": {8: -45, 9: -45, 10: -45, 11: -45}, "speed_deg_per_step": 6, "delay_ms": 250},
+        ],
+    },
+
+    # ── Full Body Transitions ──
+    "sit_transition": {
+        "name": "sit_transition",
+        "group": "all",
+        "joints": [0, 8, 9, 10, 11, 12, 13, 14, 15],
+        "description": "Transition to seated posture",
+        "tags": ["posture", "sit", "transition"],
+        "frames": [
+            {"angles": SIT_ANGLES, "speed_deg_per_step": 8, "delay_ms": 300},
+        ],
+    },
+    "stand_transition": {
+        "name": "stand_transition",
+        "group": "all",
+        "joints": [0, 8, 9, 10, 11, 12, 13, 14, 15],
+        "description": "Transition to neutral standing posture",
+        "tags": ["posture", "stand", "transition"],
+        "frames": [
+            {"angles": STAND_ANGLES, "speed_deg_per_step": 8, "delay_ms": 300},
+        ],
+    },
+    "rest_transition": {
+        "name": "rest_transition",
+        "group": "all",
+        "joints": [0, 8, 9, 10, 11, 12, 13, 14, 15],
+        "description": "Transition to resting belly-down posture",
+        "tags": ["posture", "rest", "transition"],
+        "frames": [
+            {"angles": REST_ANGLES, "speed_deg_per_step": 8, "delay_ms": 300},
+        ],
+    },
+
+    # ── Front Legs (both) ──
+    "front_stretch": {
+        "name": "front_stretch",
+        "group": "front_legs",
+        "joints": [8, 9, 12, 13],
+        "description": "Stretch front legs forward (play bow entry)",
+        "tags": ["stretch", "front", "play"],
+        "frames": [
+            {"angles": {8: -75, 9: -75, 12: 105, 13: 105}, "speed_deg_per_step": 6, "delay_ms": 350},
+            {"angles": {8: -45, 9: -45, 12: 80, 13: 80}, "speed_deg_per_step": 6, "delay_ms": 250},
+        ],
+    },
+    "front_pushup": {
+        "name": "front_pushup",
+        "group": "front_legs",
+        "joints": [8, 9, 12, 13],
+        "description": "Push-up motion — front chest dips and presses up",
+        "tags": ["pushup", "front", "exercise"],
+        "frames": [
+            {"angles": {8: -75, 9: -75, 12: 105, 13: 105}, "speed_deg_per_step": 6, "delay_ms": 350},
+            {"angles": {8: -45, 9: -45, 12: 80, 13: 80}, "speed_deg_per_step": 6, "delay_ms": 250},
+            {"angles": {8: -75, 9: -75, 12: 105, 13: 105}, "speed_deg_per_step": 6, "delay_ms": 350},
+            {"angles": {8: -45, 9: -45, 12: 80, 13: 80}, "speed_deg_per_step": 6, "delay_ms": 250},
+        ],
+    },
+}
+
+
+def get_builtin_primitive(name: str) -> dict[str, Any] | None:
+    """Get a built-in primitive by name."""
+    return BUILTIN_PRIMITIVES.get(name)
+
+
+def list_builtin_primitives() -> list[dict[str, Any]]:
+    """List all built-in primitives."""
+    return list(BUILTIN_PRIMITIVES.values())
+
+
+def list_builtin_primitives_by_group(group: str) -> list[dict[str, Any]]:
+    """List built-in primitives filtered by joint group."""
+    return [p for p in BUILTIN_PRIMITIVES.values() if p["group"] == group]

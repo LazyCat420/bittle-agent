@@ -18,8 +18,9 @@ from . import joints as joints_mod
 from . import skills as skills_mod
 from .config import Settings
 from .controller import Controller, TargetUnavailable
-from .motion import TrajectoryValidator, get_lifecycle
+from .motion import TrajectoryValidator, get_lifecycle, get_composer, CompositionError
 from .motion.builtin_library import BUILTIN_MOVESETS, EXPRESSIVE_MACROS, get_builtin_moveset
+from .motion.primitives import JOINT_GROUPS
 from .motion.schema import SkillIR
 from .profiles import get_registry
 from .safety import SafetyError
@@ -54,6 +55,18 @@ CORE SAFETY & MOTION RULES:
 7. Emergency Stop:
    - If unexpected resistance occurs or user requests stop, immediately call `bittle_estop`.
 8. Explain intent concisely before acting.
+
+MOTION PRIMITIVE COMPOSITION (preferred for novel moves):
+    Instead of specifying every joint angle from scratch, compose from reusable per-limb "primitives".
+    Workflow:
+    1. `bittle_list_primitives` → see available building blocks (head_scan_left, fr_paw_wave, torso_lower, etc.)
+    2. `bittle_compose_move` → snap primitives together (sequential, parallel, or blend mode)
+    3. `bittle_evaluate_move` → check safety score & smoothness metrics
+    4. `bittle_execute_sequence` → run the composed moveset on the simulator
+    5. `bittle_iterate_move` → tweak delays, speeds, angles based on what you observed
+    6. `bittle_save_moveset` → persist winners to the library for reuse
+    Parallel mode merges joint-disjoint primitives into simultaneous frames (e.g. head_scan + rear_wiggle).
+    Sequential mode concatenates primitives end-to-end with optional transition blending.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -306,6 +319,112 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    # ── Motion Primitive Composition Tools ────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_list_primitives",
+            "description": "List available motion primitives — reusable per-limb clips that can be composed into novel moves. Each primitive targets a joint group (head, front_left, front_right, rear_left, rear_right, front_legs, rear_legs, torso, all).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "group": {
+                        "type": "string",
+                        "description": "Filter by joint group (e.g. 'head', 'front_left', 'rear_legs', 'torso', 'all'). Omit to list all.",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_compose_move",
+            "description": "Compose a new moveset by snapping named primitives together. Returns frames, quality metrics, and a preview-ready moveset.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Unique name for the composed moveset"},
+                    "primitives": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Ordered list of primitive names to compose",
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["sequential", "parallel", "blend"],
+                        "description": "Composition mode. sequential=end-to-end, parallel=merge joint-disjoint into simultaneous frames, blend=sequential with interpolation frames",
+                    },
+                    "description": {"type": "string", "description": "Human-readable description"},
+                },
+                "required": ["name", "primitives"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_iterate_move",
+            "description": "Tweak an existing moveset's parameters — scale delays, speeds, offset joint angles, swap primitives, insert/remove frames.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Name of moveset to iterate on"},
+                    "adjustments": {
+                        "type": "object",
+                        "description": "Adjustment parameters: delay_scale (float), speed_scale (float), angle_offsets ({joint:offset}), swap_primitive ({old,new}), insert_frame ({index,frame}), remove_frame (int)",
+                    },
+                },
+                "required": ["name", "adjustments"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_evaluate_move",
+            "description": "Dry-run validate and score a moveset without executing. Returns smoothness, max delta, duration, and reversal count.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Moveset name to evaluate from library"},
+                    "frames": {
+                        "type": "array",
+                        "description": "Or provide raw frames to evaluate inline",
+                        "items": {"type": "object"},
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_list_library",
+            "description": "List all saved movesets in the library (built-in + user-created + GLM-composed).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_load_moveset",
+            "description": "Load a previously saved moveset by name for replay, iteration, or inspection.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Moveset name to load"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
 ]
 
 
@@ -314,6 +433,7 @@ class GLMAgentHarness:
         self.controller = controller
         self.settings = settings
         self.lifecycle = get_lifecycle()
+        self.composer = get_composer()
 
     def get_system_prompt(self, target: str = "sim") -> str:
         """Construct context-rich system prompt with pre-injected active hardware state and latency directives."""
@@ -601,8 +721,76 @@ Execute user movement goals immediately on Turn 1."""
                 res = await self.controller.estop(reason)
                 return {"ok": True, "estop": "engaged", "reason": reason, "backends": res["backends"]}
 
+            # ── Motion Primitive Composition Tools ────────────────────
+            if name == "bittle_list_primitives":
+                group = args.get("group")
+                prims = self.composer.list_primitives(group=group)
+                return {
+                    "ok": True,
+                    "primitives": [
+                        {
+                            "name": p["name"],
+                            "group": p["group"],
+                            "joints": p["joints"],
+                            "description": p.get("description", ""),
+                            "tags": p.get("tags", []),
+                            "frame_count": len(p.get("frames", [])),
+                        }
+                        for p in prims
+                    ],
+                    "joint_groups": JOINT_GROUPS,
+                }
+
+            if name == "bittle_compose_move":
+                m_name = args["name"]
+                prim_names = args["primitives"]
+                mode = args.get("mode", "sequential")
+                desc = args.get("description", "")
+                moveset = self.composer.compose_move(
+                    m_name, prim_names, mode=mode, description=desc
+                )
+                return {"ok": True, "moveset": moveset}
+
+            if name == "bittle_iterate_move":
+                m_name = args["name"]
+                adjustments = args.get("adjustments", {})
+                moveset = self.composer.iterate_move(m_name, adjustments)
+                return {"ok": True, "moveset": moveset}
+
+            if name == "bittle_evaluate_move":
+                m_name = args.get("name")
+                frames = args.get("frames")
+                metrics = self.composer.evaluate_move(name=m_name, frames=frames)
+                return {"ok": True, "metrics": metrics}
+
+            if name == "bittle_list_library":
+                movesets = self.composer.list_movesets()
+                return {
+                    "ok": True,
+                    "movesets": [
+                        {
+                            "name": m.get("name", ""),
+                            "description": m.get("description", ""),
+                            "frame_count": len(m.get("frames", [])),
+                            "source_primitives": m.get("source_primitives", []),
+                            "created_at": m.get("created_at", ""),
+                        }
+                        for m in movesets
+                    ],
+                }
+
+            if name == "bittle_load_moveset":
+                m_name = args["name"]
+                moveset = self.composer.get_moveset(m_name)
+                if moveset is None:
+                    return {"ok": False, "error": f"Moveset {m_name!r} not found"}
+                return {"ok": True, "moveset": moveset}
+
             return {"ok": False, "error": f"unknown tool: {name}"}
 
+        except CompositionError as exc:
+            logger.warning("Composition rejected tool %s: %s", name, str(exc))
+            return {"ok": False, "error": "composition_error", "detail": str(exc)}
         except SafetyError as exc:
             logger.warning("Safety gate rejected tool %s: %s (%s)", name, exc.reason, exc.detail)
             return {"ok": False, "error": "safety_refused", "reason": exc.reason, "detail": exc.detail}

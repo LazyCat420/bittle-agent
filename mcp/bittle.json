@@ -138,5 +138,253 @@
     "labels": ["robot", "bittle", "safety", "estop"],
     "owner_app": "bittle-agent",
     "agents": []
+  },
+  {
+    "name": "bittle_execute_sequence",
+    "description": "Execute a choreographed multi-frame sequence of joint angles with per-frame delays and speeds. Dry-run pre-flight validated before execution.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Identifier for the sequence, e.g. 'cat_stalk'"
+        },
+        "steps": {
+          "type": "array",
+          "description": "Array of keyframe step objects with 'type' ('move'|'pause'), 'angles' ({joint: deg}), 'delay_ms', 'speed_deg_per_step'",
+          "items": { "type": "object" }
+        },
+        "target": {
+          "type": "string",
+          "enum": ["sim", "real"],
+          "description": "'sim' (default, safe) or 'real'. Only use 'real' on explicit user instruction."
+        }
+      },
+      "required": ["steps"]
+    },
+    "permission": "write",
+    "tier": 1,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": false,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "motion", "sequence"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_save_moveset",
+    "description": "Save a named multi-frame moveset to the robot library for future replay, composition, or sharing.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for the moveset, e.g. 'cat_stalk'"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the moveset"
+        },
+        "frames": {
+          "type": "array",
+          "description": "Array of keyframe dicts with 'angles' ({joint: deg}), 'delay_ms', 'speed_deg_per_step'",
+          "items": { "type": "object" }
+        },
+        "source_primitives": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional list of primitive names used to build this moveset"
+        },
+        "composition_mode": {
+          "type": "string",
+          "description": "Composition mode used, e.g. 'sequential', 'parallel', 'blend'"
+        }
+      },
+      "required": ["name", "frames"]
+    },
+    "permission": "write",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "library", "save"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_list_primitives",
+    "description": "List available motion primitives (per-limb clips). Each primitive targets a specific joint group and can be snapped together into full moves.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "enum": ["head", "front_left", "front_right", "rear_left", "rear_right", "front_legs", "rear_legs", "torso", "knees", "all"],
+          "description": "Filter by joint group. Omit to list all primitives."
+        }
+      },
+      "required": []
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 20000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "primitives", "library"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_compose_move",
+    "description": "Compose a new moveset by snapping named primitives together. Modes: sequential (end-to-end), parallel (merge joint-disjoint into simultaneous frames), blend (sequential with smooth interpolation frames).",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique name for the composed moveset"
+        },
+        "primitives": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ordered list of primitive names to compose"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["sequential", "parallel", "blend"],
+          "description": "Composition mode. sequential=end-to-end, parallel=simultaneous (rejects collisions), blend=interpolated transitions"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        }
+      },
+      "required": ["name", "primitives"]
+    },
+    "permission": "write",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "compose", "motion"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_iterate_move",
+    "description": "Tweak an existing moveset's parameters: scale delays, speeds, apply angle offsets to specific joints, swap primitives, or insert/remove frames.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of moveset to iterate on"
+        },
+        "adjustments": {
+          "type": "object",
+          "description": "Adjustment dict: delay_scale (float), speed_scale (float), angle_offsets ({joint:offset}), swap_primitive ({old,new}), insert_frame ({index,frame}), remove_frame (int)"
+        }
+      },
+      "required": ["name", "adjustments"]
+    },
+    "permission": "write",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "iterate", "motion"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_evaluate_move",
+    "description": "Dry-run evaluate and score a moveset without executing. Returns smoothness score (0-100), duration estimate, max delta, and reversal count.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Moveset name to evaluate from library"
+        },
+        "frames": {
+          "type": "array",
+          "description": "Or provide raw frames to evaluate inline",
+          "items": { "type": "object" }
+        }
+      },
+      "required": []
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 8000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "evaluate", "motion"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_list_library",
+    "description": "List all saved movesets in the robot library (built-in + user-created + GLM-composed).",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 20000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "library"],
+    "owner_app": "bittle-agent",
+    "agents": []
+  },
+  {
+    "name": "bittle_load_moveset",
+    "description": "Load a previously saved moveset by name from the library for inspection, replay, or further iteration.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Moveset name to load"
+        }
+      },
+      "required": ["name"]
+    },
+    "permission": "read_only",
+    "tier": 0,
+    "source": "bittle-agent",
+    "fallback_only": false,
+    "concurrency_safe": true,
+    "max_result_chars": 20000,
+    "tags": [],
+    "domain": "Robotics",
+    "labels": ["robot", "bittle", "library", "moveset"],
+    "owner_app": "bittle-agent",
+    "agents": []
   }
 ]
+

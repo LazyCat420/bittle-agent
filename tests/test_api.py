@@ -195,3 +195,83 @@ def test_api_skill_authoring_pipeline(client):
     r_run = client.post("/api/skills/run-approved", json={"manifest_hash": m_hash, "target": "sim"})
     assert r_run.status_code == 200
     assert r_run.json()["ok"] is True
+
+
+def test_api_motion_primitives_endpoints(client):
+    # 1. List all primitives
+    r = client.get("/api/primitives")
+    assert r.status_code == 200
+    prims = r.json()["primitives"]
+    assert len(prims) >= 15
+
+    # 2. Filter by group
+    r_head = client.get("/api/primitives?group=head")
+    assert r_head.status_code == 200
+    assert all(p["group"] == "head" for p in r_head.json()["primitives"])
+
+    # 3. Get single primitive
+    r_single = client.get("/api/primitives/head_scan_left")
+    assert r_single.status_code == 200
+    assert r_single.json()["primitive"]["name"] == "head_scan_left"
+
+    # 4. Unknown primitive 404
+    r_bad = client.get("/api/primitives/non_existent_xyz")
+    assert r_bad.status_code == 404
+
+
+def test_api_compose_and_library_flow(client):
+    # 1. Compose a moveset
+    compose_req = {
+        "name": "api_test_combo",
+        "primitives": ["head_scan_left", "front_bow"],
+        "mode": "sequential",
+        "description": "Test composition via API",
+    }
+    r_comp = client.post("/api/compose", json=compose_req)
+    assert r_comp.status_code == 200
+    body = r_comp.json()
+    assert body["ok"] is True
+    moveset = body["moveset"]
+    assert len(moveset["frames"]) > 0
+    assert "metrics" in moveset
+
+    # 2. Save to library
+    save_req = {
+        "name": "api_test_combo",
+        "description": moveset["description"],
+        "frames": moveset["frames"],
+        "source_primitives": moveset["source_primitives"],
+        "composition_mode": moveset["composition_mode"],
+    }
+    r_save = client.post("/api/library", json=save_req)
+    assert r_save.status_code == 200
+
+    # 3. List library
+    r_lib = client.get("/api/library")
+    assert r_lib.status_code == 200
+    names = [m["name"] for m in r_lib.json()["movesets"]]
+    assert "api_test_combo" in names
+
+    # 4. Get from library
+    r_get = client.get("/api/library/api_test_combo")
+    assert r_get.status_code == 200
+    assert r_get.json()["moveset"]["name"] == "api_test_combo"
+
+    # 5. Iterate on moveset
+    r_iter = client.post("/api/iterate", json={
+        "name": "api_test_combo",
+        "adjustments": {"delay_scale": 1.2},
+    })
+    assert r_iter.status_code == 200
+    assert r_iter.json()["ok"] is True
+
+    # 6. Evaluate moveset
+    r_eval = client.post("/api/evaluate", json={"name": "api_test_combo"})
+    assert r_eval.status_code == 200
+    assert "smoothness" in r_eval.json()["metrics"]
+
+    # 7. Delete from library
+    r_del = client.delete("/api/library/api_test_combo")
+    assert r_del.status_code == 200
+    assert r_del.json()["deleted"] is True
+

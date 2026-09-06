@@ -1003,6 +1003,169 @@
     margin-bottom: 6px;
     color: var(--text);
   }
+
+  /* ── Tab: Primitives & Composer ── */
+  .composer-hero {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(15, 23, 42, 0.6));
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .composer-hero-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #6ee7b7;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .composer-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 38px;
+    padding: 8px;
+    background: #090d14;
+    border: 1px dashed var(--border-highlight);
+    border-radius: 6px;
+    align-items: center;
+  }
+  .composer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #1a2736;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    user-select: none;
+  }
+  .composer-chip .chip-del {
+    cursor: pointer;
+    color: var(--muted);
+    font-weight: bold;
+    font-size: 12px;
+  }
+  .composer-chip .chip-del:hover {
+    color: var(--real);
+  }
+  .composer-controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .composer-select, .composer-input {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+  .composer-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .metric-box {
+    background: #090d14;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .metric-label {
+    font-size: 9.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .metric-val {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: #60a5fa;
+    margin-top: 2px;
+  }
+  .filter-bar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+  .filter-pill {
+    background: #111827;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .filter-pill.active, .filter-pill:hover {
+    background: #1e293b;
+    border-color: #60a5fa;
+    color: #fff;
+  }
+  .primitives-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .primitive-card {
+    background: var(--panel-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .primitive-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  .primitive-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .primitive-card-title {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .primitive-group-badge {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+  .primitive-card-desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .primitive-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
+  }
 </style>
 </head>
 <body>
@@ -1100,6 +1263,7 @@
   <div class="panel-col">
     <div class="tabs-nav">
       <button class="tab-btn active" data-tab="tab-agent">🤖 GLM Agent</button>
+      <button class="tab-btn" data-tab="tab-primitives">🧩 Primitives</button>
       <button class="tab-btn" data-tab="tab-movesets">🎬 Movesets &amp; Replay</button>
       <button class="tab-btn" data-tab="tab-joints">🦿 Joints</button>
       <button class="tab-btn" data-tab="tab-skills">⚡ Skills &amp; Gaits</button>
@@ -1132,6 +1296,83 @@
         <input type="text" id="agentPromptInput" placeholder="Give GLM a goal (e.g. 'sit down and wave hello')..." />
         <button class="btn-primary" id="agentSendBtn">Send</button>
         <button class="vbtn" id="agentCancelBtn" style="display:none; border:1px solid var(--real); color:var(--real)">Stop</button>
+      </div>
+    </div>
+
+    <!-- Tab: Primitives & Motion Composer -->
+    <div class="tab-content" id="tab-primitives">
+      <div class="composer-hero">
+        <div class="composer-hero-title">
+          <span>🧩 Motion Composer &amp; Synthesizer</span>
+          <button class="btn-sm-sub" onclick="clearComposer()" style="font-size:10px; padding:2px 8px;">✕ Clear</button>
+        </div>
+        <div style="font-size:11.5px; color:var(--muted); line-height:1.4;">
+          Snap per-limb primitives into continuous choreography. Select primitives from below, choose a composition mode, then compose &amp; preview on your 3D digital twin.
+        </div>
+
+        <div class="composer-chips-wrap" id="composerChipsList">
+          <span style="color:var(--muted); font-size:11px; font-style:italic;">Click "➕ Add to Composer" on primitives below to sequence them</span>
+        </div>
+
+        <div class="composer-controls-row">
+          <div style="display:flex; flex-direction:column; gap:2px; flex:1; min-width:140px;">
+            <label style="font-size:10px; color:var(--muted); font-weight:600; text-transform:uppercase;">Moveset Name</label>
+            <input type="text" id="composerMovesetName" class="composer-input" placeholder="e.g. cat_stalk_combo" />
+          </div>
+          <div style="display:flex; flex-direction:column; gap:2px; width:140px;">
+            <label style="font-size:10px; color:var(--muted); font-weight:600; text-transform:uppercase;">Mode</label>
+            <select id="composerModeSelect" class="composer-select">
+              <option value="sequential">Sequential (Smooth)</option>
+              <option value="parallel">Parallel (Simultaneous)</option>
+              <option value="blend">Blend (Interpolated)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:2px;">
+          <button class="btn-sm-primary" id="btnComposerPreview" onclick="composeAndPreview()">▶ Compose &amp; Preview</button>
+          <button class="btn-sm-sub" id="btnComposerSave" onclick="saveComposedToLibrary()">💾 Save to Library</button>
+          <button class="btn-sm-run" id="btnComposerRun" onclick="runComposedOnRobot()">⚡ Run on Robot</button>
+        </div>
+
+        <!-- Evaluation Metrics Panel -->
+        <div class="composer-metrics" id="composerMetrics" style="display:none;">
+          <div class="metric-box">
+            <div class="metric-label">Smoothness</div>
+            <div class="metric-val" id="metricSmoothness">--</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Duration</div>
+            <div class="metric-val" id="metricDuration">--</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Max Delta</div>
+            <div class="metric-val" id="metricMaxDelta">--</div>
+          </div>
+          <div class="metric-box">
+            <div class="metric-label">Reversals</div>
+            <div class="metric-val" id="metricReversals">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Primitives Browser -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+        <div class="section-title" style="margin:0;">Primitive Library</div>
+        <button class="btn-sm-sub" onclick="loadPrimitives()">🔄 Refresh</button>
+      </div>
+
+      <div class="filter-bar" id="primFilters">
+        <button class="filter-pill active" onclick="filterPrimitives('all', this)">All</button>
+        <button class="filter-pill" onclick="filterPrimitives('head', this)">Head</button>
+        <button class="filter-pill" onclick="filterPrimitives('front_legs', this)">Front Legs</button>
+        <button class="filter-pill" onclick="filterPrimitives('rear_legs', this)">Rear Legs</button>
+        <button class="filter-pill" onclick="filterPrimitives('torso', this)">Torso</button>
+        <button class="filter-pill" onclick="filterPrimitives('all', this)">Full Body</button>
+      </div>
+
+      <div class="primitives-grid" id="primitivesGrid">
+        <div style="color:var(--muted); font-size:12px; padding:12px;">Loading primitives...</div>
       </div>
     </div>
 
@@ -1266,6 +1507,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadJoints();
   await loadSkills();
   await refreshMovesetLibrary();
+  await loadPrimitives();
   await refreshJointState();
   setInterval(refreshStatus, 5000);
 });
@@ -1765,6 +2007,198 @@ async function runMovesetOnRobot(m) {
     log(`Moveset execution failed: ${err.message}`, 'err');
   }
 }
+
+// ── Primitives & Motion Composer ────────────────────────────────
+let allPrimitives = [];
+let composerSelectedPrimitives = [];
+let currentComposedMoveset = null;
+
+async function loadPrimitives(filterGroup = null) {
+  try {
+    const url = filterGroup ? `/api/primitives?group=${encodeURIComponent(filterGroup)}` : '/api/primitives';
+    const res = await api(url);
+    if (res && res.primitives) {
+      allPrimitives = res.primitives;
+      renderPrimitivesGrid(allPrimitives);
+    }
+  } catch (err) {
+    console.error('Failed to load primitives:', err);
+  }
+}
+window.loadPrimitives = loadPrimitives;
+
+function renderPrimitivesGrid(prims) {
+  const host = document.getElementById('primitivesGrid');
+  if (!host) return;
+  if (!prims.length) {
+    host.innerHTML = '<div style="color:var(--muted); font-size:12px; padding:12px;">No primitives found for this filter.</div>';
+    return;
+  }
+  host.innerHTML = prims.map(p => {
+    const tags = (p.tags || []).map(t => `<span style="font-size:9.5px; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px; color:var(--muted);">${t}</span>`).join(' ');
+    return `
+      <div class="primitive-card" data-name="${p.name}">
+        <div class="primitive-card-header">
+          <div class="primitive-card-title">${p.name}</div>
+          <span class="primitive-group-badge">${p.group}</span>
+        </div>
+        <div class="primitive-card-desc">${p.description || ''}</div>
+        <div style="display:flex; gap:6px; align-items:center;">
+          <span style="font-family:var(--font-mono); font-size:10px; color:var(--muted);">${p.frame_count} frames</span>
+          ${tags}
+        </div>
+        <div class="primitive-card-footer">
+          <button class="btn-sm-sub prim-preview-btn" onclick="previewPrimitive('${p.name}')">▶ Preview</button>
+          <button class="btn-sm-primary prim-add-btn" onclick="addToComposer('${p.name}')">➕ Add to Composer</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.filterPrimitives = function(group, btn) {
+  document.querySelectorAll('#primFilters .filter-pill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  if (group === 'all') {
+    renderPrimitivesGrid(allPrimitives);
+  } else {
+    renderPrimitivesGrid(allPrimitives.filter(p => p.group === group));
+  }
+};
+
+window.previewPrimitive = function(name) {
+  const p = allPrimitives.find(x => x.name === name);
+  if (!p || !p.frames || !p.frames.length) return;
+  const expanded = p.frames.map(f => {
+    const angles = Object.assign({}, STAND_POSE);
+    for (const [k, v] of Object.entries(f.angles || {})) {
+      angles[k] = v;
+    }
+    return {
+      angles,
+      speed_deg_per_step: f.speed_deg_per_step || 8,
+      delay_ms: f.delay_ms || 150
+    };
+  });
+  if (viewer) {
+    viewer.playSequence(expanded, {
+      name: p.name,
+      description: p.description || 'Primitive preview',
+      loop: false
+    });
+  }
+};
+
+window.addToComposer = function(name) {
+  composerSelectedPrimitives.push(name);
+  renderComposerChips();
+};
+
+window.removeFromComposer = function(idx) {
+  composerSelectedPrimitives.splice(idx, 1);
+  renderComposerChips();
+};
+
+window.clearComposer = function() {
+  composerSelectedPrimitives = [];
+  currentComposedMoveset = null;
+  renderComposerChips();
+  const el = document.getElementById('composerMetrics');
+  if (el) el.style.display = 'none';
+};
+
+function renderComposerChips() {
+  const host = document.getElementById('composerChipsList');
+  if (!host) return;
+  if (!composerSelectedPrimitives.length) {
+    host.innerHTML = '<span style="color:var(--muted); font-size:11px; font-style:italic;">Click "➕ Add to Composer" on primitives below to sequence them</span>';
+    return;
+  }
+  host.innerHTML = composerSelectedPrimitives.map((name, i) => `
+    <span class="composer-chip">
+      <span>${i + 1}. ${name}</span>
+      <span class="chip-del" onclick="removeFromComposer(${i})">✕</span>
+    </span>
+  `).join('');
+}
+
+window.composeAndPreview = async function() {
+  if (!composerSelectedPrimitives.length) {
+    log('Select at least 1 primitive to compose', 'warn');
+    return;
+  }
+  const nameInput = document.getElementById('composerMovesetName');
+  const modeSelect = document.getElementById('composerModeSelect');
+  const name = (nameInput && nameInput.value.trim()) || `composed_${Date.now() % 10000}`;
+  const mode = (modeSelect && modeSelect.value) || 'sequential';
+
+  try {
+    const res = await api('/api/compose', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        primitives: composerSelectedPrimitives,
+        mode,
+        description: `Composed from: ${composerSelectedPrimitives.join(', ')}`
+      })
+    });
+    if (res && res.moveset) {
+      currentComposedMoveset = res.moveset;
+      log(`Composed "${name}" (${res.moveset.frames.length} frames, mode: ${mode})`, 'ok');
+      
+      const m = res.moveset.metrics || {};
+      const metricsEl = document.getElementById('composerMetrics');
+      if (metricsEl) {
+        metricsEl.style.display = 'grid';
+        document.getElementById('metricSmoothness').textContent = `${m.smoothness ?? 0}%`;
+        document.getElementById('metricDuration').textContent = `${((m.total_duration_ms || 0) / 1000).toFixed(1)}s`;
+        document.getElementById('metricMaxDelta').textContent = `${m.max_delta_deg ?? 0}°`;
+        document.getElementById('metricReversals').textContent = m.reversal_count ?? 0;
+      }
+
+      if (viewer && res.moveset.frames) {
+        viewer.playSequence(res.moveset.frames, {
+          name: res.moveset.name,
+          description: res.moveset.description,
+          loop: false
+        });
+      }
+    }
+  } catch (err) {
+    log(`Composition failed: ${err.message}`, 'err');
+  }
+};
+
+window.saveComposedToLibrary = async function() {
+  if (!currentComposedMoveset) {
+    log('Compose a moveset first before saving to library', 'warn');
+    return;
+  }
+  try {
+    await api('/api/library', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: currentComposedMoveset.name,
+        description: currentComposedMoveset.description,
+        frames: currentComposedMoveset.frames,
+        source_primitives: currentComposedMoveset.source_primitives || [],
+        composition_mode: currentComposedMoveset.composition_mode || 'sequential'
+      })
+    });
+    log(`💾 Saved "${currentComposedMoveset.name}" to library!`, 'ok');
+    await refreshMovesetLibrary();
+  } catch (err) {
+    log(`Failed to save to library: ${err.message}`, 'err');
+  }
+};
+
+window.runComposedOnRobot = function() {
+  if (!currentComposedMoveset) {
+    log('Compose a moveset first before running on robot', 'warn');
+    return;
+  }
+  runMovesetOnRobot(currentComposedMoveset);
+};
 
 // ── Save Moveset Modal ──────────────────────────────────────────
 function openSaveMovesetModal() {

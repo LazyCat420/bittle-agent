@@ -98,6 +98,82 @@ class BittleClient:
     async def estop(self, reason: str = "agent") -> dict[str, Any]:
         return await self._request("POST", "/api/estop", json={"reason": reason})
 
+    async def execute_sequence(
+        self,
+        steps: list[dict[str, Any]],
+        name: str = "custom_sequence",
+        target: str = "sim",
+    ) -> dict[str, Any]:
+        payload = {
+            "name": name,
+            "steps": steps,
+            "target": target,
+            "confirm": self.confirm_token or None,
+        }
+        return await self._request("POST", "/api/sequence", json=payload)
+
+    async def save_moveset(
+        self,
+        name: str,
+        frames: list[dict[str, Any]],
+        description: str = "",
+        source_primitives: list[str] | None = None,
+        composition_mode: str = "",
+    ) -> dict[str, Any]:
+        payload = {
+            "name": name,
+            "description": description,
+            "frames": frames,
+            "source_primitives": source_primitives or [],
+            "composition_mode": composition_mode,
+        }
+        return await self._request("POST", "/api/library", json=payload)
+
+    async def list_primitives(self, group: str | None = None) -> dict[str, Any]:
+        params = {"group": group} if group else None
+        return await self._request("GET", "/api/primitives", params=params)
+
+    async def compose_move(
+        self,
+        name: str,
+        primitives: list[str],
+        mode: str = "sequential",
+        description: str = "",
+    ) -> dict[str, Any]:
+        payload = {
+            "name": name,
+            "primitives": primitives,
+            "mode": mode,
+            "description": description,
+        }
+        return await self._request("POST", "/api/compose", json=payload)
+
+    async def iterate_move(
+        self,
+        name: str,
+        adjustments: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = {"name": name, "adjustments": adjustments}
+        return await self._request("POST", "/api/iterate", json=payload)
+
+    async def evaluate_move(
+        self,
+        name: str | None = None,
+        frames: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if name:
+            payload["name"] = name
+        if frames:
+            payload["frames"] = frames
+        return await self._request("POST", "/api/evaluate", json=payload)
+
+    async def list_library(self) -> dict[str, Any]:
+        return await self._request("GET", "/api/library")
+
+    async def load_moveset(self, name: str) -> dict[str, Any]:
+        return await self._request("GET", f"/api/library/{name}")
+
 
 _client = BittleClient()
 
@@ -112,6 +188,20 @@ TOOLS = {
         angles, target, simultaneous
     ),
     "bittle_estop": lambda reason="agent", **kw: _client.estop(reason),
+    "bittle_execute_sequence": lambda steps, name="custom_sequence", target="sim", **kw: _client.execute_sequence(
+        steps, name=name, target=target
+    ),
+    "bittle_save_moveset": lambda name, frames, description="", source_primitives=None, composition_mode="", **kw: _client.save_moveset(
+        name, frames, description=description, source_primitives=source_primitives, composition_mode=composition_mode
+    ),
+    "bittle_list_primitives": lambda group=None, **kw: _client.list_primitives(group=group),
+    "bittle_compose_move": lambda name, primitives, mode="sequential", description="", **kw: _client.compose_move(
+        name, primitives, mode=mode, description=description
+    ),
+    "bittle_iterate_move": lambda name, adjustments, **kw: _client.iterate_move(name, adjustments),
+    "bittle_evaluate_move": lambda name=None, frames=None, **kw: _client.evaluate_move(name=name, frames=frames),
+    "bittle_list_library": lambda **kw: _client.list_library(),
+    "bittle_load_moveset": lambda name, **kw: _client.load_moveset(name),
 }
 
 
@@ -121,3 +211,4 @@ async def execute(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if handler is None:
         return {"ok": False, "error": "unknown_tool", "detail": tool_name}
     return await handler(**(arguments or {}))
+

@@ -18,6 +18,7 @@ from . import skills as skills_mod
 from .agent import GLMAgentHarness
 from .config import settings
 from .controller import Controller, TargetUnavailable
+from .motion import CompositionError, get_composer
 from .safety import EStopEngaged, SafetyError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -374,10 +375,12 @@ async def preview(
 @app.get("/api/movesets")
 async def list_movesets():
     from .motion.builtin_library import list_builtin_movesets
-    from .motion import get_lifecycle
-    lifecycle = get_lifecycle()
+    from .motion import get_lifecycle, get_composer
+    composer = get_composer()
     builtins = list_builtin_movesets()
-    customs = lifecycle.list_movesets()
+    customs = composer.list_movesets()
+    for c in customs:
+        c.setdefault("kind", "custom")
     return {
         "builtins": builtins,
         "customs": customs,
@@ -393,21 +396,24 @@ class SaveMovesetRequest(BaseModel):
 
 @app.post("/api/movesets/save")
 async def save_moveset_endpoint(req: SaveMovesetRequest):
-    from .motion import get_lifecycle
-    lifecycle = get_lifecycle()
-    saved = lifecycle.save_moveset(req.name, {
+    from .motion import get_composer
+    composer = get_composer()
+    saved = composer.save_moveset(req.name, {
         "description": req.description,
         "frames": req.frames,
+        "kind": "custom",
     })
     return {"ok": True, "name": req.name, "moveset": saved}
 
 
 @app.delete("/api/movesets/{name}")
 async def delete_moveset_endpoint(name: str):
-    from .motion import get_lifecycle
+    from .motion import get_composer, get_lifecycle
+    composer = get_composer()
     lifecycle = get_lifecycle()
-    deleted = lifecycle.delete_moveset(name)
-    return {"ok": True, "deleted": deleted}
+    d1 = composer.delete_moveset(name)
+    d2 = lifecycle.delete_moveset(name)
+    return {"ok": True, "deleted": d1 or d2}
 
 
 class PlayMovesetRequest(BaseModel):
@@ -420,11 +426,12 @@ class PlayMovesetRequest(BaseModel):
 @app.post("/api/movesets/play")
 async def play_moveset_endpoint(req: PlayMovesetRequest):
     from .motion.builtin_library import get_builtin_moveset
-    from .motion import get_lifecycle
+    from .motion import get_composer, get_lifecycle
     frames = req.frames
     if not frames and req.name:
+        composer = get_composer()
         lifecycle = get_lifecycle()
-        m = lifecycle.get_moveset(req.name) or get_builtin_moveset(req.name)
+        m = composer.get_moveset(req.name) or lifecycle.get_moveset(req.name) or get_builtin_moveset(req.name)
         if m:
             frames = m.get("frames", [])
 
@@ -446,6 +453,170 @@ async def play_moveset_endpoint(req: PlayMovesetRequest):
         "target": req.target,
     }, target_override=req.target, confirm_token=req.confirm)
     return res
+
+
+class ExecuteSequenceRequest(BaseModel):
+    name: str = "custom_sequence"
+    steps: list[dict[str, Any]]
+    target: str = "sim"
+    confirm: str | None = None
+
+
+@app.post("/api/sequence")
+async def execute_sequence_endpoint(req: ExecuteSequenceRequest):
+    res = await agent_harness.execute_tool(
+        "bittle_execute_sequence",
+        {"name": req.name, "steps": req.steps, "target": req.target},
+        target_override=req.target,
+        confirm_token=req.confirm,
+    )
+    return res
+
+
+# ── Motion Primitives & Composition Endpoints ────────────────────────────
+
+
+@app.get("/api/primitives")
+async def list_primitives(group: str | None = Query(None)):
+    composer = get_composer()
+    prims = composer.list_primitives(group=group)
+    return {
+        "ok": True,
+        "primitives": [
+            {
+                "name": p["name"],
+                "group": p["group"],
+                "joints": p["joints"],
+                "description": p.get("description", ""),
+                "tags": p.get("tags", []),
+                "frame_count": len(p.get("frames", [])),
+                "frames": p.get("frames", []),
+            }
+            for p in prims
+        ],
+    }
+
+
+@app.get("/api/primitives/{name}")
+async def get_primitive(name: str):
+    composer = get_composer()
+    prim = composer.get_primitive(name)
+    if prim is None:
+        raise HTTPException(status_code=404, detail=f"Primitive {name!r} not found")
+    return {"ok": True, "primitive": prim}
+
+
+class ComposeRequest(BaseModel):
+    name: str
+    primitives: list[str]
+    mode: str = "sequential"
+    description: str = ""
+    transition_blend_ms: int = 100
+    blend_frames: int = 2
+
+
+@app.post("/api/compose")
+async def compose_endpoint(req: ComposeRequest):
+    composer = get_composer()
+    try:
+        moveset = composer.compose_move(
+            req.name,
+            req.primitives,
+            mode=req.mode,
+            description=req.description,
+            transition_blend_ms=req.transition_blend_ms,
+            blend_frames=req.blend_frames,
+        )
+        return {"ok": True, "moveset": moveset}
+    except CompositionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+class IterateRequest(BaseModel):
+    name: str
+    adjustments: dict[str, Any]
+
+
+@app.post("/api/iterate")
+async def iterate_endpoint(req: IterateRequest):
+    composer = get_composer()
+    try:
+        moveset = composer.iterate_move(req.name, req.adjustments)
+        return {"ok": True, "moveset": moveset}
+    except CompositionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+class EvaluateRequest(BaseModel):
+    name: str | None = None
+    frames: list[dict[str, Any]] | None = None
+
+
+@app.post("/api/evaluate")
+async def evaluate_endpoint(req: EvaluateRequest):
+    composer = get_composer()
+    try:
+        metrics = composer.evaluate_move(name=req.name, frames=req.frames)
+        return {"ok": True, "metrics": metrics}
+    except CompositionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/library")
+async def list_library():
+    composer = get_composer()
+    movesets = composer.list_movesets()
+    return {
+        "ok": True,
+        "movesets": [
+            {
+                "name": m.get("name", ""),
+                "description": m.get("description", ""),
+                "frame_count": len(m.get("frames", [])),
+                "source_primitives": m.get("source_primitives", []),
+                "created_at": m.get("created_at", ""),
+                "updated_at": m.get("updated_at", ""),
+            }
+            for m in movesets
+        ],
+    }
+
+
+@app.get("/api/library/{name}")
+async def get_library_moveset(name: str):
+    composer = get_composer()
+    moveset = composer.get_moveset(name)
+    if moveset is None:
+        raise HTTPException(status_code=404, detail=f"Moveset {name!r} not found")
+    return {"ok": True, "moveset": moveset}
+
+
+@app.delete("/api/library/{name}")
+async def delete_library_moveset(name: str):
+    composer = get_composer()
+    deleted = composer.delete_moveset(name)
+    return {"ok": True, "deleted": deleted}
+
+
+class SaveToLibraryRequest(BaseModel):
+    name: str
+    description: str = ""
+    frames: list[dict[str, Any]]
+    source_primitives: list[str] = Field(default_factory=list)
+    composition_mode: str = ""
+
+
+@app.post("/api/library")
+async def save_to_library(req: SaveToLibraryRequest):
+    composer = get_composer()
+    data = {
+        "description": req.description,
+        "frames": req.frames,
+        "source_primitives": req.source_primitives,
+        "composition_mode": req.composition_mode,
+    }
+    saved = composer.save_moveset(req.name, data)
+    return {"ok": True, "name": req.name, "moveset": saved}
 
 
 # ── Agent Harness Endpoints ───────────────────────────────────────────────
