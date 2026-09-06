@@ -40,9 +40,9 @@ class Settings:
     rate_per_sec: float = float(os.getenv("BITTLE_RATE_PER_SEC", "8"))
     rate_burst: int = int(os.getenv("BITTLE_RATE_BURST", "16"))
 
-    #: Local GLM model configuration (strictly local / internal endpoint)
-    llm_api_base: str = os.getenv("BITTLE_LLM_API_BASE", "http://127.0.0.1:8000/v1")
-    llm_model: str = os.getenv("BITTLE_LLM_MODEL", "THUDM/glm-4-9b-chat")
+    #: Local GLM model configuration (strictly local / internal GoldSpark cluster endpoint)
+    llm_api_base: str = os.getenv("BITTLE_LLM_API_BASE", "http://10.0.0.141:8000/v1")
+    llm_model: str = os.getenv("BITTLE_LLM_MODEL", "GLM-5.3-Flash-EXL3")
     llm_api_key: str = os.getenv("BITTLE_LLM_API_KEY", "EMPTY")
     llm_timeout: float = float(os.getenv("BITTLE_LLM_TIMEOUT", "60.0"))
 

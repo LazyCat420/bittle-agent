@@ -388,9 +388,12 @@ class AgentStepRequest(BaseModel):
 
 @app.get("/api/agent/config")
 async def agent_config():
+    resolved_base, resolved_model = await agent_harness.resolve_endpoint_and_model()
     return {
-        "api_base": settings.llm_api_base,
-        "model": settings.llm_model,
+        "api_base": resolved_base,
+        "model": resolved_model,
+        "configured_base": settings.llm_api_base,
+        "configured_model": settings.llm_model,
         "timeout": settings.llm_timeout,
     }
 

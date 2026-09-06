@@ -385,7 +385,40 @@ class GLMAgentHarness:
             return {"ok": False, "error": "target_unavailable", "detail": str(exc)}
         except Exception as exc:
             logger.exception("Tool %s failed: %s", name, exc)
-            return {"ok": False, "error": "execution_failed", "detail": str(exc)}
+    async def resolve_endpoint_and_model(self) -> tuple[str, str]:
+        """Resolve the active LLM endpoint and model, querying cluster candidates if needed."""
+        primary_base = self.settings.llm_api_base.rstrip("/")
+        candidates = [
+            primary_base,
+            "http://10.0.0.141:8000/v1",
+            "http://10.0.0.16:5591/vllm-shim/gold-spark/v1",
+            "http://10.0.0.30:8000/v1",
+        ]
+        unique_candidates: list[str] = []
+        for c in candidates:
+            c_norm = c.rstrip("/")
+            if c_norm not in unique_candidates:
+                unique_candidates.append(c_norm)
+
+        api_key = self.settings.llm_api_key or "EMPTY"
+        headers = {"Authorization": f"Bearer {api_key}"}
+
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            for base in unique_candidates:
+                try:
+                    res = await client.get(f"{base}/models", headers=headers)
+                    if res.status_code == 200:
+                        data = res.json()
+                        models = [m.get("id") for m in data.get("data", []) if m.get("id")]
+                        if self.settings.llm_model in models:
+                            return base, self.settings.llm_model
+                        if models:
+                            return base, models[0]
+                        return base, self.settings.llm_model
+                except Exception:
+                    continue
+
+        return primary_base, self.settings.llm_model
 
     async def chat_stream(
         self,
@@ -396,8 +429,7 @@ class GLMAgentHarness:
         max_turns: int = 6,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Run multi-turn agent loop communicating with local GLM instance."""
-        api_base = self.settings.llm_api_base.rstrip("/")
-        model = self.settings.llm_model
+        api_base, model = await self.resolve_endpoint_and_model()
         api_key = self.settings.llm_api_key or "EMPTY"
         url = f"{api_base}/chat/completions"
 
@@ -424,7 +456,7 @@ class GLMAgentHarness:
                     res.raise_for_status()
                     data = res.json()
                 except Exception as exc:
-                    yield {"type": "error", "content": f"GLM endpoint error: {exc}"}
+                    yield {"type": "error", "content": f"GLM endpoint error ({api_base} / {model}): {exc}"}
                     return
 
                 choice = data["choices"][0]

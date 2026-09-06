@@ -143,3 +143,25 @@ def test_api_agent_step(client):
     data = res.json()
     assert data["ok"] is True
     assert data["skill"] == "balance"
+
+
+def test_resolve_endpoint_and_model_default(harness):
+    base, model = asyncio.run(harness.resolve_endpoint_and_model())
+    assert base.startswith("http")
+    assert model != ""
+
+
+def test_resolve_endpoint_auto_discovery_mock(harness, monkeypatch):
+    import httpx
+
+    class MockResponse:
+        status_code = 200
+        def json(self):
+            return {"data": [{"id": "GLM-5.3-Flash-EXL3"}]}
+
+    async def mock_get(self, url, *args, **kwargs):
+        return MockResponse()
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+    base, model = asyncio.run(harness.resolve_endpoint_and_model())
+    assert model == "GLM-5.3-Flash-EXL3"

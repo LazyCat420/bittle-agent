@@ -141,7 +141,7 @@ export class AgentUI {
     this.appendMessage('user', text);
     this.setStreaming(true);
 
-    this.abortController = new THREE ? new AbortController() : null;
+    this.abortController = new AbortController();
     const target = this.targetGetter();
     const confirm = this.confirmTokenGetter();
 

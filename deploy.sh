@@ -31,7 +31,10 @@ EXTRA_SSH_SYNC() {
   info "Syncing .env.example..."
   cat "${SCRIPT_DIR}/.env.example" | ssh "$DEPLOY_SSH_HOST" "cat > '${DEPLOY_COMPOSE_DIR}/.env.example'"
   ssh "$DEPLOY_SSH_HOST" "[ -f '${DEPLOY_COMPOSE_DIR}/.env' ] || cp '${DEPLOY_COMPOSE_DIR}/.env.example' '${DEPLOY_COMPOSE_DIR}/.env'"
-  ok ".env.example synced"
+  # Ensure GoldSpark cluster settings are present in remote .env
+  ssh "$DEPLOY_SSH_HOST" "grep -q 'BITTLE_LLM_API_BASE' '${DEPLOY_COMPOSE_DIR}/.env' || echo 'BITTLE_LLM_API_BASE=http://10.0.0.141:8000/v1' >> '${DEPLOY_COMPOSE_DIR}/.env'"
+  ssh "$DEPLOY_SSH_HOST" "grep -q 'BITTLE_LLM_MODEL' '${DEPLOY_COMPOSE_DIR}/.env' || echo 'BITTLE_LLM_MODEL=GLM-5.3-Flash-EXL3' >> '${DEPLOY_COMPOSE_DIR}/.env'"
+  ok ".env.example and GoldSpark cluster config synced"
 }
 
 source "${SCRIPT_DIR}/../deploy-kit/lib.sh"
