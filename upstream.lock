@@ -1,0 +1,18 @@
+{
+  "opencat": {
+    "repository": "https://github.com/PetoiCamp/OpenCat",
+    "commit": "3c9840232231db621a603957eb01e292ea8daef8",
+    "branch": "main",
+    "version": "2.0",
+    "date": "2024-05-18",
+    "components": ["src/OpenCat.h", "src/InstinctBittle.h"]
+  },
+  "opencat_esp32": {
+    "repository": "https://github.com/PetoiCamp/OpenCatEsp32",
+    "commit": "e8d6411f56a0665a39626359551c6b54a72d7335",
+    "branch": "main",
+    "version": "2.1",
+    "date": "2024-06-20",
+    "components": ["src/OpenCatEsp32.h", "src/InstinctBittleESP.h"]
+  }
+}

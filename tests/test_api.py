@@ -17,8 +17,10 @@ from app.main import app, controller
 def client():
     with TestClient(app) as c:
         controller.safety.clear_estop()
+        controller.safety._limiter._tokens = float(controller.safety._limiter.burst)
         yield c
         controller.safety.clear_estop()
+        controller.safety._limiter._tokens = float(controller.safety._limiter.burst)
 
 
 def test_health(client):
@@ -112,3 +114,84 @@ def test_skills_list_marks_locomoting_gaits(client):
     skills = {s["name"]: s for s in client.get("/api/skills").json()["skills"]}
     assert skills["wkF"]["locomotes"] is True
     assert skills["sit"]["locomotes"] is False
+
+
+def test_api_profiles_endpoint(client):
+    r = client.get("/api/profiles")
+    assert r.status_code == 200
+    body = r.json()
+    assert "active_profile" in body
+    assert len(body["profiles"]) >= 3
+
+    # Switch profile
+    r_sel = client.post("/api/profiles/select", json={"profile_id": "bittle-tail-installed-nyboard-v1-p1s"})
+    assert r_sel.status_code == 200
+    assert 1 in r_sel.json()["installed_joints"]
+
+    # Switch back
+    r_back = client.post("/api/profiles/select", json={"profile_id": "bittle-standard-biboard-v1-p1s"})
+    assert r_back.status_code == 200
+    assert 1 not in r_back.json()["installed_joints"]
+
+
+def test_api_controlled_stop(client):
+    r = client.post("/api/stop/controlled", json={"reason": "api_test"})
+    assert r.status_code == 200
+    assert r.json()["controlled_stop"]["controlled_stop"] is True
+
+    # Blocked while stopped
+    blocked = client.post("/api/move", json={"angles": {"8": 0}})
+    assert blocked.status_code == 409
+
+    # Clear
+    client.post("/api/estop/clear")
+    unblocked = client.post("/api/move", json={"angles": {"8": 0}})
+    assert unblocked.status_code == 200
+
+
+def test_api_skill_authoring_pipeline(client):
+    # 1. Draft
+    draft_req = {
+        "skill": {
+            "name": "api_test_nod",
+            "frames": [
+                {"angles_deg": {"0": 10}, "speed_deg_per_step": 4, "delay_ms": 50},
+                {"angles_deg": {"0": 0}, "speed_deg_per_step": 4, "delay_ms": 50},
+            ]
+        }
+    }
+    r_draft = client.post("/api/skills/draft", json=draft_req)
+    assert r_draft.status_code == 200
+    ir = r_draft.json()["skill_ir"]
+
+    # 2. Validate
+    r_val = client.post("/api/skills/validate", json=ir)
+    assert r_val.status_code == 200
+    body_val = r_val.json()
+    assert body_val["ok"] is True
+    m_hash = body_val["manifest_hash"]
+
+    # 2.5 Simulate
+    r_sim = client.post("/api/skills/simulate", json={"manifest_hash": m_hash})
+    assert r_sim.status_code == 200
+    assert r_sim.json()["manifest"]["status"] == "simulated"
+
+    # 3. List
+    r_list = client.get("/api/skills/manifests")
+    assert r_list.status_code == 200
+    hashes = [m["payload_hash"] for m in r_list.json()["manifests"]]
+    assert m_hash in hashes
+
+    # 4. Approve & Promote
+    r_app = client.post("/api/skills/approve", json={"manifest_hash": m_hash, "approver": "api_admin"})
+    assert r_app.status_code == 200
+    assert r_app.json()["manifest"]["status"] == "approved"
+
+    r_prom = client.post("/api/skills/promote", json={"manifest_hash": m_hash})
+    assert r_prom.status_code == 200
+    assert r_prom.json()["manifest"]["status"] == "promoted"
+
+    # 5. Run Approved
+    r_run = client.post("/api/skills/run-approved", json={"manifest_hash": m_hash, "target": "sim"})
+    assert r_run.status_code == 200
+    assert r_run.json()["ok"] is True

@@ -56,17 +56,50 @@ def test_ascii_encoding_is_used_for_moves_so_large_angles_survive():
 # ── Per-joint limits are asymmetric; a global clamp would be wrong ─────────
 
 
-def test_tail_limit_is_not_widened_to_a_global_range(validator):
-    """Tail is +/-85. A naive global +/-125 would over-rotate it."""
-    move = validator.validate_move({1: 120})
+def test_tail_limit_is_not_widened_to_a_global_range():
+    """Tail is +/-85 when installed. A naive global +/-125 would over-rotate it."""
+    from app.profiles import get_registry
+    tail_profile = get_registry().get("bittle-tail-installed-nyboard-v1-p1s")
+    tail_validator = SafetyValidator(rate_per_sec=1000, burst=1000, profile=tail_profile)
+    move = tail_validator.validate_move({1: 120})
     (_, applied), = move.pairs
     assert applied == 85
 
 
-def test_head_allows_more_than_the_tail(validator):
-    move = validator.validate_move({0: 120})
-    (_, applied), = move.pairs
-    assert applied == 120
+def test_standard_profile_rejects_uninstalled_tail(validator):
+    """Standard factory Bittle profile has 9 servos; tail (joint 1) is not installed."""
+    with pytest.raises(SafetyError) as exc_info:
+        validator.validate_move({1: 50})
+    assert exc_info.value.reason == "unused_joint"
+
+
+def test_envelope_tiers_agent_and_tested(validator):
+    # Head joint (0): safe=[-120, 120], tested=[-90, 90], agent=[-60, 60]
+    move_transport = validator.validate_move({0: 100}, envelope_tier="transport")
+    assert move_transport.pairs[0][1] == 100
+
+    move_tested = validator.validate_move({0: 100}, envelope_tier="tested")
+    assert move_tested.pairs[0][1] == 90
+    assert move_tested.adjustments[0].reason == "tested_clearance"
+
+    move_agent = validator.validate_move({0: 100}, envelope_tier="agent")
+    assert move_agent.pairs[0][1] == 60
+    assert move_agent.adjustments[0].reason == "agent_envelope"
+
+
+def test_two_stage_controlled_stop(validator):
+    assert not validator.controlled_stop_active
+    validator.engage_controlled_stop("test_hazard")
+    assert validator.controlled_stop_active
+    status = validator.estop_status()
+    assert status["controlled_stop"] is True
+
+    # Any new move should fail while controlled stop is active
+    with pytest.raises(EStopEngaged):
+        validator.validate_move({0: 0})
+
+    validator.clear_estop()
+    assert not validator.controlled_stop_active
 
 
 def test_negative_shoulder_limit_clamps_to_wire_floor(validator):

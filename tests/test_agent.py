@@ -33,7 +33,49 @@ def test_agent_list_capabilities(harness):
     caps = asyncio.run(harness.execute_tool("bittle_list_capabilities", {}))
     assert caps["ok"] is True
     assert len(caps["skills"]) > 0
-    assert len(caps["joints"]) == 10  # 10 controllable joints on Bittle
+    # Standard factory Bittle has 9 controllable servos (head pan 0 + 8 leg joints)
+    assert len(caps["joints"]) == 9
+
+
+def test_agent_hardware_profile_tools(harness):
+    prof = asyncio.run(harness.execute_tool("bittle_get_hardware_profile", {}))
+    assert prof["ok"] is True
+    assert prof["robot_model"] == "BITTLE"
+    assert 0 in prof["installed_joints"]
+    assert 1 not in prof["installed_joints"]
+
+    envs = asyncio.run(harness.execute_tool("bittle_get_joint_envelopes", {}))
+    assert envs["ok"] is True
+    assert 0 in envs["envelopes"]
+    assert envs["envelopes"][0]["agent"] == [-60, 60]
+
+
+def test_agent_skill_authoring_lifecycle_tools(harness):
+    # 1. Draft
+    draft_res = asyncio.run(harness.execute_tool("bittle_draft_skill", {
+        "skill": {
+            "name": "nod_head_safe",
+            "frames": [
+                {"angles_deg": {0: 20}, "speed_deg_per_step": 4, "delay_ms": 100},
+                {"angles_deg": {0: -20}, "speed_deg_per_step": 4, "delay_ms": 100},
+                {"angles_deg": {0: 0}, "speed_deg_per_step": 4, "delay_ms": 100},
+            ]
+        }
+    }))
+    assert draft_res["ok"] is True
+    ir_data = draft_res["skill_ir"]
+
+    # 2. Validate
+    val_res = asyncio.run(harness.execute_tool("bittle_validate_skill", {"skill": ir_data}))
+    assert val_res["ok"] is True
+    m_hash = val_res["manifest_hash"]
+    assert m_hash is not None
+
+    # 3. Simulate
+    sim_res = asyncio.run(harness.execute_tool("bittle_simulate_skill", {"manifest_hash": m_hash}))
+    assert sim_res["ok"] is True
+    assert sim_res["status"] == "simulated"
+    assert sim_res["frames"] == 3
 
 
 def test_agent_status(harness):

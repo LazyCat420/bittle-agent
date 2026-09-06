@@ -1,11 +1,18 @@
-"""Mandatory safety layer.
+"""Mandatory safety layer for Petoi Bittle.
 
 Every motion command passes through `SafetyValidator` before any backend sees
 it. There is no bypass path -- the backends are only reachable via the
 validator, and the validator fails closed.
 
-Design rule: this module decides, it does not actuate. That keeps it pure and
-therefore testable, which is the only reason to believe it works.
+Supports multi-envelope limits:
+- firmware: Raw angleLimit acceptance from OpenCat.h
+- transport: Signed char boundary on wire (-128..127)
+- tested: Physical mechanical clearance limits
+- agent: Conservative operational envelope for autonomous LLM generation
+
+Supports two-stage emergency / safe stop policies:
+- controlled_stop: smooth transition to rest pose before torque release
+- estop: immediate torque cut ('d') and latching motion lock.
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from . import joints, skills
+from .profiles import HardwareProfile
 
 
 class Decision(StrEnum):
@@ -62,12 +70,7 @@ class ValidatedMove:
 
 
 class RateLimiter:
-    """Token bucket bounding sustained command rate.
-
-    This is a hardware-protection guard, not an API quota: continuous servo
-    thrash is how these joints overheat. Bursts are fine, sustained flooding is
-    not, which is exactly a token bucket's shape.
-    """
+    """Token bucket bounding sustained command rate."""
 
     def __init__(self, rate_per_sec: float, burst: int):
         self.rate = rate_per_sec
@@ -94,7 +97,7 @@ class RateLimiter:
 
 
 class SafetyValidator:
-    """Clamp, whitelist, rate-limit and E-stop gate for all robot commands."""
+    """Clamp, whitelist, rate-limit, and E-stop gate for all robot commands."""
 
     def __init__(
         self,
@@ -102,32 +105,46 @@ class SafetyValidator:
         rate_per_sec: float = 8.0,
         burst: int = 16,
         allow_locomotion: bool = True,
+        profile: HardwareProfile | None = None,
     ):
         self._limiter = RateLimiter(rate_per_sec, burst)
         self._estop = False
         self._estop_reason: str | None = None
         self._estop_at: float | None = None
+        self._controlled_stop = False
         self._allow_locomotion = allow_locomotion
+        self.profile = profile or joints.get_active_profile()
         self._lock = threading.Lock()
 
-    # ── E-stop ────────────────────────────────────────────────────────────
-    # Latching by design. An E-stop that auto-clears is not an E-stop: whatever
-    # tripped it is still true until a human says otherwise.
+    # ── E-stop & Controlled Stop ──────────────────────────────────────────
 
     @property
     def estop_engaged(self) -> bool:
         with self._lock:
             return self._estop
 
+    @property
+    def controlled_stop_active(self) -> bool:
+        with self._lock:
+            return self._controlled_stop
+
     def engage_estop(self, reason: str = "manual") -> None:
         with self._lock:
             self._estop = True
+            self._estop_reason = reason
+            self._estop_at = time.time()
+            self._controlled_stop = False
+
+    def engage_controlled_stop(self, reason: str = "controlled_stop") -> None:
+        with self._lock:
+            self._controlled_stop = True
             self._estop_reason = reason
             self._estop_at = time.time()
 
     def clear_estop(self) -> None:
         with self._lock:
             self._estop = False
+            self._controlled_stop = False
             self._estop_reason = None
             self._estop_at = None
 
@@ -135,20 +152,20 @@ class SafetyValidator:
         with self._lock:
             return {
                 "engaged": self._estop,
+                "controlled_stop": self._controlled_stop,
                 "reason": self._estop_reason,
                 "engaged_at": self._estop_at,
             }
 
     def _assert_operational(self) -> None:
-        if self.estop_engaged:
+        if self.estop_engaged or self.controlled_stop_active:
             raise EStopEngaged()
 
     def _assert_rate(self, cost: int = 1) -> None:
         if not self._limiter.consume(cost):
             raise SafetyError(
                 "rate_limited",
-                "command rate exceeded; this limit protects the servos from "
-                "sustained thrash",
+                "command rate exceeded; this limit protects the servos from sustained thrash",
             )
 
     # ── Joint motion ──────────────────────────────────────────────────────
@@ -158,8 +175,9 @@ class SafetyValidator:
         requested: dict[int | str, float],
         *,
         simultaneous: bool = True,
+        envelope_tier: str = "transport",
     ) -> ValidatedMove:
-        """Validate a joint move. Clamps angles, rejects unknown joints."""
+        """Validate a joint move. Clamps angles to requested envelope tier, rejects uninstalled joints."""
         self._assert_operational()
 
         if not requested:
@@ -174,18 +192,14 @@ class SafetyValidator:
             except KeyError as exc:
                 raise SafetyError("unknown_joint", str(exc)) from exc
 
-            if not joint.used:
+            # Enforce profile installed joints
+            if not self.profile.is_installed(joint.index):
                 raise SafetyError(
                     "unused_joint",
-                    f"joint {joint.index} ({joint.name}) is not populated on Bittle; "
+                    f"joint {joint.index} ({joint.name}) is not populated on Bittle ({self.profile.profile_id}); "
                     "commanding it would drive a servo that isn't there",
                 )
 
-            # Check finiteness BEFORE int(round(...)), because round(nan) raises
-            # ValueError and int(inf) raises OverflowError -- both would surface
-            # as a confusing crash rather than a clean rejection. NaN is the
-            # dangerous one: it silently fails every `<` comparison, so an
-            # unchecked NaN would sail straight through the clamp below.
             try:
                 angle_f = float(raw_angle)
             except (TypeError, ValueError) as exc:
@@ -198,20 +212,26 @@ class SafetyValidator:
                 )
             angle = int(round(angle_f))
 
-            applied = max(joint.safe_min, min(joint.safe_max, angle))
+            # Select envelope tier bounds
+            if envelope_tier == "agent":
+                min_b, max_b = joint.agent_min, joint.agent_max
+                clamp_reason = "agent_envelope"
+            elif envelope_tier == "tested":
+                min_b, max_b = joint.tested_min, joint.tested_max
+                clamp_reason = "tested_clearance"
+            else:
+                min_b, max_b = joint.safe_min, joint.safe_max
+                clamp_reason = "wire_range" if joint.fw_min <= angle <= joint.fw_max else "joint_limit"
+
+            applied = max(min_b, min(max_b, angle))
             if applied != angle:
-                # Distinguish the two causes: "joint_limit" means the hardware
-                # itself won't go there; "wire_range" means the firmware would
-                # allow it but the signed-char encoding cannot carry it. They
-                # have different fixes, so don't collapse them into one reason.
-                reason = "wire_range" if joint.fw_min <= angle <= joint.fw_max else "joint_limit"
                 adjustments.append(
                     Adjustment(
                         joint_index=joint.index,
                         joint_name=joint.name,
                         requested=angle,
                         applied=applied,
-                        reason=reason,
+                        reason=clamp_reason,
                     )
                 )
             pairs.append((joint.index, applied))
@@ -250,6 +270,12 @@ class SafetyValidator:
     def status(self) -> dict:
         return {
             "estop": self.estop_status(),
+            "profile": {
+                "profile_id": self.profile.profile_id,
+                "robot_model": self.profile.robot_model,
+                "installed_joints": list(self.profile.installed_joints),
+                "profile_hash": self.profile.profile_hash()[:12],
+            },
             "rate_limit": {
                 "tokens_available": round(self._limiter.available, 2),
                 "rate_per_sec": self._limiter.rate,

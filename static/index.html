@@ -144,6 +144,25 @@
 
   .spacer { flex: 1; }
 
+  .controlled-stop-btn {
+    background: #d97706;
+    color: #fff;
+    border: 1px solid #b45309;
+    border-radius: var(--radius-md);
+    padding: 8px 16px;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(217, 119, 6, 0.35);
+    transition: all 0.15s ease;
+    margin-right: 8px;
+  }
+  .controlled-stop-btn:hover {
+    background: #b45309;
+    box-shadow: 0 4px 12px rgba(217, 119, 6, 0.5);
+  }
+
   .estop-btn {
     background: linear-gradient(135deg, #ef4444, #dc2626);
     color: #fff;
@@ -562,6 +581,7 @@
   <div class="brand">
     <h1>🐕 Bittle Deck</h1>
     <span class="tag">Digital Twin</span>
+    <span class="tag" id="profileBadge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-family: var(--font-mono); font-size: 11px;">bittle-standard-biboard-v1-p1s</span>
   </div>
 
   <div class="target-selector">
@@ -574,6 +594,7 @@
 
   <div class="spacer"></div>
 
+  <button class="controlled-stop-btn" id="controlledStopBtn" onclick="controlledStop()" title="Two-stage deceleration stop">◫ Controlled Stop</button>
   <button class="estop-btn" id="estopBtn" onclick="toggleEstop()">■ E-STOP</button>
 </header>
 
@@ -792,6 +813,12 @@ async function refreshStatus() {
     document.getElementById("estopBanner").classList.toggle("on", es.engaged);
     document.getElementById("estopBtn").classList.toggle("latched", es.engaged);
     if (viewer) viewer.setEstop(es.engaged);
+
+    const prof = await api("/api/profiles");
+    if (prof && prof.active_profile) {
+      const pBadge = document.getElementById("profileBadge");
+      if (pBadge) pBadge.textContent = prof.active_profile;
+    }
   } catch (e) {
     log(e.message, "err");
   }
@@ -803,6 +830,20 @@ async function loadJoints() {
   JOINTS = data.joints;
   const host = document.getElementById("jointsContainer");
   host.innerHTML = "";
+
+  const hasTail = JOINTS.some(j => j.index === 1);
+  if (!hasTail) {
+    const uninstalledRow = document.createElement("div");
+    uninstalledRow.className = "joint-row";
+    uninstalledRow.style.opacity = "0.55";
+    uninstalledRow.style.borderStyle = "dashed";
+    uninstalledRow.innerHTML = `
+      <div class="joint-label" title="Tail (#1) — Not installed in standard 9-servo Bittle">Tail (#1)</div>
+      <div style="flex: 1; font-size: 11px; color: var(--muted); font-style: italic;">Uninstalled in 9-servo profile</div>
+      <div class="joint-val" style="font-size: 10px; color: var(--muted); font-weight: normal;">OFF</div>
+    `;
+    host.appendChild(uninstalledRow);
+  }
 
   JOINTS.forEach(j => {
     const initVal = j.default !== undefined ? j.default : (STAND_POSE[j.index] !== undefined ? STAND_POSE[j.index] : j.rest);
@@ -914,7 +955,18 @@ async function runSkill(s) {
   }
 }
 
-// ── E-Stop Controls ─────────────────────────────────────────────
+// ── Stop & Safety Controls ──────────────────────────────────────
+window.controlledStop = async function() {
+  try {
+    const r = await api("/api/stop/controlled", { method: "POST", body: JSON.stringify({ reason: "ui_controlled" }) });
+    log("◫ Controlled Stop: Graceful 2-stage deceleration", "warnc");
+    if (viewer) viewer.setEstop(true);
+    refreshStatus();
+  } catch (e) {
+    log(e.message, "err");
+  }
+};
+
 window.toggleEstop = async function() {
   try {
     const r = await api("/api/estop", { method: "POST", body: JSON.stringify({ reason: "ui" }) });

@@ -100,6 +100,38 @@ class EStopRequest(BaseModel):
     reason: str = "manual"
 
 
+class ControlledStopRequest(BaseModel):
+    reason: str = "controlled_stop"
+
+
+class SelectProfileRequest(BaseModel):
+    profile_id: str
+
+
+class SimulateSkillRequest(BaseModel):
+    manifest_hash: str
+
+
+class CanarySkillRequest(BaseModel):
+    manifest_hash: str
+    operator_notes: str = "operator_tested_on_stand"
+
+
+class ApproveSkillRequest(BaseModel):
+    manifest_hash: str
+    approver: str = "operator"
+
+
+class PromoteSkillRequest(BaseModel):
+    manifest_hash: str
+
+
+class RunApprovedSkillRequest(BaseModel):
+    manifest_hash: str
+    target: str = "sim"
+    confirm: str | None = None
+
+
 # ── Routes ────────────────────────────────────────────────────────────────
 
 
@@ -199,6 +231,126 @@ async def estop(req: EStopRequest = Body(default=EStopRequest())):
 @app.post("/api/estop/clear")
 async def clear_estop():
     return controller.clear_estop()
+
+
+@app.post("/api/stop/controlled")
+async def controlled_stop(req: ControlledStopRequest = Body(default_factory=ControlledStopRequest)):
+    return await controller.controlled_stop(req.reason)
+
+
+@app.get("/api/profiles")
+async def list_profiles():
+    from .profiles import get_registry
+    reg = get_registry()
+    return {
+        "active_profile": controller.profile.profile_id,
+        "profiles": reg.list_profiles(),
+    }
+
+
+@app.post("/api/profiles/select")
+async def select_profile(req: SelectProfileRequest):
+    try:
+        prof = controller.set_profile(req.profile_id)
+        return {"ok": True, "active_profile": prof.profile_id, "installed_joints": list(prof.installed_joints)}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/skills/draft")
+async def draft_skill(skill: dict[str, Any] = Body(...)):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    payload = dict(skill.get("skill", skill))
+    if "profile_id" not in payload:
+        payload["profile_id"] = controller.profile.profile_id
+    ir = lifecycle.draft(payload)
+    return {"ok": True, "skill_ir": ir.model_dump(mode="json")}
+
+
+@app.post("/api/skills/validate")
+async def validate_skill(skill: dict[str, Any] = Body(...)):
+    from .motion import get_lifecycle
+    from .motion.schema import SkillIR
+    lifecycle = get_lifecycle()
+    payload = dict(skill.get("skill", skill))
+    if "profile_id" not in payload:
+        payload["profile_id"] = controller.profile.profile_id
+    ir = SkillIR.model_validate(payload)
+    val_res, manifest = lifecycle.validate_and_compile(ir)
+    return {
+        "ok": val_res.valid,
+        "errors": val_res.errors,
+        "warnings": val_res.warnings,
+        "budget": val_res.budget.model_dump() if val_res.budget else None,
+        "manifest_hash": manifest.payload_hash if manifest else None,
+        "manifest": manifest.model_dump(mode="json") if manifest else None,
+    }
+
+
+@app.post("/api/skills/simulate")
+async def simulate_skill(req: SimulateSkillRequest):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    try:
+        manifest = lifecycle.get_manifest(req.manifest_hash)
+        evidence = {"simulated": True, "frames": len(manifest.ir.frames)}
+        m = lifecycle.record_simulation(req.manifest_hash, evidence)
+        return {"ok": True, "manifest": m.model_dump(mode="json")}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/skills/canary")
+async def canary_skill(req: CanarySkillRequest):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    try:
+        m = lifecycle.record_canary(req.manifest_hash, req.operator_notes)
+        return {"ok": True, "manifest": m.model_dump(mode="json")}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/skills/manifests")
+async def list_manifests(status: str | None = Query(None)):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    return {"manifests": [m.model_dump(mode="json") for m in lifecycle.list_manifests(status)]}
+
+
+@app.post("/api/skills/approve")
+async def approve_skill(req: ApproveSkillRequest):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    try:
+        m = lifecycle.approve(req.manifest_hash, req.approver)
+        return {"ok": True, "manifest": m.model_dump(mode="json")}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/skills/promote")
+async def promote_skill(req: PromoteSkillRequest):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    try:
+        m = lifecycle.promote(req.manifest_hash)
+        return {"ok": True, "manifest": m.model_dump(mode="json")}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/skills/run-approved")
+async def run_approved_skill(req: RunApprovedSkillRequest):
+    result, manifest = await controller.run_approved_skill(req.manifest_hash, target=req.target, confirm=req.confirm)
+    return {
+        "ok": result.ok,
+        "sent": result.sent,
+        "response": result.response,
+        "manifest_hash": req.manifest_hash,
+        "skill_name": manifest.ir.name,
+    }
 
 
 @app.post("/api/preview")

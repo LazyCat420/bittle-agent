@@ -2,8 +2,8 @@
 
 Connects to an internal, local OpenAI-compatible endpoint (e.g. GLM-4 / GLM-4-9B
 hosted on Gold Spark / DGX Spark or Jetson via vLLM, Ollama, or LM Studio).
-The model never touches serial directly; all actions pass through the Controller
-and SafetyValidator.
+The model never touches serial directly; all actions pass through the Controller,
+HardwareProfile, and SafetyValidator.
 """
 
 from __future__ import annotations
@@ -18,6 +18,9 @@ from . import joints as joints_mod
 from . import skills as skills_mod
 from .config import Settings
 from .controller import Controller, TargetUnavailable
+from .motion import TrajectoryValidator, get_lifecycle
+from .motion.schema import SkillIR
+from .profiles import get_registry
 from .safety import SafetyError
 
 logger = logging.getLogger("bittle-agent.agent")
@@ -25,13 +28,18 @@ logger = logging.getLogger("bittle-agent.agent")
 SYSTEM_PROMPT = """You are the autonomous movement planner and motion harness for a Petoi Bittle quadruped robot dog.
 You control the robot exclusively through tool calls. You do not touch hardware directly.
 
-CORE RULES:
-1. Safety is absolute. Joint angles are hardware-constrained. If a joint clamp is reported back to you, respect it.
-2. Locomotion gaits (such as 'wkF' walk forward, 'trF' trot forward, 'bk' back up) move the robot physically across a surface. Only execute gaits if locomotion has been acknowledged or requested.
-3. For predefined behaviors and postures, prefer calling `bittle_do_skill` with verified skill names (e.g. 'sit', 'balance', 'hi', 'pu', 'snf', 'pee', 'rest').
-4. For custom poses, use `bittle_move_joints` with joint names or OpenCat indices.
-5. If something goes wrong, unexpected resistance occurs, or the user commands stop, immediately call `bittle_estop`.
-6. Explain your intent concisely before or as you act. When you finish an action sequence, summarize what the robot performed.
+CORE SAFETY RULES:
+1. Safety is absolute. Joint angles and mechanical envelopes are strictly enforced.
+2. Standard Bittle has 9 servos (Head pan 0, Front shoulders 8-9, Rear shoulders 10-11, Knees 12-15). Do not command uninstalled joints.
+3. Locomotion gaits ('wkF', 'trF', etc.) move the robot physically across a surface. Only execute if locomotion is acknowledged.
+4. For predefined behaviors and postures, call `bittle_do_skill` with verified skill names ('sit', 'balance', 'hi', 'pu', 'rest').
+5. For complex custom multi-frame motions, follow the safe authoring lifecycle:
+   a. `bittle_draft_skill`: specify typed frames, speeds, and delays.
+   b. `bittle_validate_skill`: verify delta limits, reversal budgets, and agent envelopes.
+   c. `bittle_simulate_skill`: test in simulation before requesting physical promotion.
+   d. `bittle_run_approved_skill`: execute promoted skills with cryptographic SHA-256 verification.
+6. If unexpected resistance occurs or user requests stop, immediately call `bittle_estop`.
+7. Explain intent concisely before acting.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -40,11 +48,23 @@ TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "bittle_list_capabilities",
             "description": "List what the Bittle robot can do: verified skills (postures, gaits, behaviors) and controllable joints with their safe angle limits.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": [],
-            },
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_get_hardware_profile",
+            "description": "Get the active verified hardware profile (robot model, board, installed joints, feedback capability, and profile hash).",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_get_joint_envelopes",
+            "description": "Get the 4-tier joint angle envelopes (firmware, transport, tested mechanical clearance, and agent operational limits).",
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {
@@ -95,7 +115,7 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "bittle_move_joints",
-            "description": "Set specific joint angles in degrees. Angles outside safe limits are clamped.",
+            "description": "Set specific joint angles in degrees. On real hardware, angles are clamped to the conservative agent operational envelope.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -115,6 +135,66 @@ TOOLS: list[dict[str, Any]] = [
                     },
                 },
                 "required": ["angles"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_draft_skill",
+            "description": "Draft a multi-frame custom skill/behavior without executing it.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill": {
+                        "type": "object",
+                        "description": "Skill IR definition containing name, profile_id, kind, loop_count, and frames array.",
+                    }
+                },
+                "required": ["skill"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_validate_skill",
+            "description": "Deterministically validate a skill IR against delta bounds, reversal chatter limits, cumulative travel budgets, and agent envelopes.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skill": {"type": "object", "description": "Skill IR definition to validate."}
+                },
+                "required": ["skill"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_simulate_skill",
+            "description": "Simulate a validated skill in the digital twin simulator and record verification telemetry.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "manifest_hash": {"type": "string", "description": "Payload hash of the validated skill."}
+                },
+                "required": ["manifest_hash"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_run_approved_skill",
+            "description": "Execute a promoted, immutable skill manifest by hash.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "manifest_hash": {"type": "string", "description": "SHA-256 payload hash of approved skill."},
+                    "target": {"type": "string", "enum": ["sim", "real"], "description": "Target backend."},
+                },
+                "required": ["manifest_hash"],
             },
         },
     },
@@ -142,6 +222,7 @@ class GLMAgentHarness:
     def __init__(self, controller: Controller, settings: Settings):
         self.controller = controller
         self.settings = settings
+        self.lifecycle = get_lifecycle()
 
     async def execute_tool(
         self,
@@ -165,6 +246,37 @@ class GLMAgentHarness:
                     ],
                     "joints": self.controller.describe_joints(),
                     "note": "Angle min/max are effective safe limits.",
+                }
+
+            if name == "bittle_get_hardware_profile":
+                prof = self.controller.profile
+                return {
+                    "ok": True,
+                    "profile_id": prof.profile_id,
+                    "robot_model": prof.robot_model,
+                    "board": prof.board,
+                    "servo_model": prof.servo_model,
+                    "feedback_capable": prof.feedback_capable,
+                    "installed_joints": list(prof.installed_joints),
+                    "profile_hash": prof.profile_hash(),
+                }
+
+            if name == "bittle_get_joint_envelopes":
+                prof = self.controller.profile
+                return {
+                    "ok": True,
+                    "profile_id": prof.profile_id,
+                    "envelopes": {
+                        j.index: {
+                            "name": j.name,
+                            "firmware": [j.fw_min, j.fw_max],
+                            "transport": [j.transport_min, j.transport_max],
+                            "tested": [j.tested_min, j.tested_max],
+                            "agent": [j.agent_min, j.agent_max],
+                            "installed": prof.is_installed(j.index),
+                        }
+                        for j in joints_mod.CONTROLLABLE
+                    },
                 }
 
             if name == "bittle_status":
@@ -193,19 +305,70 @@ class GLMAgentHarness:
             if name == "bittle_move_joints":
                 angles_in = args["angles"]
                 simultaneous = args.get("simultaneous", True)
+                # LLM agent moves on real hardware must be held strictly within agent operational envelope
+                tier = "agent" if target == "real" else "transport"
                 result, validated = await self.controller.move(
                     angles_in,
                     target=target,
                     simultaneous=simultaneous,
                     confirm=confirm,
+                    envelope_tier=tier,
                 )
                 return {
                     "ok": result.ok,
                     "sent": result.sent.strip(),
                     "response": result.response,
+                    "envelope_tier": tier,
                     "clamped": validated.clamped,
                     "adjustments": [a.__dict__ for a in validated.adjustments],
                     "applied": {str(i): a for i, a in validated.pairs},
+                }
+
+            if name == "bittle_draft_skill":
+                raw_skill = args["skill"]
+                if "profile_id" not in raw_skill:
+                    raw_skill["profile_id"] = self.controller.profile.profile_id
+                ir = self.lifecycle.draft(raw_skill)
+                return {"ok": True, "skill_ir": ir.model_dump(mode="json")}
+
+            if name == "bittle_validate_skill":
+                raw_skill = args["skill"]
+                if "profile_id" not in raw_skill:
+                    raw_skill["profile_id"] = self.controller.profile.profile_id
+                ir = SkillIR.model_validate(raw_skill)
+                val_res, manifest = self.lifecycle.validate_and_compile(ir)
+                return {
+                    "ok": val_res.valid,
+                    "errors": val_res.errors,
+                    "warnings": val_res.warnings,
+                    "budget": val_res.budget.model_dump() if val_res.budget else None,
+                    "manifest_hash": manifest.payload_hash if manifest else None,
+                }
+
+            if name == "bittle_simulate_skill":
+                m_hash = args["manifest_hash"]
+                manifest = self.lifecycle.get_manifest(m_hash)
+                # Simulate trajectory on SimBackend
+                res, _ = await self.controller.run_approved_skill(m_hash, target="sim")
+                evidence = {"status": "success", "frames_simulated": len(manifest.ir.frames)}
+                self.lifecycle.record_simulation(m_hash, evidence)
+                return {
+                    "ok": True,
+                    "manifest_hash": m_hash,
+                    "status": "simulated",
+                    "frames": len(manifest.ir.frames),
+                }
+
+            if name == "bittle_run_approved_skill":
+                m_hash = args["manifest_hash"]
+                res, manifest = await self.controller.run_approved_skill(
+                    m_hash, target=target, confirm=confirm
+                )
+                return {
+                    "ok": res.ok,
+                    "manifest_hash": m_hash,
+                    "skill_name": manifest.ir.name,
+                    "sent": res.sent,
                 }
 
             if name == "bittle_estop":
@@ -258,69 +421,54 @@ class GLMAgentHarness:
                         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                         json=payload,
                     )
-                except httpx.RequestError as exc:
-                    yield {
-                        "type": "error",
-                        "error": "local_llm_unreachable",
-                        "detail": f"Could not connect to local model endpoint at {url}: {exc}",
-                    }
+                    res.raise_for_status()
+                    data = res.json()
+                except Exception as exc:
+                    yield {"type": "error", "content": f"GLM endpoint error: {exc}"}
                     return
 
-                if res.status_code != 200:
-                    yield {
-                        "type": "error",
-                        "error": "llm_error",
-                        "status": res.status_code,
-                        "detail": res.text[:500],
-                    }
-                    return
-
-                data = res.json()
                 choice = data["choices"][0]
-                msg = choice.get("message", {})
-                content = msg.get("content") or ""
-                tool_calls = msg.get("tool_calls") or []
+                message = choice["message"]
+                full_messages.append(message)
 
-                if content:
-                    yield {"type": "thought", "content": content}
+                if message.get("content"):
+                    yield {"type": "text", "content": message["content"]}
 
+                tool_calls = message.get("tool_calls", [])
                 if not tool_calls:
-                    full_messages.append({"role": "assistant", "content": content})
-                    yield {"type": "done", "final_message": content}
                     return
-
-                full_messages.append(msg)
 
                 for tc in tool_calls:
-                    fn = tc.get("function", {})
-                    name = fn.get("name", "")
-                    tc_id = tc.get("id", "call_default")
+                    fn = tc["function"]
+                    fn_name = fn["name"]
                     try:
-                        args = json.loads(fn.get("arguments", "{}"))
+                        args = json.loads(fn["arguments"])
                     except Exception:
                         args = {}
 
-                    yield {"type": "tool_call", "name": name, "args": args, "id": tc_id}
+                    yield {
+                        "type": "tool_call",
+                        "name": fn_name,
+                        "args": args,
+                        "id": tc.get("id"),
+                    }
 
-                    result = await self.execute_tool(
-                        name,
+                    tool_res = await self.execute_tool(
+                        fn_name,
                         args,
                         target_override=target,
                         confirm_token=confirm_token,
                     )
 
-                    yield {"type": "tool_result", "name": name, "result": result, "id": tc_id}
+                    yield {
+                        "type": "tool_result",
+                        "name": fn_name,
+                        "result": tool_res,
+                        "id": tc.get("id"),
+                    }
 
-                    full_messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc_id,
-                            "name": name,
-                            "content": json.dumps(result),
-                        }
-                    )
-
-            yield {
-                "type": "done",
-                "final_message": "Action sequence completed (max turns reached).",
-            }
+                    full_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": json.dumps(tool_res),
+                    })

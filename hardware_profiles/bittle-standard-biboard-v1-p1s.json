@@ -1,0 +1,76 @@
+{
+  "profile_id": "bittle-standard-biboard-v1-p1s",
+  "robot_model": "BITTLE",
+  "board": "BiBoard_V1_0",
+  "firmware_repo": "PetoiCamp/OpenCatEsp32",
+  "firmware_commit": "e8d6411",
+  "firmware_version": "2.1",
+  "servo_model": "P1S",
+  "feedback_capable": true,
+  "installed_joints": [0, 8, 9, 10, 11, 12, 13, 14, 15],
+  "calibration_offsets": {
+    "0": 0, "8": 0, "9": 0, "10": 0, "11": 0, "12": 0, "13": 0, "14": 0, "15": 0
+  },
+  "envelopes": {
+    "0": {
+      "firmware": [-120, 120],
+      "transport": [-128, 127],
+      "tested": [-90, 90],
+      "agent": [-60, 60]
+    },
+    "1": {
+      "firmware": [-85, 85],
+      "transport": [-128, 127],
+      "tested": [-60, 60],
+      "agent": [-45, 45]
+    },
+    "8": {
+      "firmware": [-200, 80],
+      "transport": [-128, 80],
+      "tested": [-115, 65],
+      "agent": [-80, 50]
+    },
+    "9": {
+      "firmware": [-200, 80],
+      "transport": [-128, 80],
+      "tested": [-115, 65],
+      "agent": [-80, 50]
+    },
+    "10": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [-50, 80]
+    },
+    "11": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [-50, 80]
+    },
+    "12": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [30, 95]
+    },
+    "13": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [30, 95]
+    },
+    "14": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [30, 95]
+    },
+    "15": {
+      "firmware": [-80, 200],
+      "transport": [-80, 127],
+      "tested": [-65, 115],
+      "agent": [30, 95]
+    }
+  }
+}
