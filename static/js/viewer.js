@@ -108,6 +108,9 @@ export class BittleViewer {
     this.onSequenceProgress = null;
     this.onSequenceDone = null;
 
+    // Camera transition state
+    this.cameraTransition = null;
+
     this.initScene();
     this.initLighting();
     this.initGround();
@@ -128,13 +131,74 @@ export class BittleViewer {
   loadCourse(presetName) {
     if (this.obstacleCourse) {
       this.obstacleCourse.loadPreset(presetName);
+      this.fitCameraToCourse(presetName);
     }
   }
 
   clearCourse() {
     if (this.obstacleCourse) {
       this.obstacleCourse.clear();
+      this.fitCameraToCourse('none');
     }
+  }
+
+  fitCameraToCourse(presetName) {
+    if (presetName === 'none' || !this.obstacleCourse || this.obstacleCourse.colliders.length === 0) {
+      this.animateCameraTo(
+        new THREE.Vector3(0.38, 0.28, 0.40),
+        new THREE.Vector3(0, 0.06, 0)
+      );
+      return;
+    }
+
+    // Compute bounding span of robot + obstacle course along X and Z
+    let minX = 0, maxX = 0.20, minZ = -0.12, maxZ = 0.12;
+    for (const c of this.obstacleCourse.colliders) {
+      if (c.minX !== undefined) {
+        minX = Math.min(minX, c.minX);
+        maxX = Math.max(maxX, c.maxX);
+      }
+      if (c.minZ !== undefined) {
+        minZ = Math.min(minZ, c.minZ);
+        maxZ = Math.max(maxZ, c.maxZ);
+      }
+      if (c.x !== undefined) {
+        minX = Math.min(minX, c.x - (c.radius || 0.03));
+        maxX = Math.max(maxX, c.x + (c.radius || 0.03));
+      }
+      if (c.z !== undefined) {
+        minZ = Math.min(minZ, c.z - (c.radius || 0.03));
+        maxZ = Math.max(maxZ, c.z + (c.radius || 0.03));
+      }
+    }
+
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const spanX = maxX - minX;
+    const spanZ = maxZ - minZ;
+    const maxSpan = Math.max(spanX, spanZ * 1.35);
+
+    const targetLookAt = new THREE.Vector3(centerX, 0.05, centerZ);
+    // Position camera elevated diagonally facing the full obstacle run
+    const camDist = Math.max(maxSpan * 1.30, 0.72);
+    const targetPos = new THREE.Vector3(
+      centerX + camDist * 0.52,
+      0.30 + camDist * 0.25,
+      centerZ + camDist * 0.65
+    );
+
+    this.animateCameraTo(targetPos, targetLookAt);
+  }
+
+  animateCameraTo(targetPos, targetLookAt, duration = 0.55) {
+    this.cameraTransition = {
+      startPos: this.camera.position.clone(),
+      startTarget: this.controls.target.clone(),
+      targetPos: targetPos.clone(),
+      targetLookAt: targetLookAt.clone(),
+      duration: duration,
+      elapsed: 0
+    };
   }
 
   getCourseState() {
@@ -159,7 +223,7 @@ export class BittleViewer {
   initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0e1116);
-    this.scene.fog = new THREE.FogExp2(0x0e1116, 1.2);
+    this.scene.fog = new THREE.FogExp2(0x0e1116, 0.45);
 
     this.camera = new THREE.PerspectiveCamera(
       45,
@@ -196,10 +260,10 @@ export class BittleViewer {
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.camera.near = 0.1;
     keyLight.shadow.camera.far = 6;
-    keyLight.shadow.camera.left = -0.6;
-    keyLight.shadow.camera.right = 0.6;
-    keyLight.shadow.camera.top = 0.6;
-    keyLight.shadow.camera.bottom = -0.6;
+    keyLight.shadow.camera.left = -1.2;
+    keyLight.shadow.camera.right = 1.2;
+    keyLight.shadow.camera.top = 1.2;
+    keyLight.shadow.camera.bottom = -1.2;
     keyLight.shadow.bias = -0.0005;
     this.scene.add(keyLight);
 
@@ -237,7 +301,7 @@ export class BittleViewer {
     this.controls.target.set(0, 0.06, 0);
     this.controls.maxPolarAngle = Math.PI / 2 - 0.02; // prevent going beneath floor
     this.controls.minDistance = 0.15;
-    this.controls.maxDistance = 1.5;
+    this.controls.maxDistance = 3.0;
   }
 
   setupInteraction() {
@@ -512,25 +576,35 @@ export class BittleViewer {
   }
 
   setCameraPreset(name) {
+    const curTarget = this.controls.target;
     switch (name) {
       case 'iso':
-        this.camera.position.set(0.35, 0.28, 0.38);
-        this.controls.target.set(0, 0.06, 0);
+        this.animateCameraTo(
+          new THREE.Vector3(curTarget.x + 0.38, curTarget.y + 0.28, curTarget.z + 0.40),
+          curTarget
+        );
         break;
       case 'front':
-        this.camera.position.set(0, 0.12, 0.45);
-        this.controls.target.set(0, 0.06, 0);
+        // Looking along -X into Bittle's face
+        this.animateCameraTo(
+          new THREE.Vector3(curTarget.x + 0.48, curTarget.y + 0.08, curTarget.z),
+          curTarget
+        );
         break;
       case 'side':
-        this.camera.position.set(0.45, 0.12, 0);
-        this.controls.target.set(0, 0.06, 0);
+        // Looking along -Z into Bittle's side ribs
+        this.animateCameraTo(
+          new THREE.Vector3(curTarget.x, curTarget.y + 0.08, curTarget.z + 0.48),
+          curTarget
+        );
         break;
       case 'top':
-        this.camera.position.set(0, 0.55, 0.01);
-        this.controls.target.set(0, 0.06, 0);
+        this.animateCameraTo(
+          new THREE.Vector3(curTarget.x + 0.01, curTarget.y + 0.65, curTarget.z),
+          curTarget
+        );
         break;
     }
-    this.controls.update();
   }
 
   setWireframe(enabled) {
@@ -777,6 +851,18 @@ export class BittleViewer {
       const terrainY = this.obstacleCourse.getElevationAt(this.robotGroup.position.x, this.robotGroup.position.z);
       const targetY = 0.0532 + terrainY;
       this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.15);
+    }
+
+    // Smooth camera transition if active
+    if (this.cameraTransition) {
+      this.cameraTransition.elapsed += dt;
+      const t = Math.min(this.cameraTransition.elapsed / this.cameraTransition.duration, 1.0);
+      const ease = 1 - Math.pow(1 - t, 3); // Cubic ease-out
+      this.camera.position.lerpVectors(this.cameraTransition.startPos, this.cameraTransition.targetPos, ease);
+      this.controls.target.lerpVectors(this.cameraTransition.startTarget, this.cameraTransition.targetLookAt, ease);
+      if (t >= 1.0) {
+        this.cameraTransition = null;
+      }
     }
 
     this.controls.update();

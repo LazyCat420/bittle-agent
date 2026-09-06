@@ -31,15 +31,16 @@ COURSE_LAYOUTS: dict[str, dict[str, Any]] = {
         "step_count": 3,
         "riser_height_m": 0.018,  # 18mm
         "tread_depth_m": 0.080,   # 80mm
-        "step_width_m": 0.240,    # 240mm
-        "start_z_m": 0.160,
+        "step_width_m": 0.240,    # 240mm (across Z)
+        "start_x_m": 0.140,       # 140mm forward along X
+        "start_z_m": 0.140,       # alias for compatibility
         "landing_depth_m": 0.140,
         "total_elevation_m": 0.054, # 54mm
         "obstacles": [
-            {"type": "step", "index": 1, "elevation_m": 0.018, "min_z": 0.160, "max_z": 0.240},
-            {"type": "step", "index": 2, "elevation_m": 0.036, "min_z": 0.240, "max_z": 0.320},
-            {"type": "step", "index": 3, "elevation_m": 0.054, "min_z": 0.320, "max_z": 0.400},
-            {"type": "landing", "index": 4, "elevation_m": 0.054, "min_z": 0.400, "max_z": 0.540},
+            {"type": "step", "index": 1, "elevation_m": 0.018, "min_x": 0.140, "max_x": 0.220, "min_z": 0.140, "max_z": 0.220},
+            {"type": "step", "index": 2, "elevation_m": 0.036, "min_x": 0.220, "max_x": 0.300, "min_z": 0.220, "max_z": 0.300},
+            {"type": "step", "index": 3, "elevation_m": 0.054, "min_x": 0.300, "max_x": 0.380, "min_z": 0.300, "max_z": 0.380},
+            {"type": "landing", "index": 4, "elevation_m": 0.054, "min_x": 0.380, "max_x": 0.520, "min_z": 0.380, "max_z": 0.520},
         ],
         "constraints": {
             "required_foot_lift_min_mm": 18.0,
@@ -48,16 +49,17 @@ COURSE_LAYOUTS: dict[str, dict[str, Any]] = {
     },
     "ramp_bridge": {
         "preset": "ramp_bridge",
-        "description": "Ascending 18° ramp to elevated narrow beam and descending ramp",
+        "description": "Ascending 10.3° ramp to elevated narrow beam and descending ramp",
         "ramp_length_m": 0.220,
         "ramp_height_m": 0.040,
-        "ramp_width_m": 0.120,
+        "ramp_width_m": 0.140,
         "bridge_length_m": 0.200,
-        "start_z_m": 0.140,
+        "start_x_m": 0.130,
+        "start_z_m": 0.130,
         "obstacles": [
-            {"type": "up_ramp", "start_z": 0.140, "end_z": 0.360, "start_y": 0.0, "end_y": 0.040, "angle_deg": 10.3},
-            {"type": "bridge", "start_z": 0.360, "end_z": 0.560, "elevation_y": 0.040, "width": 0.120},
-            {"type": "down_ramp", "start_z": 0.560, "end_z": 0.780, "start_y": 0.040, "end_y": 0.0, "angle_deg": -10.3},
+            {"type": "up_ramp", "start_x": 0.130, "end_x": 0.350, "start_z": 0.130, "end_z": 0.350, "start_y": 0.0, "end_y": 0.040, "angle_deg": 10.3},
+            {"type": "bridge", "start_x": 0.350, "end_x": 0.550, "start_z": 0.350, "end_z": 0.550, "elevation_y": 0.040, "width": 0.140},
+            {"type": "down_ramp", "start_x": 0.550, "end_x": 0.770, "start_z": 0.550, "end_z": 0.770, "start_y": 0.040, "end_y": 0.0, "angle_deg": -10.3},
         ],
         "constraints": {
             "max_lateral_drift_mm": 50.0,
@@ -70,10 +72,13 @@ COURSE_LAYOUTS: dict[str, dict[str, Any]] = {
         "tunnel_length_m": 0.280,
         "tunnel_width_m": 0.160,
         "ceiling_height_m": 0.065, # 65mm ceiling
+        "start_x_m": 0.120,
         "start_z_m": 0.120,
         "obstacles": [
             {
                 "type": "tunnel",
+                "start_x": 0.120,
+                "end_x": 0.400,
                 "start_z": 0.120,
                 "end_z": 0.400,
                 "ceiling_height_m": 0.065,
@@ -91,11 +96,12 @@ COURSE_LAYOUTS: dict[str, dict[str, Any]] = {
         "cone_count": 4,
         "cone_radius_m": 0.022,
         "cone_height_m": 0.055,
+        "start_x_m": 0.140,
         "obstacles": [
-            {"type": "cone", "index": 1, "x": 0.045, "z": 0.140, "radius_m": 0.022},
-            {"type": "cone", "index": 2, "x": -0.045, "z": 0.240, "radius_m": 0.022},
-            {"type": "cone", "index": 3, "x": 0.045, "z": 0.340, "radius_m": 0.022},
-            {"type": "cone", "index": 4, "x": -0.045, "z": 0.440, "radius_m": 0.022},
+            {"type": "cone", "index": 1, "x": 0.140, "z": 0.045, "radius_m": 0.022},
+            {"type": "cone", "index": 2, "x": 0.240, "z": -0.045, "radius_m": 0.022},
+            {"type": "cone", "index": 3, "x": 0.340, "z": 0.045, "radius_m": 0.022},
+            {"type": "cone", "index": 4, "x": 0.440, "z": -0.045, "radius_m": 0.022},
         ],
         "constraints": {
             "min_turn_radius_m": 0.10,

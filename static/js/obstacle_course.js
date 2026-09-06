@@ -28,65 +28,74 @@ export class ObstacleCourse {
   initMaterials() {
     return {
       tread: new THREE.MeshStandardMaterial({
-        color: 0x1c2128,
-        roughness: 0.7,
-        metalness: 0.2,
-      }),
-      riser: new THREE.MeshStandardMaterial({
-        color: 0x0f141c,
-        roughness: 0.5,
+        color: 0x2a3240, // Industrial slate titanium
+        roughness: 0.55,
         metalness: 0.3,
       }),
+      riser: new THREE.MeshStandardMaterial({
+        color: 0x1a212d, // Dark charcoal riser
+        roughness: 0.65,
+        metalness: 0.25,
+      }),
       stripe: new THREE.MeshStandardMaterial({
-        color: 0xffaa00,
+        color: 0xffaa00, // High-visibility hazard amber
         emissive: 0xff7700,
-        emissiveIntensity: 0.4,
-        roughness: 0.3,
+        emissiveIntensity: 0.6,
+        roughness: 0.25,
         metalness: 0.1,
       }),
       ramp: new THREE.MeshStandardMaterial({
-        color: 0x21262d,
-        roughness: 0.6,
-        metalness: 0.25,
+        color: 0x334155, // Slate blue grip deck
+        roughness: 0.5,
+        metalness: 0.3,
       }),
       bridge: new THREE.MeshStandardMaterial({
-        color: 0x161b22,
+        color: 0x1e293b, // Deep aerospace slate
         roughness: 0.4,
         metalness: 0.5,
       }),
+      bridgeRail: new THREE.MeshStandardMaterial({
+        color: 0x38bdf8, // Radiant cyan guidance rail
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.7,
+        roughness: 0.2,
+        metalness: 0.1,
+      }),
       tunnelArch: new THREE.MeshStandardMaterial({
-        color: 0x30363d,
-        roughness: 0.5,
+        color: 0x3b4454,
+        roughness: 0.45,
         metalness: 0.4,
         side: THREE.DoubleSide,
       }),
       tunnelCeiling: new THREE.MeshStandardMaterial({
-        color: 0x58a6ff,
-        emissive: 0x1f6feb,
-        emissiveIntensity: 0.25,
-        roughness: 0.4,
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.4,
+        roughness: 0.3,
         metalness: 0.2,
         transparent: true,
-        opacity: 0.75,
+        opacity: 0.7,
       }),
       coneOrange: new THREE.MeshStandardMaterial({
         color: 0xff5500,
-        roughness: 0.4,
+        roughness: 0.35,
         metalness: 0.1,
-        emissive: 0xaa2200,
-        emissiveIntensity: 0.2,
+        emissive: 0xdd3300,
+        emissiveIntensity: 0.35,
       }),
       coneWhite: new THREE.MeshStandardMaterial({
-        color: 0xdddddd,
-        roughness: 0.3,
+        color: 0xffffff,
+        roughness: 0.2,
         metalness: 0.1,
+        emissive: 0xaaaaaa,
+        emissiveIntensity: 0.2,
       }),
       waypoint: new THREE.MeshStandardMaterial({
-        color: 0x3fb950,
-        emissive: 0x2ea043,
-        emissiveIntensity: 0.6,
+        color: 0x22c55e,
+        emissive: 0x16a34a,
+        emissiveIntensity: 0.7,
         transparent: true,
-        opacity: 0.5,
+        opacity: 0.6,
       })
     };
   }
@@ -127,41 +136,42 @@ export class ObstacleCourse {
 
   /**
    * 1. Mini Stairs: 3 progressive steps scaled to Bittle's 88mm height
-   * Each step: rise = 18mm (0.018m), tread = 80mm (0.08m), width = 240mm (0.24m)
+   * Generated along +X forward axis (in front of Bittle's nose).
+   * Each step: rise = 18mm (0.018m), tread = 80mm (0.08m), width = 240mm (0.24m) along Z.
    */
   buildMiniStairs() {
     const stepCount = 3;
-    const riserHeight = 0.018; // 18mm - within reach of Bittle's 20-25mm foot lift
-    const treadDepth = 0.080;  // 80mm
-    const stepWidth = 0.240;   // 240mm
-    const startZ = 0.160;      // 16cm in front of initial spawn
+    const riserHeight = 0.018; // 18mm
+    const treadDepth = 0.080;  // 80mm along X
+    const stepWidth = 0.240;   // 240mm along Z
+    const startX = 0.140;      // 14cm in front of initial spawn
 
     for (let i = 0; i < stepCount; i++) {
       const currentElevation = (i + 1) * riserHeight;
-      const centerZ = startZ + i * treadDepth + treadDepth / 2;
+      const centerX = startX + i * treadDepth + treadDepth / 2;
       const centerY = currentElevation / 2;
 
-      // Solid block supporting the step
-      const stepGeo = new THREE.BoxGeometry(stepWidth, currentElevation, treadDepth);
+      // Solid block supporting the step (depth along X, elevation Y, width along Z)
+      const stepGeo = new THREE.BoxGeometry(treadDepth, currentElevation, stepWidth);
       const stepMesh = new THREE.Mesh(stepGeo, this.materials.tread);
-      stepMesh.position.set(0, centerY, centerZ);
+      stepMesh.position.set(centerX, centerY, 0);
       stepMesh.castShadow = true;
       stepMesh.receiveShadow = true;
       this.group.add(stepMesh);
 
-      // Warning edge stripe on each step nosing
-      const stripeGeo = new THREE.BoxGeometry(stepWidth, 0.002, 0.006);
+      // Warning hazard stripe on step nosing (edge facing incoming robot)
+      const stripeGeo = new THREE.BoxGeometry(0.006, 0.002, stepWidth);
       const stripeMesh = new THREE.Mesh(stripeGeo, this.materials.stripe);
-      stripeMesh.position.set(0, currentElevation + 0.001, centerZ + treadDepth / 2 - 0.003);
+      stripeMesh.position.set(startX + i * treadDepth + 0.003, currentElevation + 0.001, 0);
       this.group.add(stripeMesh);
 
       // Record collider info
       this.colliders.push({
         type: 'step',
-        minX: -stepWidth / 2,
-        maxX: stepWidth / 2,
-        minZ: startZ + i * treadDepth,
-        maxZ: startZ + (i + 1) * treadDepth,
+        minX: startX + i * treadDepth,
+        maxX: startX + (i + 1) * treadDepth,
+        minZ: -stepWidth / 2,
+        maxZ: stepWidth / 2,
         elevation: currentElevation,
         riser: riserHeight,
         index: i + 1,
@@ -171,76 +181,77 @@ export class ObstacleCourse {
     // Top landing platform
     const landingDepth = 0.140;
     const topElevation = stepCount * riserHeight;
-    const landingZ = startZ + stepCount * treadDepth + landingDepth / 2;
-    const landingGeo = new THREE.BoxGeometry(stepWidth, topElevation, landingDepth);
+    const landingX = startX + stepCount * treadDepth + landingDepth / 2;
+    const landingGeo = new THREE.BoxGeometry(landingDepth, topElevation, stepWidth);
     const landingMesh = new THREE.Mesh(landingGeo, this.materials.bridge);
-    landingMesh.position.set(0, topElevation / 2, landingZ);
+    landingMesh.position.set(landingX, topElevation / 2, 0);
     landingMesh.castShadow = true;
     landingMesh.receiveShadow = true;
     this.group.add(landingMesh);
 
     this.colliders.push({
       type: 'landing',
-      minX: -stepWidth / 2,
-      maxX: stepWidth / 2,
-      minZ: startZ + stepCount * treadDepth,
-      maxZ: startZ + stepCount * treadDepth + landingDepth,
+      minX: startX + stepCount * treadDepth,
+      maxX: startX + stepCount * treadDepth + landingDepth,
+      minZ: -stepWidth / 2,
+      maxZ: stepWidth / 2,
       elevation: topElevation,
     });
   }
 
   /**
-   * 2. Ramp & Bridge: Ascending 18° slope, elevated beam, descending slope
+   * 2. Ramp & Bridge: Ascending 10.3° slope, elevated beam, descending slope
+   * Generated along +X forward axis in front of Bittle.
    */
   buildRampBridge() {
-    const rampLength = 0.220;  // 220mm
-    const rampHeight = 0.040;  // 40mm
-    const rampWidth = 0.120;   // 120mm (narrower than stairs - tests balance)
-    const bridgeLength = 0.200;// 200mm
-    const startZ = 0.140;
+    const rampLength = 0.220;  // 220mm along X
+    const rampHeight = 0.040;  // 40mm along Y
+    const rampWidth = 0.140;   // 140mm along Z
+    const bridgeLength = 0.200;// 200mm along X
+    const startX = 0.130;
 
-    // Up-ramp wedge
+    // Up-ramp wedge (slanted along X, tilted around Z axis)
     const upRampAngle = Math.atan2(rampHeight, rampLength);
     const upRampMeshLength = Math.hypot(rampLength, rampHeight);
-    const upRampGeo = new THREE.BoxGeometry(rampWidth, 0.008, upRampMeshLength);
+    const upRampGeo = new THREE.BoxGeometry(upRampMeshLength, 0.008, rampWidth);
     const upRampMesh = new THREE.Mesh(upRampGeo, this.materials.ramp);
     upRampMesh.position.set(
-      0,
+      startX + rampLength / 2,
       rampHeight / 2,
-      startZ + rampLength / 2
+      0
     );
-    upRampMesh.rotation.x = -upRampAngle;
+    upRampMesh.rotation.z = upRampAngle;
     upRampMesh.castShadow = true;
     upRampMesh.receiveShadow = true;
     this.group.add(upRampMesh);
 
     // Elevated bridge plank
-    const bridgeGeo = new THREE.BoxGeometry(rampWidth, rampHeight, bridgeLength);
+    const bridgeGeo = new THREE.BoxGeometry(bridgeLength, rampHeight, rampWidth);
     const bridgeMesh = new THREE.Mesh(bridgeGeo, this.materials.bridge);
-    const bridgeCenterZ = startZ + rampLength + bridgeLength / 2;
-    bridgeMesh.position.set(0, rampHeight / 2, bridgeCenterZ);
+    const bridgeCenterX = startX + rampLength + bridgeLength / 2;
+    bridgeMesh.position.set(bridgeCenterX, rampHeight / 2, 0);
     bridgeMesh.castShadow = true;
     bridgeMesh.receiveShadow = true;
     this.group.add(bridgeMesh);
 
-    // Bridge glowing edges
-    const railGeo = new THREE.BoxGeometry(0.006, 0.008, bridgeLength);
-    const leftRail = new THREE.Mesh(railGeo, this.materials.stripe);
-    leftRail.position.set(-rampWidth / 2, rampHeight + 0.004, bridgeCenterZ);
-    const rightRail = new THREE.Mesh(railGeo, this.materials.stripe);
-    rightRail.position.set(rampWidth / 2, rampHeight + 0.004, bridgeCenterZ);
+    // Bridge glowing edges (along both lateral sides of bridge)
+    const railGeo = new THREE.BoxGeometry(bridgeLength, 0.008, 0.006);
+    const leftRail = new THREE.Mesh(railGeo, this.materials.bridgeRail);
+    leftRail.position.set(bridgeCenterX, rampHeight + 0.004, -rampWidth / 2);
+    const rightRail = new THREE.Mesh(railGeo, this.materials.bridgeRail);
+    rightRail.position.set(bridgeCenterX, rampHeight + 0.004, rampWidth / 2);
     this.group.add(leftRail);
     this.group.add(rightRail);
 
     // Down-ramp wedge
     const downRampMesh = new THREE.Mesh(upRampGeo, this.materials.ramp);
-    const downRampStartZ = startZ + rampLength + bridgeLength;
+    const downRampStartX = startX + rampLength + bridgeLength;
     downRampMesh.position.set(
-      0,
+      downRampStartX + rampLength / 2,
       rampHeight / 2,
-      downRampStartZ + rampLength / 2
+      0
     );
-    downRampMesh.rotation.x = upRampAngle;
+    downRampMesh.rotation.z = -upRampAngle;
     downRampMesh.castShadow = true;
     downRampMesh.receiveShadow = true;
     this.group.add(downRampMesh);
@@ -248,28 +259,28 @@ export class ObstacleCourse {
     // Colliders
     this.colliders.push({
       type: 'up_ramp',
-      minX: -rampWidth / 2,
-      maxX: rampWidth / 2,
-      minZ: startZ,
-      maxZ: startZ + rampLength,
+      minX: startX,
+      maxX: startX + rampLength,
+      minZ: -rampWidth / 2,
+      maxZ: rampWidth / 2,
       startElevation: 0,
       endElevation: rampHeight,
       angleDeg: THREE.MathUtils.radToDeg(upRampAngle)
     });
     this.colliders.push({
       type: 'bridge',
-      minX: -rampWidth / 2,
-      maxX: rampWidth / 2,
-      minZ: startZ + rampLength,
-      maxZ: downRampStartZ,
+      minX: startX + rampLength,
+      maxX: downRampStartX,
+      minZ: -rampWidth / 2,
+      maxZ: rampWidth / 2,
       elevation: rampHeight
     });
     this.colliders.push({
       type: 'down_ramp',
-      minX: -rampWidth / 2,
-      maxX: rampWidth / 2,
-      minZ: downRampStartZ,
-      maxZ: downRampStartZ + rampLength,
+      minX: downRampStartX,
+      maxX: downRampStartX + rampLength,
+      minZ: -rampWidth / 2,
+      maxZ: rampWidth / 2,
       startElevation: rampHeight,
       endElevation: 0,
       angleDeg: -THREE.MathUtils.radToDeg(upRampAngle)
@@ -278,47 +289,48 @@ export class ObstacleCourse {
 
   /**
    * 3. Crawl Tunnel: 65mm ceiling (Bittle stands at 88mm, must belly-crawl at ~45mm)
+   * Generated along +X forward axis.
    */
   buildCrawlTunnel() {
-    const tunnelLength = 0.280; // 280mm
-    const tunnelWidth = 0.160;  // 160mm
-    const ceilingHeight = 0.065;// 65mm ceiling!
+    const tunnelLength = 0.280; // 280mm along X
+    const tunnelWidth = 0.160;  // 160mm along Z
+    const ceilingHeight = 0.065;// 65mm ceiling
     const wallThickness = 0.012;
-    const startZ = 0.120;
-    const centerZ = startZ + tunnelLength / 2;
+    const startX = 0.120;
+    const centerX = startX + tunnelLength / 2;
 
-    // Left wall
-    const wallGeo = new THREE.BoxGeometry(wallThickness, ceilingHeight, tunnelLength);
+    // Left wall (at -Z)
+    const wallGeo = new THREE.BoxGeometry(tunnelLength, ceilingHeight, wallThickness);
     const leftWall = new THREE.Mesh(wallGeo, this.materials.tunnelArch);
-    leftWall.position.set(-tunnelWidth / 2 - wallThickness / 2, ceilingHeight / 2, centerZ);
+    leftWall.position.set(centerX, ceilingHeight / 2, -tunnelWidth / 2 - wallThickness / 2);
     leftWall.castShadow = true;
     this.group.add(leftWall);
 
-    // Right wall
+    // Right wall (at +Z)
     const rightWall = new THREE.Mesh(wallGeo, this.materials.tunnelArch);
-    rightWall.position.set(tunnelWidth / 2 + wallThickness / 2, ceilingHeight / 2, centerZ);
+    rightWall.position.set(centerX, ceilingHeight / 2, tunnelWidth / 2 + wallThickness / 2);
     rightWall.castShadow = true;
     this.group.add(rightWall);
 
     // Roof (semi-transparent so operator can see robot crawl inside)
-    const roofGeo = new THREE.BoxGeometry(tunnelWidth + wallThickness * 2, 0.008, tunnelLength);
+    const roofGeo = new THREE.BoxGeometry(tunnelLength, 0.008, tunnelWidth + wallThickness * 2);
     const roofMesh = new THREE.Mesh(roofGeo, this.materials.tunnelCeiling);
-    roofMesh.position.set(0, ceilingHeight + 0.004, centerZ);
+    roofMesh.position.set(centerX, ceilingHeight + 0.004, 0);
     roofMesh.castShadow = true;
     this.group.add(roofMesh);
 
-    // Warning clearance sign at entry
-    const archBorderGeo = new THREE.BoxGeometry(tunnelWidth + 0.02, 0.010, 0.008);
+    // Warning clearance sign at entry portal
+    const archBorderGeo = new THREE.BoxGeometry(0.008, 0.010, tunnelWidth + 0.02);
     const archBorder = new THREE.Mesh(archBorderGeo, this.materials.stripe);
-    archBorder.position.set(0, ceilingHeight, startZ);
+    archBorder.position.set(startX, ceilingHeight, 0);
     this.group.add(archBorder);
 
     this.colliders.push({
       type: 'tunnel',
-      minX: -tunnelWidth / 2,
-      maxX: tunnelWidth / 2,
-      minZ: startZ,
-      maxZ: startZ + tunnelLength,
+      minX: startX,
+      maxX: startX + tunnelLength,
+      minZ: -tunnelWidth / 2,
+      maxZ: tunnelWidth / 2,
       ceilingHeight: ceilingHeight,
       requiredPosture: 'crouch_or_crawl'
     });
@@ -326,13 +338,14 @@ export class ObstacleCourse {
 
   /**
    * 4. Agility Slalom: Zigzag precision steering cones
+   * Generated along +X forward axis with alternating lateral offsets.
    */
   buildAgilitySlalom() {
     const conePositions = [
-      { x: 0.045, z: 0.140 },
-      { x: -0.045, z: 0.240 },
-      { x: 0.045, z: 0.340 },
-      { x: -0.045, z: 0.440 }
+      { x: 0.140, z: 0.045 },
+      { x: 0.240, z: -0.045 },
+      { x: 0.340, z: 0.045 },
+      { x: 0.440, z: -0.045 }
     ];
 
     conePositions.forEach((pos, idx) => {
@@ -385,7 +398,7 @@ export class ObstacleCourse {
         }
       } else if (c.type === 'up_ramp') {
         if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
-          const ratio = (z - c.minZ) / (c.maxZ - c.minZ);
+          const ratio = (x - c.minX) / (c.maxX - c.minX);
           return THREE.MathUtils.lerp(c.startElevation, c.endElevation, ratio);
         }
       } else if (c.type === 'bridge') {
@@ -394,7 +407,7 @@ export class ObstacleCourse {
         }
       } else if (c.type === 'down_ramp') {
         if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
-          const ratio = (z - c.minZ) / (c.maxZ - c.minZ);
+          const ratio = (x - c.minX) / (c.maxX - c.minX);
           return THREE.MathUtils.lerp(c.startElevation, c.endElevation, ratio);
         }
       }

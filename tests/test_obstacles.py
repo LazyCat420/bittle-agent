@@ -168,3 +168,22 @@ def test_api_obstacle_endpoints(client):
     assert eval_res.status_code == 200
     edata = eval_res.json()
     assert edata["clears"] is True
+
+
+def test_x_forward_obstacle_alignment():
+    """Regression test ensuring obstacles are strictly positioned in front of Bittle (+X axis)."""
+    for preset_name in ["mini_stairs", "ramp_bridge", "crawl_tunnel", "agility_slalom"]:
+        layout = get_course_layout(preset_name)
+        assert "start_x_m" in layout, f"{preset_name} must define start_x_m"
+        assert layout["start_x_m"] > 0, f"{preset_name} must start forward of Bittle nose (x > 0)"
+
+        for obs in layout["obstacles"]:
+            if "min_x" in obs and "max_x" in obs:
+                assert obs["min_x"] >= layout["start_x_m"]
+                assert obs["max_x"] > obs["min_x"]
+            elif "start_x" in obs and "end_x" in obs:
+                assert obs["start_x"] >= layout["start_x_m"]
+                assert obs["end_x"] > obs["start_x"]
+            elif "x" in obs:
+                assert obs["x"] >= layout["start_x_m"]
+
