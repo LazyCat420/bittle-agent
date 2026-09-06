@@ -330,10 +330,12 @@ export class BittleViewer {
 
     this.container.appendChild(this.renderer.domElement);
 
-    // Root robot group - placed so feet touch ground at Y=0 in standing pose (Z = -53.2mm)
+    // Root robot group - placed with YXZ Euler rotation order for decoupled pitch and yaw
     this.robotGroup = new THREE.Group();
-    this.robotGroup.position.set(0, 0.0532, 0);
+    this.robotGroup.rotation.order = 'YXZ';
+    this.robotGroup.position.set(0, 0.0547, 0);
     this.scene.add(this.robotGroup);
+    this.contactAnchors = [];
   }
 
   initLighting() {
@@ -561,6 +563,21 @@ export class BittleViewer {
         kneePivot.add(this.createPartMesh(shankGeo, MATERIALS.blue, { jointId: kneeJointId }, kneeWorldPos));
       }
 
+      // Exact convex hull foot pad contact anchors (in kneePivot local coordinates)
+      const footAnchors = [
+        new THREE.Vector3(0.0478, 0.0130, -0.0097), // Heel
+        new THREE.Vector3(0.0495, 0.0130, -0.0080), // Mid-rear
+        new THREE.Vector3(0.0511, 0.0130, -0.0086), // Mid-sole (lowest in stand)
+        new THREE.Vector3(0.0525, 0.0130, -0.0050), // Ball of foot
+        new THREE.Vector3(0.0533, 0.0130, -0.0042)  // Toe tip
+      ];
+      footAnchors.forEach(pos => {
+        const anchor = new THREE.Object3D();
+        anchor.position.copy(pos);
+        kneePivot.add(anchor);
+        this.contactAnchors.push({ node: anchor, type: 'foot', leg: name });
+      });
+
       shoulderPivot.add(kneePivot);
       torso.add(shoulderPivot);
 
@@ -611,6 +628,19 @@ export class BittleViewer {
       kneeServoGeo: geos['servos_lr_1.obj'],
       shankGeo: geos['shank_lr_1.obj'],
       dir: 1
+    });
+
+    // Body contact anchors (chest, pelvis, rump)
+    const bodyAnchors = [
+      new THREE.Vector3(0.050, 0.0, 0.000),   // Chest / Front belly
+      new THREE.Vector3(-0.050, 0.0, 0.000),  // Pelvis / Rear belly
+      new THREE.Vector3(-0.070, 0.0, 0.000),  // Rump / Tail base
+    ];
+    bodyAnchors.forEach(pos => {
+      const anchor = new THREE.Object3D();
+      anchor.position.copy(pos);
+      torso.add(anchor);
+      this.contactAnchors.push({ node: anchor, type: 'body' });
     });
 
     // Rotate robot so +Z points up and +X forward in standard view
@@ -997,27 +1027,53 @@ export class BittleViewer {
       const z = this.robotGroup.position.z;
       const yaw = this.robotYaw || 0;
 
-      // Wheelbase is ~120mm: front paws at +0.06m forward, rear paws at -0.06m
-      const frontX = x + 0.06 * Math.cos(yaw);
-      const frontZ = z - 0.06 * Math.sin(yaw);
-      const rearX = x - 0.06 * Math.cos(yaw);
-      const rearZ = z + 0.06 * Math.sin(yaw);
+      // Sample terrain elevation ahead and behind along local heading
+      const frontX = x - 0.053 * Math.sin(yaw);
+      const frontZ = z - 0.053 * Math.cos(yaw);
+      const rearX = x + 0.053 * Math.sin(yaw);
+      const rearZ = z + 0.053 * Math.cos(yaw);
 
       const yFront = this.obstacleCourse ? this.obstacleCourse.getElevationAt(frontX, frontZ) : 0;
       const yRear = this.obstacleCourse ? this.obstacleCourse.getElevationAt(rearX, rearZ) : 0;
 
-      // Dynamic posture contact reach (front paws vs rear rump under gravity)
+      // Conforming pitch angle: tilt nose up when sitting or climbing stairs/ramps
       const { hFront, hRear } = this.computeGroundContactOffsets(this.currentAngles);
       const yFrontTarget = yFront + hFront;
       const yRearTarget = yRear + hRear;
 
-      const targetY = (yFrontTarget + yRearTarget) / 2.0;
-      this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.20);
-
-      // Conforming pitch angle: tilt nose up when sitting or climbing stairs/ramps
       const targetPitch = Math.atan2(yFrontTarget - yRearTarget, 0.120);
       this.robotPitch = THREE.MathUtils.lerp(this.robotPitch, targetPitch, 0.15);
-      this.robotGroup.rotation.z = this.robotPitch;
+
+      // Pure transverse pitch rotation with YXZ Euler ordering
+      this.robotGroup.rotation.order = 'YXZ';
+      this.robotGroup.rotation.y = this.robotYaw;
+      this.robotGroup.rotation.x = this.robotPitch;
+      this.robotGroup.rotation.z = 0;
+
+      // Supremum Ground Elevation Solver:
+      // Evaluates exact contact anchors across all paws and torso to guarantee
+      // that NO paw, shank, or body part penetrates below the ground plane or obstacle surface!
+      this.robotGroup.updateMatrixWorld(true);
+
+      const worldPos = new THREE.Vector3();
+      let targetY = 0;
+      const CUSHION = 0.0005; // 0.5mm visual cushion above floor grid to prevent z-fighting
+
+      if (this.contactAnchors && this.contactAnchors.length > 0) {
+        for (let i = 0; i < this.contactAnchors.length; i++) {
+          this.contactAnchors[i].node.getWorldPosition(worldPos);
+          const relY = worldPos.y - this.robotGroup.position.y;
+          const terrainY = this.obstacleCourse ? this.obstacleCourse.getElevationAt(worldPos.x, worldPos.z) : 0;
+          const needed = terrainY - relY + CUSHION;
+          if (needed > targetY) {
+            targetY = needed;
+          }
+        }
+      } else {
+        targetY = (yFrontTarget + yRearTarget) / 2.0;
+      }
+
+      this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.25);
     }
 
     // Smooth camera tracking to follow robot
