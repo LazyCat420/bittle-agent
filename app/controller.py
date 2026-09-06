@@ -167,6 +167,7 @@ class Controller:
                 "firmware_min": j.fw_min,
                 "firmware_max": j.fw_max,
                 "wire_clipped": j.wire_clipped,
+                "default": joints.DEFAULT_POSE.get(j.index, 0),
                 "rest": joints.REST_POSE.get(j.index, 0),
             }
             for j in joints.CONTROLLABLE

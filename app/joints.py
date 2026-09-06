@@ -85,7 +85,23 @@ BY_NAME: dict[str, Joint] = {j.name: j for j in _JOINTS}
 CONTROLLABLE: tuple[Joint, ...] = tuple(j for j in _JOINTS if j.used)
 CONTROLLABLE_INDICES: frozenset[int] = frozenset(j.index for j in CONTROLLABLE)
 
-#: Resting pose used as the sim's initial state (Bittle's `krest` crouch).
+#: Authentic standing posture where all 4 legs support the robot upright.
+#: Derived from MuJoCo keyframe 'stand' and CAD FK ground alignment:
+#: Thighs pitched down -45°, knees flexed forward to ground +80°.
+#: All 4 feet land within 0.1 mm of Z = -53.2 mm.
+STAND_POSE: dict[int, int] = {
+    0: 0,   # Head pan centered
+    1: 0,   # Tail centered
+    8: -45, 9: -45,    # Front shoulders pitched downward
+    10: -45, 11: -45,  # Rear shoulders pitched downward
+    12: 80, 13: 80,    # Front knees flexed forward to ground
+    14: 80, 15: 80,    # Rear knees flexed forward to ground
+}
+
+#: Default initial pose for the robot and simulation backend.
+DEFAULT_POSE: dict[int, int] = STAND_POSE
+
+#: Resting pose (Bittle's `krest` crouch with limbs tucked).
 REST_POSE: dict[int, int] = {
     0: 0, 1: 0,
     8: -55, 9: -55, 10: 55, 11: 55,

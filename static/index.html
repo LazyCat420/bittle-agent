@@ -651,7 +651,8 @@
       <div class="joint-list" id="jointsContainer"></div>
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn-primary" onclick="sendJointPose()">Send Pose</button>
-        <button class="vbtn" onclick="resetJointSliders()">Reset Rest</button>
+        <button class="vbtn" onclick="resetJointSliders('stand')">Stand</button>
+        <button class="vbtn" onclick="resetJointSliders('rest')">Rest</button>
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-left:auto; color:var(--muted);">
           <input type="checkbox" id="simulCheck" checked /> simultaneous
         </label>
@@ -678,7 +679,7 @@
 </div>
 
 <script type="module">
-import { BittleViewer, REST_POSE } from '/js/viewer.js';
+import { BittleViewer, REST_POSE, STAND_POSE } from '/js/viewer.js';
 import { AgentUI } from '/js/agent-ui.js';
 
 let viewer = null;
@@ -804,13 +805,14 @@ async function loadJoints() {
   host.innerHTML = "";
 
   JOINTS.forEach(j => {
+    const initVal = j.default !== undefined ? j.default : (STAND_POSE[j.index] !== undefined ? STAND_POSE[j.index] : j.rest);
     const row = document.createElement("div");
     row.className = "joint-row";
     row.id = `joint-row-${j.index}`;
     row.innerHTML = `
       <div class="joint-label" title="${j.label} (#${j.index})">${j.label}</div>
-      <input type="range" min="${j.min}" max="${j.max}" value="${j.rest}" data-i="${j.index}" />
-      <div class="joint-val ${j.wire_clipped ? "clipped" : ""}" id="jv-${j.index}">${j.rest}°</div>
+      <input type="range" min="${j.min}" max="${j.max}" value="${initVal}" data-i="${j.index}" />
+      <div class="joint-val ${j.wire_clipped ? "clipped" : ""}" id="jv-${j.index}">${initVal}°</div>
     `;
     const slider = row.querySelector("input");
     slider.oninput = () => {
@@ -839,15 +841,17 @@ window.sendJointPose = async function() {
   }
 };
 
-window.resetJointSliders = function() {
+window.resetJointSliders = function(preset = 'stand') {
+  const pose = (preset === 'rest') ? REST_POSE : STAND_POSE;
   JOINTS.forEach(j => {
     const s = document.querySelector(`#jointsContainer input[data-i="${j.index}"]`);
+    const val = pose[j.index] !== undefined ? pose[j.index] : (j.default !== undefined ? j.default : j.rest);
     if (s) {
-      s.value = j.rest;
-      document.getElementById("jv-" + j.index).textContent = j.rest + "°";
+      s.value = val;
+      document.getElementById("jv-" + j.index).textContent = val + "°";
     }
   });
-  if (viewer) viewer.resetPose();
+  if (viewer) viewer.setPose(pose);
 };
 
 async function refreshJointState() {
@@ -901,7 +905,8 @@ async function runSkill(s) {
     log(`${r.token} → ${r.sent.trim()} ${r.ok ? "ok" : ""}`, "ok");
     if (viewer) {
       if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
-      else if (s.name === 'balance' || s.name === 'up') viewer.resetPose();
+      else if (s.name === 'balance' || s.name === 'up' || s.name === 'stand') viewer.setPose(STAND_POSE);
+      else if (s.name === 'rest') viewer.setPose(REST_POSE);
     }
     refreshJointState();
   } catch (e) {
@@ -947,7 +952,7 @@ window.toggleWireframe = () => {
 };
 
 window.resetToStand = () => {
-  if (viewer) viewer.resetPose();
+  if (viewer) viewer.resetPose('stand');
 };
 </script>
 </body>

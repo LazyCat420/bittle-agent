@@ -7,7 +7,20 @@ import * as THREE from 'three';
 import { OrbitControls } from '/vendor/OrbitControls.js';
 import { OBJLoader } from '/vendor/OBJLoader.js';
 
-// OpenCat rest pose
+// OpenCat standard poses
+export const STAND_POSE = {
+  0: 0,    // Head pan
+  1: 0,    // Tail
+  8: -45,  // Shoulder FL
+  9: -45,  // Shoulder FR
+  10: -45, // Shoulder BR
+  11: -45, // Shoulder BL
+  12: 80,  // Knee FL
+  13: 80,  // Knee FR
+  14: 80,  // Knee BR
+  15: 80   // Knee BL
+};
+
 export const REST_POSE = {
   0: 0,    // Head pan
   1: 0,    // Tail
@@ -70,8 +83,8 @@ export class BittleViewer {
     this.container = document.getElementById(containerId);
     if (!this.container) throw new Error(`Container #${containerId} not found`);
 
-    this.currentAngles = { ...REST_POSE };
-    this.targetAngles = { ...REST_POSE };
+    this.currentAngles = { ...STAND_POSE };
+    this.targetAngles = { ...STAND_POSE };
     this.jointNodes = {};
     this.interactiveMeshes = [];
     this.raycaster = new THREE.Raycaster();
@@ -116,9 +129,9 @@ export class BittleViewer {
 
     this.container.appendChild(this.renderer.domElement);
 
-    // Root robot group
+    // Root robot group - placed so feet touch ground at Y=0 in standing pose (Z = -53.2mm)
     this.robotGroup = new THREE.Group();
-    this.robotGroup.position.set(0, 0.08, 0); // lift above ground
+    this.robotGroup.position.set(0, 0.0532, 0);
     this.scene.add(this.robotGroup);
   }
 
@@ -307,16 +320,6 @@ export class BittleViewer {
     const tailPivot = new THREE.Group();
     tailPivot.position.set(-0.065, 0, 0.025);
     tailPivot.userData = { jointId: 1, name: "Tail Wag" };
-
-    const tailGeo = new THREE.CylinderGeometry(0.003, 0.006, 0.045, 8);
-    tailGeo.rotateZ(Math.PI / 4);
-    const tailMesh = new THREE.Mesh(tailGeo, MATERIALS.yellow);
-    tailMesh.castShadow = true;
-    tailMesh.position.set(-0.02, 0, 0.015);
-    tailMesh.userData = { jointId: 1 };
-    tailPivot.add(tailMesh);
-    this.interactiveMeshes.push(tailMesh);
-
     torso.add(tailPivot);
     this.jointNodes[1] = { node: tailPivot, axis: new THREE.Vector3(0, 0, 1), dir: 1 };
 
@@ -373,7 +376,7 @@ export class BittleViewer {
       thighGeos: [geos['c_thrf__1.obj'], geos['th_rf_1.obj'], geos['tho_rf__1.obj'], geos['c_thorf_1.obj'], geos['tube__1.obj']],
       kneeServoGeo: geos['servos_rf_1.obj'],
       shankGeo: geos['shank_rf_1.obj'],
-      dir: -1
+      dir: 1
     });
 
     // ─── Front-Left Leg (Joints 8 & 12) ─────────────────────────
@@ -395,7 +398,7 @@ export class BittleViewer {
       thighGeos: [geos['c_thrr_1.obj'], geos['th_rr_1.obj'], geos['tho_rr_1.obj'], geos['c_thorr_1.obj'], geos['tube_rr_1.obj']],
       kneeServoGeo: geos['servos_rr_1.obj'],
       shankGeo: geos['shank_rr_1.obj'],
-      dir: -1
+      dir: 1
     });
 
     // ─── Rear-Left Leg (Joints 11 & 15) ─────────────────────────
@@ -414,7 +417,7 @@ export class BittleViewer {
     torso.rotation.z = Math.PI / 2;
     this.robotGroup.add(torso);
 
-    this.applyAngles(REST_POSE);
+    this.applyAngles(STAND_POSE);
   }
 
   setJointTarget(jointId, angleDeg) {
@@ -428,8 +431,8 @@ export class BittleViewer {
     });
   }
 
-  resetPose() {
-    this.setPose(REST_POSE);
+  resetPose(preset = 'stand') {
+    this.setPose(preset === 'rest' ? REST_POSE : STAND_POSE);
   }
 
   setEstop(engaged) {
@@ -437,9 +440,10 @@ export class BittleViewer {
     if (engaged) {
       // Robot drops limp
       this.setPose(REST_POSE);
-      this.robotGroup.position.y = 0.03; // sink to floor
+      this.robotGroup.position.y = 0.02; // sink to floor
     } else {
-      this.robotGroup.position.y = 0.08;
+      this.robotGroup.position.y = 0.0532;
+      this.setPose(STAND_POSE);
     }
   }
 

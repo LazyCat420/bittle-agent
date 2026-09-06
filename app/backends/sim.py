@@ -28,10 +28,10 @@ class SimBackend(Backend):
     is_real_hardware = False
 
     def __init__(self) -> None:
-        self._angles: dict[int, int] = dict(joints.REST_POSE)
+        self._angles: dict[int, int] = dict(joints.DEFAULT_POSE)
         self._connected = False
-        self._last_skill: str | None = None
-        self._resting = True
+        self._last_skill: str | None = "balance"
+        self._resting = False
         self._history: list[dict] = []
         self._lock = asyncio.Lock()
 
@@ -74,7 +74,10 @@ class SimBackend(Backend):
         async with self._lock:
             self._last_skill = skill_name
             self._resting = skill_name == "rest"
-            if self._resting:
+            if skill_name in ("balance", "stand", "up"):
+                self._angles = dict(joints.STAND_POSE)
+                self._resting = False
+            elif self._resting:
                 self._angles = dict(joints.REST_POSE)
             self._record(wire, "skill")
         return CommandResult(
