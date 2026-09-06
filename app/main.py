@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import joints as joints_mod
 from . import skills as skills_mod
+from .agent import GLMAgentHarness
 from .config import settings
 from .controller import Controller, TargetUnavailable
 from .safety import EStopEngaged, SafetyError
@@ -23,6 +26,7 @@ logger = logging.getLogger("bittle-agent")
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 controller = Controller(settings)
+agent_harness = GLMAgentHarness(controller, settings)
 
 
 @asynccontextmanager
@@ -212,7 +216,76 @@ async def preview(
     return {"wire": controller.preview(resolved, simultaneous)}
 
 
+# ── Agent Harness Endpoints ───────────────────────────────────────────────
+
+
+class AgentChatRequest(BaseModel):
+    prompt: str = Field(..., description="User prompt / goal instruction")
+    history: list[dict[str, Any]] = Field(default_factory=list, description="Previous messages")
+    target: str = Field("sim", description="'sim' or 'real'")
+    confirm: str | None = None
+    stream: bool = Field(True, description="Whether to stream response via SSE")
+
+
+class AgentStepRequest(BaseModel):
+    tool: str = Field(..., description="Tool name, e.g. 'bittle_do_skill'")
+    args: dict[str, Any] = Field(default_factory=dict, description="Tool arguments")
+    target: str = Field("sim", description="'sim' or 'real'")
+    confirm: str | None = None
+
+
+@app.get("/api/agent/config")
+async def agent_config():
+    return {
+        "api_base": settings.llm_api_base,
+        "model": settings.llm_model,
+        "timeout": settings.llm_timeout,
+    }
+
+
+@app.post("/api/agent/step")
+async def agent_step(req: AgentStepRequest):
+    return await agent_harness.execute_tool(
+        req.tool,
+        req.args,
+        target_override=req.target,
+        confirm_token=req.confirm,
+    )
+
+
+@app.post("/api/agent/chat")
+async def agent_chat(req: AgentChatRequest):
+    messages = list(req.history)
+    messages.append({"role": "user", "content": req.prompt})
+
+    if not req.stream:
+        events = []
+        async for ev in agent_harness.chat_stream(
+            messages, target=req.target, confirm_token=req.confirm
+        ):
+            events.append(ev)
+        return {"events": events}
+
+    async def event_generator():
+        async for ev in agent_harness.chat_stream(
+            messages, target=req.target, confirm_token=req.confirm
+        ):
+            yield f"data: {json.dumps(ev)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 if STATIC_DIR.is_dir():
+    assets_dir = STATIC_DIR / "assets"
+    vendor_dir = STATIC_DIR / "vendor"
+    js_dir = STATIC_DIR / "js"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    if vendor_dir.is_dir():
+        app.mount("/vendor", StaticFiles(directory=str(vendor_dir)), name="vendor")
+    if js_dir.is_dir():
+        app.mount("/js", StaticFiles(directory=str(js_dir)), name="js")
+
     app.mount("/ui", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")
 
     @app.get("/")

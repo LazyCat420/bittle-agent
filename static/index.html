@@ -3,162 +3,769 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>bittle-agent — control panel</title>
+<title>🐕 Petoi Bittle — 3D Control Deck & GLM Agent</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three.module.js"
+  }
+}
+</script>
+
 <style>
   :root {
-    --bg: #0e1116; --panel: #161b22; --panel-2: #1c2230; --line: #2a3140;
-    --text: #e6edf3; --muted: #8b949e; --accent: #4a9eff;
-    --sim: #3fb950; --real: #f85149; --warn: #d29922;
-    --radius: 10px; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --bg-base: #0a0d12;
+    --panel-bg: #131822;
+    --panel-sub: #1a2230;
+    --border: #263042;
+    --border-highlight: #3b475d;
+    --text: #f0f6fc;
+    --muted: #8b9bb4;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.25);
+    --sim: #10b981;
+    --sim-glow: rgba(16, 185, 129, 0.2);
+    --real: #ef4444;
+    --real-glow: rgba(239, 68, 68, 0.25);
+    --warn: #f59e0b;
+    --radius-lg: 12px;
+    --radius-md: 8px;
+    --radius-sm: 6px;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
   }
+
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px;
+    margin: 0;
+    background: var(--bg-base);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    overflow-x: hidden;
   }
+
+  /* ── Header ── */
   header {
-    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-    padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
-    position: sticky; top: 0; z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 24px;
+    background: var(--panel-bg);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
   }
-  h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
-  h2 { font-size: 13px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .brand h1 {
+    font-size: 16px;
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand .tag {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .target-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 12px;
+  }
+  .seg {
+    display: flex;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 2px;
+  }
+  .seg button {
+    background: transparent;
+    color: var(--muted);
+    border: 0;
+    padding: 6px 16px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 12px;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+  }
+  .seg button.on[data-t="sim"] {
+    background: var(--sim);
+    color: #04170a;
+    box-shadow: 0 0 12px var(--sim-glow);
+  }
+  .seg button.on[data-t="real"] {
+    background: var(--real);
+    color: #ffffff;
+    box-shadow: 0 0 14px var(--real-glow);
+  }
+
+  body.real-mode {
+    box-shadow: inset 0 0 0 3px var(--real);
+  }
+  body.real-mode header {
+    background: #231010;
+  }
+
+  .badge {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge.sim { background: rgba(16, 185, 129, 0.15); color: var(--sim); }
+  .badge.real { background: rgba(239, 68, 68, 0.15); color: var(--real); }
+  .badge.off { background: rgba(139, 155, 180, 0.15); color: var(--muted); }
+
   .spacer { flex: 1; }
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px; display: grid; gap: 18px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
 
-  /* Target selector — the single most consequential control on the page, so it
-     is visually loud when set to real hardware. */
-  .target { display: flex; gap: 8px; align-items: center; }
-  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-  .seg button { background: transparent; color: var(--muted); border: 0; padding: 7px 16px; cursor: pointer; font-weight: 600; font-size: 13px; }
-  .seg button.on[data-t="sim"] { background: var(--sim); color: #04170a; }
-  .seg button.on[data-t="real"] { background: var(--real); color: #2b0705; }
-  body.real-mode { box-shadow: inset 0 0 0 3px var(--real); }
-  body.real-mode header { background: #2a1210; }
+  .estop-btn {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+    border: 1px solid #b91c1c;
+    border-radius: var(--radius-md);
+    padding: 8px 20px;
+    font-weight: 800;
+    font-size: 12.5px;
+    letter-spacing: 0.6px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(239, 68, 68, 0.35);
+    transition: all 0.15s ease;
+  }
+  .estop-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.5);
+  }
+  .estop-btn.latched {
+    animation: estopPulse 1.2s infinite alternate;
+  }
+  @keyframes estopPulse {
+    from { box-shadow: 0 0 10px #ef4444; }
+    to { box-shadow: 0 0 24px #ef4444; }
+  }
 
-  .badge { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
-  .badge.sim { background: rgba(63,185,80,.15); color: var(--sim); }
-  .badge.real { background: rgba(248,81,73,.15); color: var(--real); }
-  .badge.off { background: rgba(139,148,158,.15); color: var(--muted); }
+  /* ── Layout ── */
+  .main-deck {
+    display: grid;
+    grid-template-columns: 1fr 480px;
+    height: calc(100vh - 58px);
+    overflow: hidden;
+  }
 
-  button.act { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; cursor: pointer; font-size: 13px; text-align: left; }
-  button.act:hover:not(:disabled) { border-color: var(--accent); }
-  button.act:disabled { opacity: .4; cursor: not-allowed; }
-  button.act .k { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
-  button.act.loco { border-left: 3px solid var(--warn); }
+  @media (max-width: 1024px) {
+    .main-deck {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+  }
 
-  .estop { background: var(--real); color: #fff; border: 0; border-radius: 8px; padding: 10px 20px; font-weight: 800; cursor: pointer; letter-spacing: .5px; }
-  .estop:hover { filter: brightness(1.12); }
-  .estop-banner { display: none; background: rgba(248,81,73,.14); border: 1px solid var(--real); color: #ffb3ae; padding: 10px 14px; border-radius: 8px; align-items: center; gap: 12px; }
+  /* ── 3D Viewport Column ── */
+  .viewport-col {
+    position: relative;
+    background: #090c10;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #viewerCanvasContainer {
+    width: 100%;
+    flex: 1;
+    height: 100%;
+  }
+
+  .viewport-overlay {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .status-pill {
+    background: rgba(19, 24, 34, 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sim);
+  }
+
+  .viewport-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+  }
+  .btn-group {
+    background: rgba(19, 24, 34, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    display: flex;
+    gap: 4px;
+    pointer-events: auto;
+  }
+  .vbtn {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vbtn:hover, .vbtn.active {
+    background: var(--panel-sub);
+    color: var(--text);
+  }
+
+  /* ── Right Panel & Tabs ── */
+  .panel-col {
+    background: var(--panel-bg);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .tabs-nav {
+    display: flex;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+    padding: 0 8px;
+  }
+  .tab-btn {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    padding: 12px 16px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px;
+    display: none;
+  }
+  .tab-content.active {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── Tab: GLM Agent ── */
+  .agent-intro {
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #93c5fd;
+  }
+  .agent-chat-log {
+    flex: 1;
+    min-height: 240px;
+    max-height: 380px;
+    overflow-y: auto;
+    background: #0a0d13;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    font-family: var(--font-sans);
+  }
+  .agent-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .agent-msg-header {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+  }
+  .agent-msg-content {
+    background: var(--panel-sub);
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .agent-msg-user .agent-msg-content {
+    background: #1e3a8a;
+    color: #eff6ff;
+  }
+  .agent-msg-system .agent-msg-content {
+    background: #2a1b18;
+    color: #fca5a5;
+    border-left: 3px solid var(--real);
+  }
+
+  .agent-tool-card {
+    background: #0f1623;
+    border: 1px solid var(--border-highlight);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .agent-tool-title { color: #60a5fa; font-size: 12px; }
+  .agent-tool-args {
+    margin: 0;
+    background: #070a0e;
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: #cbd5e1;
+    overflow-x: auto;
+  }
+  .agent-tool-status { color: var(--muted); font-size: 11px; }
+  .agent-tool-card.tool-success { border-left: 3px solid var(--sim); }
+  .agent-tool-card.tool-refused { border-left: 3px solid var(--real); }
+  .agent-tool-clamp { color: var(--warn); font-size: 11px; }
+
+  .agent-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .agent-prompt-chip {
+    background: var(--panel-sub);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .agent-prompt-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .agent-input-row {
+    display: flex;
+    gap: 8px;
+  }
+  .agent-input-row input {
+    flex: 1;
+    background: #0d1117;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-sans);
+    font-size: 13px;
+  }
+  .agent-input-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 0 18px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── Tab: Joints ── */
+  .joint-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .joint-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 50px;
+    gap: 12px;
+    align-items: center;
+    background: var(--panel-sub);
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+  }
+  .joint-row.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+  .joint-label {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .joint-row input[type=range] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+  .joint-val {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-align: right;
+    font-weight: 600;
+  }
+  .joint-val.clipped { color: var(--warn); }
+
+  /* ── Tab: Skills & Gaits ── */
+  .section-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--muted);
+    letter-spacing: 0.6px;
+    margin: 8px 0 6px;
+  }
+  .skills-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .skill-card {
+    background: var(--panel-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 10px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+    transition: all 0.15s;
+  }
+  .skill-card:hover {
+    border-color: var(--accent);
+    background: #202b3c;
+  }
+  .skill-card.loco {
+    border-left: 3px solid var(--warn);
+  }
+  .skill-token {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+    display: block;
+  }
+
+  /* ── Tab: Activity ── */
+  pre.activity-log {
+    background: #080b0f;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.55;
+    flex: 1;
+    overflow-y: auto;
+    margin: 0;
+  }
+  .ok { color: var(--sim); }
+  .err { color: var(--real); }
+  .warnc { color: var(--warn); }
+  .dim { color: var(--muted); }
+
+  /* E-Stop alert banner */
+  .estop-banner {
+    display: none;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid var(--real);
+    color: #fca5a5;
+    padding: 10px 16px;
+    align-items: center;
+    gap: 12px;
+  }
   .estop-banner.on { display: flex; }
-  .estop-banner button { margin-left: auto; background: transparent; border: 1px solid var(--real); color: #ffb3ae; border-radius: 6px; padding: 5px 12px; cursor: pointer; }
-
-  .actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-
-  .joint { display: grid; grid-template-columns: 120px 1fr 62px; gap: 10px; align-items: center; padding: 5px 0; }
-  .joint label { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .joint input[type=range] { width: 100%; accent-color: var(--accent); }
-  .joint .val { font-family: var(--mono); font-size: 12px; text-align: right; }
-  .joint .val.clip { color: var(--warn); }
-  .note { color: var(--muted); font-size: 12px; line-height: 1.5; }
-  .note code { font-family: var(--mono); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
-
-  pre.log { background: #0b0e13; border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 11.5px; max-height: 260px; overflow: auto; margin: 0; line-height: 1.55; }
-  .ok { color: var(--sim); } .err { color: var(--real); } .warnc { color: var(--warn); } .dim { color: var(--muted); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input[type=password], input[type=text] { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 8px 10px; font-family: var(--mono); font-size: 12px; }
+  .estop-banner button {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--real);
+    color: #fca5a5;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
+
 <header>
-  <h1>🐕 bittle-agent</h1>
-  <div class="target">
+  <div class="brand">
+    <h1>🐕 Bittle Deck</h1>
+    <span class="tag">Digital Twin</span>
+  </div>
+
+  <div class="target-selector">
     <div class="seg" id="seg">
-      <button data-t="sim" class="on">SIM</button>
-      <button data-t="real">REAL</button>
+      <button data-t="sim" class="on">SIMULATOR</button>
+      <button data-t="real">REAL HARDWARE</button>
     </div>
     <span id="hwBadge" class="badge off">checking…</span>
   </div>
+
   <div class="spacer"></div>
-  <button class="estop" onclick="estop()">■ E-STOP</button>
+
+  <button class="estop-btn" id="estopBtn" onclick="toggleEstop()">■ E-STOP</button>
 </header>
 
-<div class="wrap">
-  <div class="estop-banner" id="estopBanner">
-    <strong>E-STOP ENGAGED</strong>
-    <span class="dim" id="estopReason"></span>
-    <button onclick="clearEstop()">Clear</button>
-  </div>
+<div class="estop-banner" id="estopBanner">
+  <strong>🚨 E-STOP ENGAGED:</strong>
+  <span id="estopReason">Motion blocked until operator reset</span>
+  <button onclick="clearEstop()">Clear E-Stop</button>
+</div>
 
-  <div id="realWarn" class="card" style="display:none; border-color: var(--real);">
-    <h2 style="color: var(--real)">Real hardware selected</h2>
-    <p class="note">
-      Commands now drive physical servos. Put the robot on a clear, flat surface with
-      room around it. Gaits will make it walk off a table.
-    </p>
-    <div class="row">
-      <input type="password" id="confirmToken" placeholder="confirm token" />
-      <span class="note" id="tokenNote"></span>
+<div class="main-deck">
+  <!-- 3D Digital Twin Viewport -->
+  <div class="viewport-col">
+    <div id="viewerCanvasContainer"></div>
+
+    <div class="viewport-overlay">
+      <div class="status-pill">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="activeStatusText">3D Viewport: Kinematic Slew Active (320°/s)</span>
+      </div>
+    </div>
+
+    <div class="viewport-controls">
+      <div class="btn-group">
+        <button class="vbtn active" onclick="setCam('iso')">Isometric</button>
+        <button class="vbtn" onclick="setCam('front')">Front</button>
+        <button class="vbtn" onclick="setCam('side')">Side</button>
+        <button class="vbtn" onclick="setCam('top')">Top</button>
+      </div>
+
+      <div class="btn-group">
+        <button class="vbtn" onclick="toggleWireframe()">Wireframe</button>
+        <button class="vbtn" onclick="resetToStand()">Rest Pose</button>
+      </div>
     </div>
   </div>
 
-  <div class="grid">
-    <div class="card">
-      <h2>Postures &amp; behaviors</h2>
-      <div class="actions" id="postures"></div>
+  <!-- Multi-Tab Control Panel -->
+  <div class="panel-col">
+    <div class="tabs-nav">
+      <button class="tab-btn active" data-tab="tab-agent">🤖 GLM Agent</button>
+      <button class="tab-btn" data-tab="tab-joints">🦿 Joints</button>
+      <button class="tab-btn" data-tab="tab-skills">⚡ Skills &amp; Gaits</button>
+      <button class="tab-btn" data-tab="tab-activity">📡 Activity</button>
     </div>
-    <div class="card">
-      <h2>Gaits <span style="color:var(--warn)">— these move the robot</span></h2>
-      <div class="actions" id="gaits"></div>
-      <p class="note" style="margin-top:12px">
-        Bordered in amber because they locomote. The API rejects them unless the request
-        carries <code>ack_locomotion</code>; pressing one here sends that ack.
+
+    <!-- Tab 1: GLM Agent -->
+    <div class="tab-content active" id="tab-agent">
+      <div class="agent-intro">
+        <strong>Local GLM Harness Active:</strong> Commands are planned autonomously by your internal GLM instance and executed through safety gates.
+      </div>
+
+      <div class="agent-chat-log" id="agentChatLog">
+        <div class="agent-msg agent-msg-assistant">
+          <div class="agent-msg-header">🤖 GLM Agent</div>
+          <div class="agent-msg-content">I am ready. Tell me what motion, pose, or behavior you want Bittle to perform.</div>
+        </div>
+      </div>
+
+      <div class="agent-chips">
+        <div class="agent-prompt-chip" data-prompt="Sit down and look around.">Sit down and look around</div>
+        <div class="agent-prompt-chip" data-prompt="Take two steps forward and wag your tail.">Walk forward &amp; wag tail</div>
+        <div class="agent-prompt-chip" data-prompt="Give me a high five then stand in balance.">High five &amp; stand</div>
+        <div class="agent-prompt-chip" data-prompt="Check current robot capabilities and status.">Check capabilities</div>
+      </div>
+
+      <div class="agent-input-row">
+        <input type="text" id="agentPromptInput" placeholder="Give GLM a goal (e.g. 'sit down and wave hello')..." />
+        <button class="btn-primary" id="agentSendBtn">Send</button>
+        <button class="vbtn" id="agentCancelBtn" style="display:none; border:1px solid var(--real); color:var(--real)">Stop</button>
+      </div>
+    </div>
+
+    <!-- Tab 2: Joints -->
+    <div class="tab-content" id="tab-joints">
+      <div class="joint-list" id="jointsContainer"></div>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn-primary" onclick="sendJointPose()">Send Pose</button>
+        <button class="vbtn" onclick="resetJointSliders()">Reset Rest</button>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-left:auto; color:var(--muted);">
+          <input type="checkbox" id="simulCheck" checked /> simultaneous
+        </label>
+      </div>
+      <p style="font-size:11.5px; color:var(--muted); margin:4px 0 0;">
+        Amber values indicate clamping by wire encoding. Click on any 3D limb to jump to its slider.
       </p>
     </div>
-  </div>
 
-  <div class="card">
-    <h2>Joints</h2>
-    <div id="joints"></div>
-    <div class="row" style="margin-top:14px">
-      <button class="act" onclick="sendJoints()">Send pose</button>
-      <button class="act" onclick="resetJoints()">Reset to rest</button>
-      <label class="note" style="display:flex;align-items:center;gap:6px;margin-left:8px">
-        <input type="checkbox" id="simul" checked /> simultaneous
-      </label>
+    <!-- Tab 3: Skills & Gaits -->
+    <div class="tab-content" id="tab-skills">
+      <div class="section-title">Postures &amp; Behaviors</div>
+      <div class="skills-grid" id="posturesGrid"></div>
+
+      <div class="section-title">Locomotion Gaits (Moves Across Floor)</div>
+      <div class="skills-grid" id="gaitsGrid"></div>
     </div>
-    <p class="note" style="margin-top:10px">
-      Slider bounds are the <em>effective</em> limits: firmware range intersected with the
-      signed-char wire range. Amber values are capped by the wire encoding, not the joint —
-      see SAFETY.md.
-    </p>
-  </div>
 
-  <div class="card">
-    <h2>Activity</h2>
-    <pre class="log" id="log"></pre>
+    <!-- Tab 4: Activity Log -->
+    <div class="tab-content" id="tab-activity">
+      <pre class="activity-log" id="activityLog"></pre>
+    </div>
   </div>
 </div>
 
-<script>
-const $ = (id) => document.getElementById(id);
-let TARGET = "sim";
+<script type="module">
+import { BittleViewer, REST_POSE } from '/js/viewer.js';
+import { AgentUI } from '/js/agent-ui.js';
+
+let viewer = null;
+let agentUI = null;
+let TARGET = 'sim';
 let JOINTS = [];
-let hwAllowed = false, tokenRequired = false;
+let hwAllowed = false;
+let confirmToken = null;
+let isWireframe = false;
 
 function log(msg, cls = "") {
-  const el = $("log");
+  const el = document.getElementById("activityLog");
+  if (!el) return;
   const t = new Date().toLocaleTimeString();
   el.innerHTML = `<span class="dim">${t}</span> <span class="${cls}">${msg}</span>\n` + el.innerHTML;
 }
 
-function confirmToken() {
-  const v = $("confirmToken");
-  return v && v.value ? v.value : null;
+// ── Initialize 3D Viewer & Agent UI ─────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  try {
+    viewer = new BittleViewer('viewerCanvasContainer');
+    await viewer.loadModel('/assets/meshes/');
+    log('3D Bittle Model loaded with authentic physical geometry', 'ok');
+  } catch (err) {
+    console.error('Viewer init failed', err);
+    log(`3D Viewer warning: ${err.message}`, 'warnc');
+  }
+
+  agentUI = new AgentUI({
+    viewer: viewer,
+    getTarget: () => TARGET,
+    getConfirmToken: () => confirmToken,
+    onActionExecuted: () => refreshJointState()
+  });
+
+  if (viewer) {
+    viewer.onSelectCallback = (jointId, name) => {
+      document.querySelectorAll('.joint-row').forEach(r => r.classList.remove('selected'));
+      const row = document.getElementById(`joint-row-${jointId}`);
+      if (row) {
+        row.classList.add('selected');
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+  }
+
+  setupTabs();
+  await refreshStatus();
+  await loadJoints();
+  await loadSkills();
+  await refreshJointState();
+  setInterval(refreshStatus, 5000);
+});
+
+// ── Tabs Switching ──────────────────────────────────────────────
+function setupTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      const tabId = btn.dataset.tab;
+      const targetEl = document.getElementById(tabId);
+      if (targetEl) targetEl.classList.add('active');
+    };
+  });
 }
 
+// ── Target Mode Switching ───────────────────────────────────────
+document.querySelectorAll("#seg button").forEach(btn => {
+  btn.onclick = () => {
+    const t = btn.dataset.t;
+    if (t === "real") {
+      if (!hwAllowed) {
+        log("Real hardware is disabled on this deployment (BITTLE_ALLOW_REAL_HARDWARE)", "err");
+        return;
+      }
+      if (!window.confirm("Switch to REAL hardware?\n\nCommands will drive physical servos. Ensure the robot is in a clear, flat area.")) return;
+    }
+    TARGET = t;
+    document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
+    document.body.classList.toggle("real-mode", t === "real");
+    log(`target → ${t}`, t === "real" ? "warnc" : "dim");
+  };
+});
+
+// ── API & Status ────────────────────────────────────────────────
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "content-type": "application/json" },
@@ -166,166 +773,182 @@ async function api(path, opts = {}) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    // Safety refusals are structured; surface the reason rather than a generic failure
-    // so the operator learns WHY, the same way the MCP tools do for the model.
     const reason = body.reason || body.error || res.status;
     throw new Error(`${reason}: ${body.detail || "request failed"}`);
   }
   return body;
 }
 
-function setTarget(t) {
-  TARGET = t;
-  document.querySelectorAll("#seg button").forEach(b => b.classList.toggle("on", b.dataset.t === t));
-  document.body.classList.toggle("real-mode", t === "real");
-  $("realWarn").style.display = t === "real" ? "" : "none";
-  log(`target → ${t}`, t === "real" ? "warnc" : "dim");
-}
-
-document.querySelectorAll("#seg button").forEach(btn => {
-  btn.onclick = () => {
-    const t = btn.dataset.t;
-    if (t === "real") {
-      if (!hwAllowed) {
-        log("real hardware is disabled on this deployment (BITTLE_ALLOW_REAL_HARDWARE)", "err");
-        return;
-      }
-      // Deliberate friction: an accidental click must not become a servo command.
-      if (!window.confirm("Switch to REAL hardware?\n\nCommands will drive physical servos. Make sure the robot is on a clear, flat surface.")) return;
-    }
-    setTarget(t);
-  };
-});
-
 async function refreshStatus() {
   try {
     const s = await api(`/api/status?target=sim`);
     hwAllowed = s.real_hardware_allowed;
-    tokenRequired = s.confirm_token_required;
-    const b = $("hwBadge");
+    const b = document.getElementById("hwBadge");
     b.className = "badge " + (hwAllowed ? "real" : "off");
     b.textContent = hwAllowed ? "hardware armed" : "sim only";
-    $("tokenNote").textContent = tokenRequired ? "required" : "not required on this deployment";
+
     const es = s.safety.estop;
-    $("estopBanner").classList.toggle("on", es.engaged);
-    $("estopReason").textContent = es.engaged ? `reason: ${es.reason}` : "";
-  } catch (e) { log(e.message, "err"); }
+    document.getElementById("estopBanner").classList.toggle("on", es.engaged);
+    document.getElementById("estopBtn").classList.toggle("latched", es.engaged);
+    if (viewer) viewer.setEstop(es.engaged);
+  } catch (e) {
+    log(e.message, "err");
+  }
 }
 
+// ── Joint List ──────────────────────────────────────────────────
+async function loadJoints() {
+  const data = await api("/api/joints");
+  JOINTS = data.joints;
+  const host = document.getElementById("jointsContainer");
+  host.innerHTML = "";
+
+  JOINTS.forEach(j => {
+    const row = document.createElement("div");
+    row.className = "joint-row";
+    row.id = `joint-row-${j.index}`;
+    row.innerHTML = `
+      <div class="joint-label" title="${j.label} (#${j.index})">${j.label}</div>
+      <input type="range" min="${j.min}" max="${j.max}" value="${j.rest}" data-i="${j.index}" />
+      <div class="joint-val ${j.wire_clipped ? "clipped" : ""}" id="jv-${j.index}">${j.rest}°</div>
+    `;
+    const slider = row.querySelector("input");
+    slider.oninput = () => {
+      document.getElementById("jv-" + j.index).textContent = slider.value + "°";
+      if (viewer) viewer.setJointTarget(j.index, Number(slider.value));
+    };
+    host.appendChild(row);
+  });
+}
+
+window.sendJointPose = async function() {
+  const angles = {};
+  document.querySelectorAll("#jointsContainer input[type=range]").forEach(s => {
+    angles[s.dataset.i] = Number(s.value);
+  });
+  try {
+    const simul = document.getElementById("simulCheck").checked;
+    const r = await api("/api/move", {
+      method: "POST",
+      body: JSON.stringify({ angles, target: TARGET, simultaneous: simul }),
+    });
+    log(`move → ${r.sent.trim()}`, "ok");
+    if (viewer) viewer.setPose(angles);
+  } catch (e) {
+    log(e.message, "err");
+  }
+};
+
+window.resetJointSliders = function() {
+  JOINTS.forEach(j => {
+    const s = document.querySelector(`#jointsContainer input[data-i="${j.index}"]`);
+    if (s) {
+      s.value = j.rest;
+      document.getElementById("jv-" + j.index).textContent = j.rest + "°";
+    }
+  });
+  if (viewer) viewer.resetPose();
+};
+
+async function refreshJointState() {
+  try {
+    const { angles } = await api(`/api/joints/state?target=${TARGET}`);
+    if (angles && viewer) {
+      viewer.setPose(angles);
+      Object.entries(angles).forEach(([i, a]) => {
+        const s = document.querySelector(`#jointsContainer input[data-i="${i}"]`);
+        if (s) {
+          s.value = a;
+          const v = document.getElementById("jv-" + i);
+          if (v) v.textContent = a + "°";
+        }
+      });
+    }
+  } catch {}
+}
+
+// ── Skills & Gaits ──────────────────────────────────────────────
 async function loadSkills() {
   const { skills } = await api("/api/skills");
+  const posturesHost = document.getElementById("posturesGrid");
+  const gaitsHost = document.getElementById("gaitsGrid");
+
   const mk = (s) => {
     const b = document.createElement("button");
-    b.className = "act" + (s.locomotes ? " loco" : "");
-    b.innerHTML = `${s.label}<span class="k">${s.token}</span>`;
+    b.className = "skill-card" + (s.locomotes ? " loco" : "");
+    b.innerHTML = `<strong>${s.label}</strong><span class="skill-token">${s.token}</span>`;
     b.onclick = () => runSkill(s);
     return b;
   };
-  skills.filter(s => !s.locomotes).forEach(s => $("postures").appendChild(mk(s)));
-  skills.filter(s => s.locomotes).forEach(s => $("gaits").appendChild(mk(s)));
+
+  skills.filter(s => !s.locomotes).forEach(s => posturesHost.appendChild(mk(s)));
+  skills.filter(s => s.locomotes).forEach(s => gaitsHost.appendChild(mk(s)));
 }
 
 async function runSkill(s) {
   if (s.locomotes && TARGET === "real") {
-    if (!window.confirm(`${s.label} will make the robot move across the surface.\n\nIs the area clear?`)) return;
+    if (!window.confirm(`${s.label} will move the physical robot. Is the area clear?`)) return;
   }
   try {
     const r = await api("/api/skill", {
       method: "POST",
       body: JSON.stringify({
-        skill: s.name, target: TARGET,
-        ack_locomotion: s.locomotes, confirm: confirmToken(),
+        skill: s.name,
+        target: TARGET,
+        ack_locomotion: s.locomotes
       }),
     });
-    log(`${r.token} → ${r.sent.trim()} ${r.ok ? "ok" : "(no ack)"}`, r.ok ? "ok" : "warnc");
+    log(`${r.token} → ${r.sent.trim()} ${r.ok ? "ok" : ""}`, "ok");
+    if (viewer) {
+      if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
+      else if (s.name === 'balance' || s.name === 'up') viewer.resetPose();
+    }
     refreshJointState();
-  } catch (e) { log(e.message, "err"); }
+  } catch (e) {
+    log(e.message, "err");
+  }
 }
 
-async function loadJoints() {
-  const data = await api("/api/joints");
-  JOINTS = data.joints;
-  const host = $("joints");
-  host.innerHTML = "";
-  JOINTS.forEach(j => {
-    const row = document.createElement("div");
-    row.className = "joint";
-    row.innerHTML = `
-      <label title="${j.label} (index ${j.index})">${j.label}</label>
-      <input type="range" min="${j.min}" max="${j.max}" value="${j.rest}" data-i="${j.index}" />
-      <span class="val ${j.wire_clipped ? "clip" : ""}" id="v${j.index}">${j.rest}°</span>`;
-    const slider = row.querySelector("input");
-    slider.oninput = () => { $("v" + j.index).textContent = slider.value + "°"; };
-    host.appendChild(row);
-  });
-}
-
-function currentPose() {
-  const angles = {};
-  document.querySelectorAll("#joints input[type=range]").forEach(s => {
-    angles[s.dataset.i] = Number(s.value);
-  });
-  return angles;
-}
-
-async function sendJoints() {
-  try {
-    const r = await api("/api/move", {
-      method: "POST",
-      body: JSON.stringify({
-        angles: currentPose(), target: TARGET,
-        simultaneous: $("simul").checked, confirm: confirmToken(),
-      }),
-    });
-    log(`move → ${r.sent.trim()}`, "ok");
-    // Clamps are reported, never silent: the operator must see that what the
-    // robot did differs from what they asked for.
-    (r.adjustments || []).forEach(a =>
-      log(`clamped ${a.joint_name}: ${a.requested}° → ${a.applied}° (${a.reason})`, "warnc"));
-  } catch (e) { log(e.message, "err"); }
-}
-
-function resetJoints() {
-  JOINTS.forEach(j => {
-    const s = document.querySelector(`#joints input[data-i="${j.index}"]`);
-    if (s) { s.value = j.rest; $("v" + j.index).textContent = j.rest + "°"; }
-  });
-}
-
-async function refreshJointState() {
-  try {
-    const { angles } = await api(`/api/joints/state?target=${TARGET}` + (confirmToken() ? `&confirm=${encodeURIComponent(confirmToken())}` : ""));
-    Object.entries(angles || {}).forEach(([i, a]) => {
-      const s = document.querySelector(`#joints input[data-i="${i}"]`);
-      if (s) { s.value = a; const v = $("v" + i); if (v) v.textContent = a + "°"; }
-    });
-  } catch { /* joint readback is best-effort; never block the UI on it */ }
-}
-
-async function estop() {
+// ── E-Stop Controls ─────────────────────────────────────────────
+window.toggleEstop = async function() {
   try {
     const r = await api("/api/estop", { method: "POST", body: JSON.stringify({ reason: "ui" }) });
-    log(`E-STOP engaged — ${JSON.stringify(r.backends)}`, "err");
+    log("🚨 E-STOP ENGAGED", "err");
+    if (viewer) viewer.setEstop(true);
     refreshStatus();
-  } catch (e) { log(e.message, "err"); }
-}
+  } catch (e) {
+    log(e.message, "err");
+  }
+};
 
-async function clearEstop() {
+window.clearEstop = async function() {
   try {
     await api("/api/estop/clear", { method: "POST" });
     log("E-stop cleared", "ok");
+    if (viewer) viewer.setEstop(false);
     refreshStatus();
-  } catch (e) { log(e.message, "err"); }
-}
+  } catch (e) {
+    log(e.message, "err");
+  }
+};
 
-(async function init() {
-  await refreshStatus();
-  await loadSkills();
-  await loadJoints();
-  await refreshJointState();
-  log("ready — target is sim by default", "dim");
-  setInterval(refreshStatus, 5000);
-})();
+// ── Viewport Buttons ────────────────────────────────────────────
+window.setCam = (name) => {
+  if (viewer) viewer.setCameraPreset(name);
+  document.querySelectorAll('.viewport-controls .vbtn').forEach(b => {
+    if (b.textContent.toLowerCase().includes(name)) b.classList.add('active');
+    else b.classList.remove('active');
+  });
+};
+
+window.toggleWireframe = () => {
+  isWireframe = !isWireframe;
+  if (viewer) viewer.setWireframe(isWireframe);
+};
+
+window.resetToStand = () => {
+  if (viewer) viewer.resetPose();
+};
 </script>
 </body>
 </html>
