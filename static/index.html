@@ -1207,6 +1207,9 @@
         <span class="status-dot" id="statusDot"></span>
         <span id="activeStatusText">3D Viewport: Kinematic Slew Active (320°/s)</span>
       </div>
+      <div class="status-pill" id="viewerPosePill" style="margin-top: 6px; font-family: var(--font-mono); font-size: 11px;">
+        <span id="viewerPoseDisplay">Pose: X: 0.000m | Y: 53.2mm | Z: 0.000m | Pitch: 0.0°</span>
+      </div>
     </div>
 
     <!-- Floating Moveset Player & Timeline Scrubber -->
@@ -1295,6 +1298,8 @@
       </div>
 
       <div class="agent-chips">
+        <div class="agent-prompt-chip" data-prompt="Sit down on the floor under gravity and rest your paws.">🐕 Sit Down</div>
+        <div class="agent-prompt-chip" data-prompt="Load the mini stairs course and run an autonomous stair training episode to optimize foot clearance.">🏋️ Stair Training Run</div>
         <div class="agent-prompt-chip" data-prompt="Sit down and look around.">Sit down &amp; look around</div>
         <div class="agent-prompt-chip" data-prompt="Invent a sneaky cat stalk crouch with front paw extended.">🐾 Invent Stalk Pose</div>
         <div class="agent-prompt-chip" data-prompt="Choreograph a playful wiggle dance with hips and head.">💃 Playful Wiggle Dance</div>
@@ -1512,6 +1517,17 @@ window.addEventListener('DOMContentLoaded', async () => {
         row.classList.add('selected');
         row.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
+    };
+
+    viewer.onPoseUpdate = (x, y, z, yaw, pitch) => {
+      const poseEl = document.getElementById('viewerPoseDisplay');
+      if (poseEl) {
+        poseEl.textContent = `Pose: X: ${x.toFixed(3)}m | Y: ${(y * 1000).toFixed(1)}mm | Z: ${z.toFixed(3)}m | Pitch: ${(pitch * 180 / Math.PI).toFixed(1)}°`;
+      }
+    };
+
+    viewer.onTripEvent = (info) => {
+      log(`⚠️ Terrain Trip: Stumbled on ${info.obstacle || 'riser'} at x=${(info.x || 0).toFixed(3)}m (Clearance lift was too low: ${((info.clearanceLift || 0) * 1000).toFixed(1)}mm < 18mm)`, 'err');
     };
   }
 

@@ -271,3 +271,282 @@ def evaluate_terrain_clearance(
         "recommendations": recommendations,
         "frame_count": len(frames),
     }
+
+
+def get_obstacle_proximity(course_preset: str, current_x: float, current_z: float = 0.0) -> dict[str, Any]:
+    """Calculate distance and metadata for the next terrain obstacle along the forward path."""
+    if course_preset == "mini_stairs":
+        steps = [
+            {"type": "step", "index": 1, "riser_x": 0.140, "tread_end_x": 0.220, "elevation_m": 0.018},
+            {"type": "step", "index": 2, "riser_x": 0.220, "tread_end_x": 0.300, "elevation_m": 0.036},
+            {"type": "step", "index": 3, "riser_x": 0.300, "tread_end_x": 0.380, "elevation_m": 0.054},
+            {"type": "landing", "index": 4, "riser_x": 0.380, "tread_end_x": 0.520, "elevation_m": 0.054},
+        ]
+        if current_x < 0.140:
+            return {
+                "active_course": "mini_stairs",
+                "current_zone": "approach",
+                "next_obstacle": "step_1",
+                "distance_to_riser_m": round(0.140 - current_x, 3),
+                "riser_height_mm": 18.0,
+                "current_elevation_mm": 0.0,
+            }
+        for s in steps[:3]:
+            if s["riser_x"] <= current_x < s["tread_end_x"]:
+                next_step = steps[s["index"]]
+                return {
+                    "active_course": "mini_stairs",
+                    "current_zone": f"step_{s['index']}",
+                    "current_elevation_mm": round(s["elevation_m"] * 1000, 1),
+                    "next_obstacle": f"{next_step['type']}_{next_step['index']}",
+                    "distance_to_riser_m": round(next_step["riser_x"] - current_x, 3),
+                    "riser_height_mm": 18.0 if next_step["type"] == "step" else 0.0,
+                }
+        if current_x >= 0.380:
+            return {
+                "active_course": "mini_stairs",
+                "current_zone": "top_landing_platform",
+                "next_obstacle": "none_goal_reached",
+                "distance_to_riser_m": 0.0,
+                "riser_height_mm": 0.0,
+                "current_elevation_mm": 54.0,
+            }
+
+    return {
+        "active_course": course_preset,
+        "current_zone": "open_ground",
+        "next_obstacle": "none",
+        "distance_to_riser_m": 99.0,
+        "riser_height_mm": 0.0,
+        "current_elevation_mm": 0.0,
+    }
+
+
+def simulate_stair_climb_episode(
+    angles_or_sequence: dict[str | int, float] | list[dict[str, Any]],
+    adjustments: dict[str, float] | None = None,
+    start_x: float = 0.05,
+) -> dict[str, Any]:
+    """Simulate an autonomous training episode for Bittle climbing the 3-step 18mm staircase.
+    
+    Evaluates kinematic trajectory, per-stride forward displacement, knee clearance,
+    body pitch stability, and contact outcome across all 3 steps.
+    """
+    import math
+
+    adjustments = adjustments or {}
+    knee_adjust = float(adjustments.get("knee_lift_deg", 0.0))
+    pitch_adjust = float(adjustments.get("pitch_compensation_deg", 0.0))
+    stride_mult = float(adjustments.get("stride_mult", 1.0))
+
+    frames: list[dict[int, float]] = []
+    if isinstance(angles_or_sequence, dict):
+        angles_map = {int(k): float(v) for k, v in angles_or_sequence.items() if str(k).isdigit()}
+        frames.append(angles_map)
+    elif isinstance(angles_or_sequence, list):
+        for item in angles_or_sequence:
+            sub = item.get("angles", item) if isinstance(item, dict) else {}
+            angles_map = {int(k): float(v) for k, v in sub.items() if str(k).isdigit()}
+            if angles_map:
+                frames.append(angles_map)
+
+    if not frames:
+        return {
+            "success": False,
+            "outcome": "invalid_input",
+            "error": "No valid joint angle frames provided for simulation.",
+        }
+
+    # Evaluate peak knee lift with adjustment
+    max_fl_knee = max(f.get(12, 80) for f in frames) + knee_adjust
+    max_fr_knee = max(f.get(13, 80) for f in frames) + knee_adjust
+    peak_knee = max(max_fl_knee, max_fr_knee)
+    foot_lift_mm = max(0.0, (peak_knee - 80.0) * 0.85)
+
+    wheelbase = 0.120  # 120mm
+    riser_height_m = 0.018  # 18mm
+    riser_height_mm = 18.0
+
+    steps = [
+        {"idx": 1, "riser_x": 0.140, "tread_end_x": 0.220, "elevation": 0.018},
+        {"idx": 2, "riser_x": 0.220, "tread_end_x": 0.300, "elevation": 0.036},
+        {"idx": 3, "riser_x": 0.300, "tread_end_x": 0.380, "elevation": 0.054},
+    ]
+
+    current_x = start_x
+    stride_len = 0.038 * stride_mult
+    stride_count = 0
+    max_strides = 16
+    telemetry: list[dict[str, Any]] = []
+    current_front_elevation = 0.0
+    current_rear_elevation = 0.0
+    max_pitch_deg = 0.0
+
+    while current_x < 0.400 and stride_count < max_strides:
+        stride_count += 1
+        current_x += stride_len
+        front_x = current_x + 0.050
+        rear_x = current_x - 0.070
+
+        # Check front paw step riser collisions
+        for s in steps:
+            # If front paw has just reached or crossed this riser
+            if front_x >= s["riser_x"] and current_front_elevation < s["elevation"]:
+                if foot_lift_mm < riser_height_mm:
+                    deficit = riser_height_mm - foot_lift_mm
+                    telemetry.append({
+                        "stride": stride_count,
+                        "event": "trip",
+                        "step_index": s["idx"],
+                        "riser_x": s["riser_x"],
+                        "foot_lift_mm": round(foot_lift_mm, 1),
+                        "required_mm": riser_height_mm,
+                    })
+                    return {
+                        "success": False,
+                        "outcome": "tripped",
+                        "failed_at_step": s["idx"],
+                        "failed_at_x": round(s["riser_x"], 3),
+                        "strides_completed": stride_count,
+                        "peak_foot_lift_mm": round(foot_lift_mm, 1),
+                        "required_clearance_mm": riser_height_mm,
+                        "deficit_mm": round(deficit, 1),
+                        "max_pitch_deg": round(max_pitch_deg, 1),
+                        "telemetry_log": telemetry,
+                        "reflection": (
+                            f"EPISODE FAILED: Front paws tripped on Step {s['idx']} riser (x={s['riser_x']}m). "
+                            f"Achieved foot lift was {foot_lift_mm:.1f}mm ({peak_knee:.1f}° knee flexion), "
+                            f"which is {deficit:.1f}mm below the required {riser_height_mm}mm riser height."
+                        ),
+                        "guidance": (
+                            f"Increase front knee flexion (joints 12 & 13) by at least +{math.ceil(deficit / 0.85)}° "
+                            f"(suggested >= {peak_knee + deficit / 0.85 + 2:.0f}°) to clear the 18mm riser."
+                        ),
+                    }
+                else:
+                    current_front_elevation = s["elevation"]
+                    telemetry.append({
+                        "stride": stride_count,
+                        "event": "step_cleared",
+                        "step_index": s["idx"],
+                        "elevation_mm": round(s["elevation"] * 1000, 1),
+                    })
+
+            # Check rear paw step riser transitions
+            if rear_x >= s["riser_x"] and current_rear_elevation < s["elevation"]:
+                current_rear_elevation = s["elevation"]
+
+        # Calculate pitch
+        pitch_rad = math.atan2(current_front_elevation - current_rear_elevation, wheelbase)
+        pitch_deg = math.degrees(pitch_rad) + pitch_adjust
+        max_pitch_deg = max(max_pitch_deg, abs(pitch_deg))
+
+        if pitch_deg > 35.0:
+            return {
+                "success": False,
+                "outcome": "backward_tip_over",
+                "failed_at_step": s["idx"],
+                "pitch_deg": round(pitch_deg, 1),
+                "strides_completed": stride_count,
+                "peak_foot_lift_mm": round(foot_lift_mm, 1),
+                "telemetry_log": telemetry,
+                "reflection": f"EPISODE FAILED: Excessive backward pitch ({pitch_deg:.1f}° > 35°) caused robot to tip over backward.",
+                "guidance": "Extend rear legs and apply forward torso pitch bias to stabilize center-of-mass.",
+            }
+
+    # Final landing platform reached check
+    if current_x >= 0.380:
+        stability = max(50.0, 100.0 - (max_pitch_deg * 1.2))
+        return {
+            "success": True,
+            "outcome": "climbed_stairs_successfully",
+            "final_x": round(current_x, 3),
+            "final_elevation_mm": 54.0,
+            "strides_completed": stride_count,
+            "peak_foot_lift_mm": round(foot_lift_mm, 1),
+            "max_pitch_deg": round(max_pitch_deg, 1),
+            "stability_score": round(stability, 1),
+            "steps_cleared": 3,
+            "telemetry_log": telemetry,
+            "reflection": (
+                f"EPISODE SUCCESS: Cleared all 3 steps onto top landing platform in {stride_count} strides. "
+                f"Foot lift: {foot_lift_mm:.1f}mm (margin: +{foot_lift_mm - riser_height_mm:.1f}mm). "
+                f"Peak body pitch: {max_pitch_deg:.1f}°. Stability score: {stability:.1f}%."
+            ),
+        }
+
+    return {
+        "success": False,
+        "outcome": "stalled",
+        "final_x": round(current_x, 3),
+        "strides_completed": stride_count,
+        "peak_foot_lift_mm": round(foot_lift_mm, 1),
+        "telemetry_log": telemetry,
+        "reflection": f"Episode terminated after {stride_count} strides before reaching landing platform (reached x={current_x:.3f}m).",
+        "guidance": "Increase stride length multiplier or number of steps.",
+    }
+
+
+def compute_leg_reach(shoulder_deg: float, knee_deg: float) -> float:
+    """Compute vertical drop (in meters) from torso shoulder pivot to foot tip."""
+    import math
+
+    def rot_y(v, deg):
+        rad = math.radians(deg)
+        c, s = math.cos(rad), math.sin(rad)
+        return (v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c)
+
+    def add_v(v1, v2):
+        return (v1[0] + v2[0], v1[1] + v2[1], v1[2] + v2[2])
+
+    v_thigh = (-0.044433, 0.00142, -0.011906)
+    v_shank = (0.047813, 0.013, -0.009684)
+
+    v_thigh_rot = rot_y(v_thigh, shoulder_deg)
+    p_knee = add_v((0.0525, -0.0485, 0.022), v_thigh_rot)
+    v_shank_rot = rot_y(rot_y(v_shank, knee_deg), shoulder_deg)
+    p_foot = add_v(p_knee, v_shank_rot)
+
+    # In CAD coords, +Z is up and ground is -Z. Vertical drop from torso center is -p_foot[2]
+    return -p_foot[2]
+
+
+def compute_posture_ground_contact(angles: dict[int | str, float]) -> dict[str, Any]:
+    """Compute ground contact clearances, chassis height, and pitch under gravity.
+    
+    In standing: h_front ~ 53.2mm, h_rear ~ 53.2mm -> height = 53.2mm, pitch = 0 deg
+    In sitting: h_front ~ 48.4mm, rear folded up -> rump rests on floor at 22mm -> height ~ 35mm, pitch ~ +12.4 deg
+    In resting: legs folded -> belly on floor at 20mm -> height = 20mm, pitch = 0 deg
+    """
+    import math
+
+    normalized = {int(k): float(v) for k, v in angles.items() if str(k).isdigit()}
+
+    # Front legs (8=FL sh, 12=FL kn, 9=FR sh, 13=FR kn)
+    fl_reach = compute_leg_reach(normalized.get(8, -45.0), normalized.get(12, 80.0))
+    fr_reach = compute_leg_reach(normalized.get(9, -45.0), normalized.get(13, 80.0))
+    # Chest minimum contact floor: 20mm (bottom of battery / chassis)
+    h_front = max(0.020, (fl_reach + fr_reach) / 2.0)
+
+    # Rear legs (11=BL sh, 15=BL kn, 10=BR sh, 14=BR kn)
+    bl_reach = compute_leg_reach(normalized.get(11, -45.0), normalized.get(15, 80.0))
+    br_reach = compute_leg_reach(normalized.get(10, -45.0), normalized.get(14, 80.0))
+    # Rump minimum contact floor: 22mm (bottom of pelvis / rear battery)
+    h_rear = max(0.022, (bl_reach + br_reach) / 2.0)
+
+    wheelbase = 0.120  # 120mm
+    chassis_height = (h_front + h_rear) / 2.0
+    pitch_rad = math.atan2(h_front - h_rear, wheelbase)
+    pitch_deg = math.degrees(pitch_rad)
+
+    return {
+        "h_front_m": round(h_front, 4),
+        "h_rear_m": round(h_rear, 4),
+        "chassis_height_m": round(chassis_height, 4),
+        "chassis_height_mm": round(chassis_height * 1000.0, 1),
+        "pitch_deg": round(pitch_deg, 1),
+        "is_sitting": bool(h_rear <= 0.025 and normalized.get(10, 0) >= 70 and normalized.get(11, 0) >= 70),
+        "is_resting": bool(chassis_height <= 0.032 and normalized.get(10, 0) < 65),
+        "is_standing": bool(chassis_height >= 0.048),
+    }
+

@@ -111,6 +111,19 @@ export class AgentUI {
         clampNote.textContent = `Clamped: ${JSON.stringify(result.adjustments)}`;
         card.appendChild(clampNote);
       }
+      if (result.reflection) {
+        const reflNote = document.createElement('div');
+        reflNote.className = 'agent-tool-reflection';
+        reflNote.style.marginTop = '6px';
+        reflNote.style.padding = '6px 8px';
+        reflNote.style.borderRadius = '4px';
+        reflNote.style.fontSize = '0.82em';
+        const isSuccess = result.outcome === 'success';
+        reflNote.style.background = isSuccess ? 'rgba(46, 204, 113, 0.15)' : 'rgba(231, 76, 60, 0.15)';
+        reflNote.style.border = isSuccess ? '1px solid rgba(46, 204, 113, 0.4)' : '1px solid rgba(231, 76, 60, 0.4)';
+        reflNote.innerHTML = `<strong>Outcome:</strong> ${(result.outcome || '').toUpperCase()} | <strong>Distance:</strong> ${(result.distance_travelled_m || 0).toFixed(3)}m | <strong>Max Height:</strong> ${(result.max_height_reached_m || 0).toFixed(3)}m<br><strong>Feedback:</strong> ${result.reflection}`;
+        card.appendChild(reflNote);
+      }
     } else {
       card.classList.add('tool-refused');
       status.textContent = `✗ ${result.reason || result.error || 'refused'}: ${result.detail || ''}`;
@@ -301,6 +314,20 @@ export class AgentUI {
 
         // Reflect movement directly on the 3D Viewer & Sequence Timeline!
         if (ev.result && ev.result.ok && this.viewer) {
+          // Sync robot 3D scene pose if reported by tool
+          if (ev.result.pose && typeof this.viewer.setRobotPosition === 'function') {
+            const p = ev.result.pose;
+            const yawRad = (p.yaw !== undefined ? p.yaw : 0) * (Math.PI / 180);
+            this.viewer.setRobotPosition(p.x, p.z, yawRad);
+          }
+
+          // Handle course loading
+          if (ev.name === 'bittle_load_course' && ev.result.preset && typeof this.viewer.loadCourse === 'function') {
+            this.viewer.loadCourse(ev.result.preset);
+          } else if (ev.name === 'bittle_reset_pose' && typeof this.viewer.resetRobotPosition === 'function') {
+            this.viewer.resetRobotPosition();
+          }
+
           if (ev.result.moveset && ev.result.moveset.frames) {
             const seqName = ev.result.name || ev.result.expression || ev.result.moveset.name || 'Sequence';
             if (typeof window.loadAndPlayMoveset === 'function') {

@@ -120,6 +120,12 @@ export class BittleViewer {
     // Obstacle Course & Terrain Engine
     this.obstacleCourse = new ObstacleCourse(this.scene);
     this.robotPosition = { x: 0, z: 0 };
+    this.robotYaw = 0; // heading angle in radians (0 = facing +X)
+    this.robotPitch = 0; // pitch angle in radians (positive = nose UP)
+    this.rootMotionEnabled = true;
+    this.cameraFollowEnabled = true;
+    this.onPoseUpdate = null;
+    this.onTripEvent = null;
 
     this.clock = new THREE.Clock();
     this.animate = this.animate.bind(this);
@@ -205,19 +211,100 @@ export class BittleViewer {
     return this.obstacleCourse ? this.obstacleCourse.getLayout() : { preset: 'none', obstacles: [] };
   }
 
-  setRobotPosition(x, z) {
+  setRobotPosition(x, z, yaw = null) {
     this.robotPosition.x = x;
     this.robotPosition.z = z;
     this.robotGroup.position.x = x;
     this.robotGroup.position.z = z;
+    if (yaw !== null && !isNaN(yaw)) {
+      this.robotYaw = yaw;
+      this.robotGroup.rotation.y = yaw;
+    }
+    if (this.onPoseUpdate) {
+      this.onPoseUpdate({
+        x: this.robotPosition.x,
+        y: this.robotGroup.position.y,
+        z: this.robotPosition.z,
+        yaw: this.robotYaw,
+        pitch: this.robotPitch
+      });
+    }
   }
 
-  moveRobot(dx, dz) {
-    this.setRobotPosition(this.robotPosition.x + dx, this.robotPosition.z + dz);
+  moveRobot(dx, dz, dyaw = 0) {
+    this.setRobotPosition(this.robotPosition.x + dx, this.robotPosition.z + dz, this.robotYaw + dyaw);
   }
 
   resetRobotPosition() {
-    this.setRobotPosition(0, 0);
+    this.robotYaw = 0;
+    this.robotPitch = 0;
+    this.robotGroup.rotation.y = 0;
+    this.robotGroup.rotation.z = 0;
+    this.setRobotPosition(0, 0, 0);
+  }
+
+  getLocomotionSpeed(sequenceName) {
+    const name = (sequenceName || '').toLowerCase();
+    if (name.includes('wkf') || name.includes('walk_forward') || name === 'walk') return { vx: 0.080, vyaw: 0 };
+    if (name.includes('trf') || name.includes('trot')) return { vx: 0.115, vyaw: 0 };
+    if (name.includes('stair_step_up')) return { vx: 0.055, vyaw: 0 };
+    if (name.includes('ramp_climb')) return { vx: 0.060, vyaw: 0 };
+    if (name.includes('crf') || name.includes('crawl')) return { vx: 0.035, vyaw: 0 };
+    if (name.includes('bk') || name.includes('backup') || name.includes('back')) return { vx: -0.050, vyaw: 0 };
+    if (name.includes('wkl') || name.includes('turn_left') || name.includes('left')) return { vx: 0.035, vyaw: 0.35 };
+    if (name.includes('wkr') || name.includes('turn_right') || name.includes('right')) return { vx: 0.035, vyaw: -0.35 };
+    return { vx: 0, vyaw: 0 };
+  }
+
+  computeLegReach(shoulderDeg, kneeDeg) {
+    const sRad = (shoulderDeg * Math.PI) / 180;
+    const kRad = (kneeDeg * Math.PI) / 180;
+
+    // Leg vectors from Petoi Bittle CAD specification
+    const vThighX = -0.044433;
+    const vThighZ = -0.011906;
+    const vShankX = 0.047813;
+    const vShankZ = -0.009684;
+
+    const cosS = Math.cos(sRad);
+    const sinS = Math.sin(sRad);
+    const thighRotZ = -vThighX * sinS + vThighZ * cosS;
+    const kneeZ = 0.022 + thighRotZ;
+
+    const cosK = Math.cos(kRad);
+    const sinK = Math.sin(kRad);
+    const shankKneeX = vShankX * cosK + vShankZ * sinK;
+    const shankKneeZ = -vShankX * sinK + vShankZ * cosK;
+
+    const shankRotZ = -shankKneeX * sinS + shankKneeZ * cosS;
+    const footZ = kneeZ + shankRotZ;
+
+    return -footZ;
+  }
+
+  computeGroundContactOffsets(angles) {
+    const a = angles || this.currentAngles || {};
+    const flSh = a[8] !== undefined ? a[8] : -45;
+    const flKn = a[12] !== undefined ? a[12] : 80;
+    const frSh = a[9] !== undefined ? a[9] : -45;
+    const frKn = a[13] !== undefined ? a[13] : 80;
+
+    const blSh = a[11] !== undefined ? a[11] : -45;
+    const blKn = a[15] !== undefined ? a[15] : 80;
+    const brSh = a[10] !== undefined ? a[10] : -45;
+    const brKn = a[14] !== undefined ? a[14] : 80;
+
+    const flReach = this.computeLegReach(flSh, flKn);
+    const frReach = this.computeLegReach(frSh, frKn);
+    const blReach = this.computeLegReach(blSh, blKn);
+    const brReach = this.computeLegReach(brSh, brKn);
+
+    // Minimum physical contact floor:
+    // Chest bottom is 20mm below torso center; rump/pelvis is 22mm below torso center
+    const hFront = Math.max(0.020, (flReach + frReach) / 2.0);
+    const hRear = Math.max(0.022, (blReach + brReach) / 2.0);
+
+    return { hFront, hRear };
   }
 
   initScene() {
@@ -555,12 +642,10 @@ export class BittleViewer {
     if (this.estopEngaged === engaged) return;
     this.estopEngaged = engaged;
     if (engaged) {
-      // Robot drops limp
+      // Robot drops limp under gravity to rest pose on floor
       this.isPlaying = false;
       this.setPose(REST_POSE, true);
-      this.robotGroup.position.y = 0.02; // sink to floor
     } else {
-      this.robotGroup.position.y = 0.0532;
       this.setPose(STAND_POSE, true);
     }
   }
@@ -846,11 +931,99 @@ export class BittleViewer {
       }
     }
 
-    // Dynamic terrain elevation tracking
+    // Root motion locomotion during playback
+    if (this.isLoaded && this.isPlaying && this.activeSequence && this.rootMotionEnabled) {
+      const seqName = this.activeSequence.name || '';
+      const { vx, vyaw } = this.getLocomotionSpeed(seqName);
+      if (vx !== 0 || vyaw !== 0) {
+        let blocked = false;
+        const currentX = this.robotGroup.position.x;
+        const nextX = currentX + vx * dt * Math.cos(this.robotYaw);
+        const frontX = nextX + 0.06;
+
+        // Check for stair riser collisions on mini_stairs course
+        if (this.obstacleCourse && this.obstacleCourse.currentPreset === 'mini_stairs' && vx > 0) {
+          const risers = [
+            { x: 0.140, step: 1 },
+            { x: 0.220, step: 2 },
+            { x: 0.300, step: 3 }
+          ];
+          for (const r of risers) {
+            if (currentX + 0.06 < r.x && frontX >= r.x) {
+              const flKnee = this.currentAngles[12] || 80;
+              const frKnee = this.currentAngles[13] || 80;
+              const peakKnee = Math.max(flKnee, frKnee);
+              const footLiftMm = Math.max(0, (peakKnee - 80) * 0.85);
+
+              if (footLiftMm < 18.0) {
+                blocked = true;
+                if (!this._lastTripTime || Date.now() - this._lastTripTime > 2500) {
+                  this._lastTripTime = Date.now();
+                  console.warn(`[Trip Warning] Bittle tripped on Step ${r.step} riser (x=${r.x.toFixed(3)}m)! Foot lift: ${footLiftMm.toFixed(1)}mm < 18.0mm`);
+                  if (this.onTripEvent) {
+                    this.onTripEvent({ step: r.step, riserX: r.x, footLiftMm, requiredMm: 18.0 });
+                  }
+                }
+                break;
+              }
+            }
+          }
+        }
+
+        if (!blocked) {
+          this.robotYaw += vyaw * dt;
+          this.robotGroup.rotation.y = this.robotYaw;
+          this.robotPosition.x += vx * dt * Math.cos(this.robotYaw);
+          this.robotPosition.z -= vx * dt * Math.sin(this.robotYaw);
+          this.robotGroup.position.x = this.robotPosition.x;
+          this.robotGroup.position.z = this.robotPosition.z;
+
+          if (this.onPoseUpdate) {
+            this.onPoseUpdate({
+              x: this.robotPosition.x,
+              y: this.robotGroup.position.y,
+              z: this.robotPosition.z,
+              yaw: this.robotYaw,
+              pitch: this.robotPitch
+            });
+          }
+        }
+      }
+    }
+
+    // Dynamic terrain elevation & pitch conformation
     if (this.obstacleCourse) {
-      const terrainY = this.obstacleCourse.getElevationAt(this.robotGroup.position.x, this.robotGroup.position.z);
-      const targetY = 0.0532 + terrainY;
-      this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.15);
+      const x = this.robotGroup.position.x;
+      const z = this.robotGroup.position.z;
+      const yaw = this.robotYaw || 0;
+
+      // Wheelbase is ~120mm: front paws at +0.06m forward, rear paws at -0.06m
+      const frontX = x + 0.06 * Math.cos(yaw);
+      const frontZ = z - 0.06 * Math.sin(yaw);
+      const rearX = x - 0.06 * Math.cos(yaw);
+      const rearZ = z + 0.06 * Math.sin(yaw);
+
+      const yFront = this.obstacleCourse ? this.obstacleCourse.getElevationAt(frontX, frontZ) : 0;
+      const yRear = this.obstacleCourse ? this.obstacleCourse.getElevationAt(rearX, rearZ) : 0;
+
+      // Dynamic posture contact reach (front paws vs rear rump under gravity)
+      const { hFront, hRear } = this.computeGroundContactOffsets(this.currentAngles);
+      const yFrontTarget = yFront + hFront;
+      const yRearTarget = yRear + hRear;
+
+      const targetY = (yFrontTarget + yRearTarget) / 2.0;
+      this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.20);
+
+      // Conforming pitch angle: tilt nose up when sitting or climbing stairs/ramps
+      const targetPitch = Math.atan2(yFrontTarget - yRearTarget, 0.120);
+      this.robotPitch = THREE.MathUtils.lerp(this.robotPitch, targetPitch, 0.15);
+      this.robotGroup.rotation.z = this.robotPitch;
+    }
+
+    // Smooth camera tracking to follow robot
+    if (this.cameraFollowEnabled && !this.cameraTransition) {
+      this.controls.target.x = THREE.MathUtils.lerp(this.controls.target.x, this.robotGroup.position.x + 0.06, 0.04);
+      this.controls.target.z = THREE.MathUtils.lerp(this.controls.target.z, this.robotGroup.position.z, 0.04);
     }
 
     // Smooth camera transition if active

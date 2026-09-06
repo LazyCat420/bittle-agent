@@ -501,6 +501,86 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_get_scene_pose",
+            "description": "Query Bittle's current 3D position (x, y, z), heading yaw, active course, proximity to obstacles (e.g. stairs), and zone status.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_navigate_step",
+            "description": "Take directed navigation steps across the scene to approach, align with, or mount obstacles.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "direction": {
+                        "type": "string",
+                        "enum": ["forward", "backward", "turn_left", "turn_right", "stair_step_up"],
+                        "description": "Stepping direction across the scene",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of strides/steps (default 1, max 8)",
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": ["sim", "real"],
+                        "description": "Target backend ('sim' default or 'real')",
+                    },
+                },
+                "required": ["direction"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_reset_pose",
+            "description": "Reset Bittle's position and heading in the 3D scene back to spawn origin (x=0, z=0, yaw=0).",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_run_stair_training_episode",
+            "description": "Execute an automated training trial episode for Bittle climbing the 18mm 3-step staircase. Evaluates foot clearance, body pitch, contact slips, and yields actionable reflection feedback for GLM to refine the gait.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "moveset_name": {
+                        "type": "string",
+                        "description": "Optional moveset name to test (defaults to 'stair_step_up')",
+                    },
+                    "knee_lift_deg": {
+                        "type": "number",
+                        "description": "Adjustment offset to front knee flexion angle in degrees (e.g. +5, +10)",
+                    },
+                    "pitch_compensation_deg": {
+                        "type": "number",
+                        "description": "Torso pitch bias adjustment in degrees",
+                    },
+                    "stride_mult": {
+                        "type": "number",
+                        "description": "Stride length multiplier (e.g. 1.0, 1.2)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -511,6 +591,50 @@ class GLMAgentHarness:
         self.lifecycle = get_lifecycle()
         self.composer = get_composer()
         self.active_course = "none"
+        self.robot_pose = {"x": 0.0, "y": 0.0532, "z": 0.0, "yaw": 0.0}
+
+    def _compute_skill_displacement(self, skill_or_name: str) -> tuple[float, float, float]:
+        """Return (dx, dz, dyaw_deg) for a given skill or gait."""
+        s = skill_or_name.lower()
+        if s in ("wkf", "walk", "walk_forward"):
+            return (0.038, 0.0, 0.0)
+        elif s in ("trf", "trot", "trot_forward"):
+            return (0.048, 0.0, 0.0)
+        elif s in ("bk", "backup", "back_up"):
+            return (-0.035, 0.0, 0.0)
+        elif s in ("crf", "crawl", "crawl_forward"):
+            return (0.022, 0.0, 0.0)
+        elif s in ("wkl", "walk_left"):
+            return (0.020, 0.0, 15.0)
+        elif s in ("wkr", "walk_right"):
+            return (0.020, 0.0, -15.0)
+        elif s in ("stair_step_up",):
+            return (0.040, 0.0, 0.0)
+        elif s in ("ramp_climb",):
+            return (0.042, 0.0, 0.0)
+        elif s in ("low_tunnel_crawl",):
+            return (0.028, 0.0, 0.0)
+        return (0.0, 0.0, 0.0)
+
+    def _apply_pose_delta(self, dx: float, dz: float, dyaw: float):
+        import math
+        yaw_rad = math.radians(self.robot_pose.get("yaw", 0.0))
+        # Forward is +X, lateral is +Z in Three.js coordinates
+        world_dx = dx * math.cos(yaw_rad) - dz * math.sin(yaw_rad)
+        world_dz = dx * math.sin(yaw_rad) + dz * math.cos(yaw_rad)
+        new_x = max(-0.5, min(2.0, self.robot_pose["x"] + world_dx))
+        new_z = max(-1.0, min(1.0, self.robot_pose["z"] + world_dz))
+        new_yaw = (self.robot_pose["yaw"] + dyaw) % 360.0
+
+        # Elevation update based on active course
+        from .motion.obstacles import get_obstacle_proximity
+        prox = get_obstacle_proximity(self.active_course, new_x, new_z)
+        elev_m = prox.get("current_elevation_mm", 0.0) / 1000.0
+
+        self.robot_pose["x"] = round(new_x, 4)
+        self.robot_pose["z"] = round(new_z, 4)
+        self.robot_pose["y"] = round(0.0532 + elev_m, 4)
+        self.robot_pose["yaw"] = round(new_yaw, 1)
 
     def get_system_prompt(self, target: str = "sim") -> str:
         """Construct context-rich system prompt with pre-injected active hardware state and latency directives."""
@@ -607,6 +731,8 @@ Execute user movement goals immediately on Turn 1."""
                     ack_locomotion=ack_locomotion,
                     confirm=confirm,
                 )
+                dx, dz, dyaw = self._compute_skill_displacement(resolved.name)
+                self._apply_pose_delta(dx, dz, dyaw)
                 return {
                     "ok": result.ok,
                     "skill": resolved.name,
@@ -615,6 +741,7 @@ Execute user movement goals immediately on Turn 1."""
                     "response": result.response,
                     "meta": result.meta,
                     "moveset": get_builtin_moveset(resolved.name),
+                    "pose": dict(self.robot_pose),
                 }
 
             if name == "bittle_execute_sequence":
@@ -874,12 +1001,14 @@ Execute user movement goals immediately on Turn 1."""
                 if preset not in COURSE_LAYOUTS:
                     return {"ok": False, "error": f"Unknown preset '{preset}'. Choose from {list(COURSE_LAYOUTS.keys())}"}
                 self.active_course = preset
+                self.robot_pose = {"x": 0.0, "y": 0.0532, "z": 0.0, "yaw": 0.0}
                 layout = get_course_layout(preset)
                 return {
                     "ok": True,
                     "preset": preset,
                     "description": layout.get("description", ""),
                     "layout": layout,
+                    "pose": dict(self.robot_pose),
                 }
 
             if name == "bittle_get_course_layout":
@@ -907,6 +1036,82 @@ Execute user movement goals immediately on Turn 1."""
                     return {"ok": False, "error": "Provide either 'angles', 'sequence', or 'moveset_name' to evaluate."}
 
                 return evaluate_terrain_clearance(c_preset, data_to_eval)
+
+            if name == "bittle_get_scene_pose":
+                from .motion.obstacles import get_obstacle_proximity
+                prox = get_obstacle_proximity(self.active_course, self.robot_pose["x"], self.robot_pose["z"])
+                return {
+                    "ok": True,
+                    "pose": dict(self.robot_pose),
+                    "active_course": self.active_course,
+                    "proximity": prox,
+                }
+
+            if name == "bittle_navigate_step":
+                direction = args["direction"]
+                count = max(1, min(8, int(args.get("count", 1))))
+                nav_map = {
+                    "forward": ("wkF", (0.038, 0.0, 0.0)),
+                    "backward": ("bk", (-0.035, 0.0, 0.0)),
+                    "turn_left": ("wkL", (0.020, 0.0, 15.0)),
+                    "turn_right": ("wkR", (0.020, 0.0, -15.0)),
+                    "stair_step_up": ("stair_step_up", (0.040, 0.0, 0.0)),
+                }
+                if direction not in nav_map:
+                    return {"ok": False, "error": f"Unknown direction '{direction}'. Choose from {list(nav_map.keys())}"}
+
+                skill_to_run, (dx, dz, dyaw) = nav_map[direction]
+                moveset_to_play = get_builtin_moveset(skill_to_run) or self.composer.get_moveset(skill_to_run)
+
+                for _ in range(count):
+                    self._apply_pose_delta(dx, dz, dyaw)
+
+                from .motion.obstacles import get_obstacle_proximity
+                prox = get_obstacle_proximity(self.active_course, self.robot_pose["x"], self.robot_pose["z"])
+
+                return {
+                    "ok": True,
+                    "direction": direction,
+                    "steps_taken": count,
+                    "pose": dict(self.robot_pose),
+                    "proximity": prox,
+                    "moveset": moveset_to_play,
+                }
+
+            if name == "bittle_reset_pose":
+                self.robot_pose = {"x": 0.0, "y": 0.0532, "z": 0.0, "yaw": 0.0}
+                return {
+                    "ok": True,
+                    "pose": dict(self.robot_pose),
+                    "message": "Robot pose reset to spawn origin (0, 0).",
+                }
+
+            if name == "bittle_run_stair_training_episode":
+                from .motion.obstacles import simulate_stair_climb_episode
+                m_name = args.get("moveset_name", "stair_step_up")
+                m = get_builtin_moveset(m_name) or self.composer.get_moveset(m_name)
+                frames = m.get("frames", []) if m else []
+                if not frames:
+                    return {"ok": False, "error": f"Moveset '{m_name}' not found for training trial."}
+
+                adjustments = {
+                    "knee_lift_deg": float(args.get("knee_lift_deg", 0.0)),
+                    "pitch_compensation_deg": float(args.get("pitch_compensation_deg", 0.0)),
+                    "stride_mult": float(args.get("stride_mult", 1.0)),
+                }
+                episode_result = simulate_stair_climb_episode(frames, adjustments=adjustments)
+                if episode_result.get("success"):
+                    self.robot_pose["x"] = episode_result.get("final_x", 0.400)
+                    self.robot_pose["y"] = round(0.0532 + 0.054, 4)
+                return {
+                    "ok": True,
+                    "moveset_tested": m_name,
+                    "adjustments": adjustments,
+                    "episode": episode_result,
+                    "pose": dict(self.robot_pose),
+                    "reflection": episode_result.get("reflection", ""),
+                    "guidance": episode_result.get("guidance", ""),
+                }
 
             return {"ok": False, "error": f"unknown tool: {name}"}
 
