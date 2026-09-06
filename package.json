@@ -6,6 +6,7 @@
   "scripts": {
     "deploy": "./deploy.sh",
     "test": ".venv/bin/python -m pytest tests -q",
+    "models": "python3 scripts/build_models.py",
     "dev": ".venv/bin/python -m uvicorn app.main:app --reload --port 8008"
   }
 }

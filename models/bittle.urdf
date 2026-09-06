@@ -1,0 +1,466 @@
+<?xml version="1.0"?>
+<!-- Petoi Bittle Quadruped Robot URDF
+     Kinematics verified against Petoi CAD and OpenCat firmware.
+     Scale: 1.0 (meters for coordinates; meshes scaled by 0.001 from mm).
+-->
+<robot name="bittle">
+
+  <material name="bittle_yellow">
+    <color rgba="0.96 0.72 0.0 1.0"/>
+  </material>
+  <material name="bittle_blue">
+    <color rgba="0.12 0.25 0.66 1.0"/>
+  </material>
+  <material name="bittle_red">
+    <color rgba="0.84 0.16 0.16 1.0"/>
+  </material>
+  <material name="bittle_dark">
+    <color rgba="0.1 0.1 0.1 1.0"/>
+  </material>
+
+  <!-- Base Link / Torso Chassis -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <mass value="0.108"/>
+      <inertia ixx="0.00015" ixy="0" ixz="0" iyy="0.00006" iyz="0" izz="0.00021"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/base_link.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_yellow"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/front__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/rear__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/cover_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/battery_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_neck__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servo_rfs_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servo_lfs_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servo_rrs__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servo_lrs__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+  </link>
+
+  <!-- Head Assembly (Joint 0) -->
+  <link name="head_link">
+    <inertial>
+      <origin xyz="0.02 0 0.02" rpy="0 0 0"/>
+      <mass value="0.0187"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.047554 0 -0.035941" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/head__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_yellow"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.047554 0 -0.035941" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/jaw_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.047554 0 -0.035941" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servo_neck__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+  </link>
+
+  <joint name="neck_joint" type="revolute">
+    <origin xyz="0.047554 0 0.035941" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="head_link"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-2.0944" upper="2.0944" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <!-- ─── Front-Right Leg ─────────────────────────────────────── -->
+  <link name="rf_shoulder_link">
+    <inertial>
+      <origin xyz="-0.02 0 -0.005" rpy="0 0 0"/>
+      <mass value="0.020"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thrf__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/th_rf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tho_rf__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thorf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tube__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+  </link>
+
+  <joint name="shrfs_joint" type="revolute">
+    <origin xyz="0.0525 -0.0485 0.022" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="rf_shoulder_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.234" upper="1.396" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <link name="rf_knee_link">
+    <inertial>
+      <origin xyz="0.02 0 0" rpy="0 0 0"/>
+      <mass value="0.014"/>
+      <inertia ixx="0.000005" ixy="0" ixz="0" iyy="0.000005" iyz="0" izz="0.000005"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.008067 0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servos_rf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.008067 0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/shank_rf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+  </link>
+
+  <joint name="shrft_joint" type="revolute">
+    <origin xyz="-0.044433 0.00142 -0.011906" rpy="0 0 0"/>
+    <parent link="rf_shoulder_link"/>
+    <child link="rf_knee_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <!-- ─── Front-Left Leg ──────────────────────────────────────── -->
+  <link name="lf_shoulder_link">
+    <inertial>
+      <origin xyz="-0.02 0 -0.005" rpy="0 0 0"/>
+      <mass value="0.020"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thlf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/th_lf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tho_lf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_tholf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tube_lf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+  </link>
+
+  <joint name="shlfs_joint" type="revolute">
+    <origin xyz="0.0525 0.0485 0.022" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="lf_shoulder_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-2.234" upper="1.396" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <link name="lf_knee_link">
+    <inertial>
+      <origin xyz="0.02 0 0" rpy="0 0 0"/>
+      <mass value="0.014"/>
+      <inertia ixx="0.000005" ixy="0" ixz="0" iyy="0.000005" iyz="0" izz="0.000005"/>
+    </inertial>
+    <visual>
+      <origin xyz="-0.008067 -0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servos_lf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="-0.008067 -0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/shank_lf_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+  </link>
+
+  <joint name="shlft_joint" type="revolute">
+    <origin xyz="-0.044433 -0.00142 -0.011906" rpy="0 0 0"/>
+    <parent link="lf_shoulder_link"/>
+    <child link="lf_knee_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <!-- ─── Rear-Right Leg ──────────────────────────────────────── -->
+  <link name="rr_shoulder_link">
+    <inertial>
+      <origin xyz="-0.02 0 -0.005" rpy="0 0 0"/>
+      <mass value="0.020"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thrr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/th_rr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tho_rr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thorr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tube_rr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+  </link>
+
+  <joint name="shrrs_joint" type="revolute">
+    <origin xyz="-0.0525 -0.0485 0.022" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="rr_shoulder_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <link name="rr_knee_link">
+    <inertial>
+      <origin xyz="0.02 0 0" rpy="0 0 0"/>
+      <mass value="0.014"/>
+      <inertia ixx="0.000005" ixy="0" ixz="0" iyy="0.000005" iyz="0" izz="0.000005"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.096933 0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servos_rr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0.096933 0.04708 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/shank_rr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+  </link>
+
+  <joint name="shrrt_joint" type="revolute">
+    <origin xyz="-0.044433 0.00142 -0.011906" rpy="0 0 0"/>
+    <parent link="rr_shoulder_link"/>
+    <child link="rr_knee_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <!-- ─── Rear-Left Leg ───────────────────────────────────────── -->
+  <link name="lr_shoulder_link">
+    <inertial>
+      <origin xyz="-0.02 0 -0.005" rpy="0 0 0"/>
+      <mass value="0.020"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_thlr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/th_lr__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tho_lr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/c_tholr__1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+    <visual>
+      <origin xyz="0.0525 -0.0485 -0.022" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/tube_lr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_red"/>
+    </visual>
+  </link>
+
+  <joint name="shlrs_joint" type="revolute">
+    <origin xyz="-0.0525 0.0485 0.022" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="lr_shoulder_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+  <link name="lr_knee_link">
+    <inertial>
+      <origin xyz="0.02 0 0" rpy="0 0 0"/>
+      <mass value="0.014"/>
+      <inertia ixx="0.000005" ixy="0" ixz="0" iyy="0.000005" iyz="0" izz="0.000005"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.096933 -0.047082 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/servos_lr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_dark"/>
+    </visual>
+    <visual>
+      <origin xyz="0.096933 -0.047082 -0.010094" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="../static/assets/meshes/shank_lr_1.obj" scale="0.001 0.001 0.001"/>
+      </geometry>
+      <material name="bittle_blue"/>
+    </visual>
+  </link>
+
+  <joint name="shlrt_joint" type="revolute">
+    <origin xyz="-0.044433 -0.001418 -0.011906" rpy="0 0 0"/>
+    <parent link="lr_shoulder_link"/>
+    <child link="lr_knee_link"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-1.396" upper="2.217" effort="1.0" velocity="5.58"/>
+  </joint>
+
+</robot>

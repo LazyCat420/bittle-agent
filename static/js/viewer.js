@@ -206,10 +206,10 @@ export class BittleViewer {
     const meshNames = [
       'base_link.obj', 'battery_1.obj', 'cover_1.obj', 'front__1.obj', 'rear__1.obj',
       'c_neck__1.obj', 'servo_neck__1.obj', 'head__1.obj', 'jaw_1.obj',
-      'servo_rfs_1.obj', 'c_thrf__1.obj', 'th_rf_1.obj', 'tho_rf__1.obj', 'tube__1.obj', 'servos_rf_1.obj', 'shank_rf_1.obj',
-      'servo_lfs_1.obj', 'c_thlf_1.obj', 'th_lf_1.obj', 'tho_lf_1.obj', 'tube_lf_1.obj', 'servos_lf_1.obj', 'shank_lf_1.obj',
-      'servo_rrs__1.obj', 'c_thrr_1.obj', 'th_rr_1.obj', 'tho_rr_1.obj', 'tube_rr_1.obj', 'servos_rr_1.obj', 'shank_rr_1.obj',
-      'servo_lrs__1.obj', 'c_thlr_1.obj', 'th_lr__1.obj', 'tho_lr_1.obj', 'tube_lr_1.obj', 'servos_lr_1.obj', 'shank_lr_1.obj'
+      'servo_rfs_1.obj', 'c_thrf__1.obj', 'th_rf_1.obj', 'tho_rf__1.obj', 'c_thorf_1.obj', 'tube__1.obj', 'servos_rf_1.obj', 'shank_rf_1.obj',
+      'servo_lfs_1.obj', 'c_thlf_1.obj', 'th_lf_1.obj', 'tho_lf_1.obj', 'c_tholf_1.obj', 'tube_lf_1.obj', 'servos_lf_1.obj', 'shank_lf_1.obj',
+      'servo_rrs__1.obj', 'c_thrr_1.obj', 'th_rr_1.obj', 'tho_rr_1.obj', 'c_thorr_1.obj', 'tube_rr_1.obj', 'servos_rr_1.obj', 'shank_rr_1.obj',
+      'servo_lrs__1.obj', 'c_thlr_1.obj', 'th_lr__1.obj', 'tho_lr_1.obj', 'c_tholr__1.obj', 'tube_lr_1.obj', 'servos_lr_1.obj', 'shank_lr_1.obj'
     ];
 
     const geometries = {};
@@ -240,15 +240,25 @@ export class BittleViewer {
     this.isLoaded = true;
   }
 
-  createPartMesh(geometry, material, userData = {}) {
+  createPartMesh(geometry, material, userData = {}, pivot = null) {
     if (!geometry) {
       // Fallback box
       geometry = new THREE.BoxGeometry(0.02, 0.02, 0.02);
     }
-    const mesh = new THREE.Mesh(geometry, material);
+    // Clone so each mesh has independent buffer transforms
+    const geo = geometry.clone();
+    // Convert CAD millimeter coordinates to meters
+    geo.scale(0.001, 0.001, 0.001);
+
+    // If a pivot is provided, translate the vertex buffer by -pivot
+    // so the mesh is centered at its joint rotation axis
+    if (pivot) {
+      geo.translate(-pivot.x, -pivot.y, -pivot.z);
+    }
+
+    const mesh = new THREE.Mesh(geo, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.scale.set(0.001, 0.001, 0.001); // mm to meters
     mesh.userData = userData;
     this.interactiveMeshes.push(mesh);
     return mesh;
@@ -259,65 +269,45 @@ export class BittleViewer {
     const torso = new THREE.Group();
     torso.userData = { name: "Torso" };
 
-    if (geos['base_link.obj']) {
-      torso.add(this.createPartMesh(geos['base_link.obj'], MATERIALS.yellow));
-    }
-    if (geos['front__1.obj']) {
-      const front = this.createPartMesh(geos['front__1.obj'], MATERIALS.blue);
-      front.position.set(-0.0617, 0.028, -0.0258);
-      torso.add(front);
-    }
-    if (geos['rear__1.obj']) {
-      const rear = this.createPartMesh(geos['rear__1.obj'], MATERIALS.blue);
-      rear.position.set(0.0617, -0.028, -0.0258);
-      torso.add(rear);
-    }
-    if (geos['cover_1.obj']) {
-      const cover = this.createPartMesh(geos['cover_1.obj'], MATERIALS.dark);
-      cover.position.set(0, 0.031, -0.0309);
-      torso.add(cover);
-    }
-    if (geos['battery_1.obj']) {
-      const batt = this.createPartMesh(geos['battery_1.obj'], MATERIALS.dark);
-      batt.position.set(0.017, 0, -0.0239);
-      torso.add(batt);
-    }
+    // Rigid chassis parts in torso CAD coordinates (pivot = null)
+    if (geos['base_link.obj']) torso.add(this.createPartMesh(geos['base_link.obj'], MATERIALS.yellow));
+    if (geos['front__1.obj']) torso.add(this.createPartMesh(geos['front__1.obj'], MATERIALS.blue));
+    if (geos['rear__1.obj']) torso.add(this.createPartMesh(geos['rear__1.obj'], MATERIALS.blue));
+    if (geos['cover_1.obj']) torso.add(this.createPartMesh(geos['cover_1.obj'], MATERIALS.dark));
+    if (geos['battery_1.obj']) torso.add(this.createPartMesh(geos['battery_1.obj'], MATERIALS.dark));
+    if (geos['c_neck__1.obj']) torso.add(this.createPartMesh(geos['c_neck__1.obj'], MATERIALS.blue));
 
-    // ─── 2. Head & Neck (Joint 0) ──────────────────────────────
+    // Fixed shoulder servo housings mounted directly to torso chassis
+    if (geos['servo_rfs_1.obj']) torso.add(this.createPartMesh(geos['servo_rfs_1.obj'], MATERIALS.dark));
+    if (geos['servo_lfs_1.obj']) torso.add(this.createPartMesh(geos['servo_lfs_1.obj'], MATERIALS.dark));
+    if (geos['servo_rrs__1.obj']) torso.add(this.createPartMesh(geos['servo_rrs__1.obj'], MATERIALS.dark));
+    if (geos['servo_lrs__1.obj']) torso.add(this.createPartMesh(geos['servo_lrs__1.obj'], MATERIALS.dark));
+
+    // ─── 2. Head Assembly (Joint 0) ────────────────────────────
+    const neckPivotPos = new THREE.Vector3(0.047554, 0.0, 0.035941);
     const headPivot = new THREE.Group();
-    headPivot.position.set(0.0475, 0, 0.0359);
+    headPivot.position.copy(neckPivotPos);
     headPivot.userData = { jointId: 0, name: "Head Pan" };
 
-    if (geos['c_neck__1.obj']) {
-      const cNeck = this.createPartMesh(geos['c_neck__1.obj'], MATERIALS.blue);
-      cNeck.position.set(-0.0449, 0, -0.0314);
-      torso.add(cNeck);
-    }
     if (geos['servo_neck__1.obj']) {
-      const sNeck = this.createPartMesh(geos['servo_neck__1.obj'], MATERIALS.dark);
-      sNeck.position.set(-0.0475, 0, -0.0359);
-      headPivot.add(sNeck);
+      headPivot.add(this.createPartMesh(geos['servo_neck__1.obj'], MATERIALS.dark, { jointId: 0 }, neckPivotPos));
     }
     if (geos['jaw_1.obj']) {
-      const jaw = this.createPartMesh(geos['jaw_1.obj'], MATERIALS.blue, { jointId: 0 });
-      jaw.position.set(-0.0645, 0.0129, -0.034);
-      headPivot.add(jaw);
+      headPivot.add(this.createPartMesh(geos['jaw_1.obj'], MATERIALS.blue, { jointId: 0 }, neckPivotPos));
     }
     if (geos['head__1.obj']) {
-      const head = this.createPartMesh(geos['head__1.obj'], MATERIALS.yellow, { jointId: 0 });
-      head.position.set(-0.0557, 0.0172, -0.0603);
-      headPivot.add(head);
+      headPivot.add(this.createPartMesh(geos['head__1.obj'], MATERIALS.yellow, { jointId: 0 }, neckPivotPos));
     }
 
     torso.add(headPivot);
+    // Head pan rotates horizontally around torso local Z axis (+Z is upward)
     this.jointNodes[0] = { node: headPivot, axis: new THREE.Vector3(0, 0, 1), dir: 1 };
 
-    // ─── 3. Tail (Joint 1) ─────────────────────────────────────
+    // ─── 3. Tail Assembly (Joint 1) ────────────────────────────
     const tailPivot = new THREE.Group();
     tailPivot.position.set(-0.065, 0, 0.025);
-    tailPivot.userData = { jointId: 1, name: "Tail" };
+    tailPivot.userData = { jointId: 1, name: "Tail Wag" };
 
-    // Stylized tail segment
     const tailGeo = new THREE.CylinderGeometry(0.003, 0.006, 0.045, 8);
     tailGeo.rotateZ(Math.PI / 4);
     const tailMesh = new THREE.Mesh(tailGeo, MATERIALS.yellow);
@@ -328,55 +318,49 @@ export class BittleViewer {
     this.interactiveMeshes.push(tailMesh);
 
     torso.add(tailPivot);
-    this.jointNodes[1] = { node: tailPivot, axis: new THREE.Vector3(0, 1, 0), dir: 1 };
+    this.jointNodes[1] = { node: tailPivot, axis: new THREE.Vector3(0, 0, 1), dir: 1 };
 
-    // ─── 4. Leg Builder Helper ─────────────────────────────────
+    // ─── 4. Articulated Leg Builder Helper ──────────────────────
     const buildLeg = (cfg) => {
       const {
         shoulderJointId, kneeJointId, name,
-        servoPos, shoulderPos, kneePos,
-        servoGeo, thighGeos, kneeServoGeo, shankGeo,
+        shoulderPos, kneeWorldPos,
+        thighGeos, kneeServoGeo, shankGeo,
         dir
       } = cfg;
-
-      // Servo base on torso
-      if (servoGeo) {
-        const servoMesh = this.createPartMesh(servoGeo, MATERIALS.dark);
-        servoMesh.position.copy(servoPos);
-        torso.add(servoMesh);
-      }
 
       // Shoulder Pivot
       const shoulderPivot = new THREE.Group();
       shoulderPivot.position.copy(shoulderPos);
       shoulderPivot.userData = { jointId: shoulderJointId, name: `${name} Shoulder` };
 
-      // Thigh Assembly
+      // Thigh Assembly (centered at shoulderPos)
       thighGeos.forEach(g => {
-        if (g) shoulderPivot.add(this.createPartMesh(g, MATERIALS.red, { jointId: shoulderJointId }));
+        if (g) {
+          shoulderPivot.add(this.createPartMesh(g, MATERIALS.red, { jointId: shoulderJointId }, shoulderPos));
+        }
       });
-      if (kneeServoGeo) {
-        shoulderPivot.add(this.createPartMesh(kneeServoGeo, MATERIALS.dark, { jointId: shoulderJointId }));
-      }
 
-      // Knee Pivot
+      // Knee Pivot (relative to shoulderPos)
+      const kneePosRel = new THREE.Vector3().subVectors(kneeWorldPos, shoulderPos);
       const kneePivot = new THREE.Group();
-      kneePivot.position.copy(kneePos);
+      kneePivot.position.copy(kneePosRel);
       kneePivot.userData = { jointId: kneeJointId, name: `${name} Knee` };
 
-      if (shankGeo) {
-        kneePivot.add(this.createPartMesh(shankGeo, MATERIALS.blue, { jointId: kneeJointId }));
+      // Knee Servo (centered at kneeWorldPos)
+      if (kneeServoGeo) {
+        kneePivot.add(this.createPartMesh(kneeServoGeo, MATERIALS.dark, { jointId: kneeJointId }, kneeWorldPos));
       }
 
-      // Foot tip pad
-      const footGeo = new THREE.SphereGeometry(0.005, 8, 8);
-      const footMesh = new THREE.Mesh(footGeo, MATERIALS.red);
-      footMesh.position.set(0.018, 0, -0.022);
-      kneePivot.add(footMesh);
+      // Shank / Lower Leg Bracket (centered at kneeWorldPos)
+      if (shankGeo) {
+        kneePivot.add(this.createPartMesh(shankGeo, MATERIALS.blue, { jointId: kneeJointId }, kneeWorldPos));
+      }
 
       shoulderPivot.add(kneePivot);
       torso.add(shoulderPivot);
 
+      // Pitch rotation around torso Y axis (left-right axis)
       this.jointNodes[shoulderJointId] = { node: shoulderPivot, axis: new THREE.Vector3(0, 1, 0), dir: dir };
       this.jointNodes[kneeJointId] = { node: kneePivot, axis: new THREE.Vector3(0, 1, 0), dir: dir };
     };
@@ -384,11 +368,9 @@ export class BittleViewer {
     // ─── Front-Right Leg (Joints 9 & 13) ────────────────────────
     buildLeg({
       shoulderJointId: 9, kneeJointId: 13, name: "Right Front",
-      servoPos: new THREE.Vector3(0.0596, -0.036, 0.0179),
       shoulderPos: new THREE.Vector3(0.0525, -0.0485, 0.022),
-      kneePos: new THREE.Vector3(0, 0.0078, 0),
-      servoGeo: geos['servo_rfs_1.obj'],
-      thighGeos: [geos['c_thrf__1.obj'], geos['th_rf_1.obj'], geos['tho_rf__1.obj'], geos['tube__1.obj']],
+      kneeWorldPos: new THREE.Vector3(0.008067, -0.04708, 0.010094),
+      thighGeos: [geos['c_thrf__1.obj'], geos['th_rf_1.obj'], geos['tho_rf__1.obj'], geos['c_thorf_1.obj'], geos['tube__1.obj']],
       kneeServoGeo: geos['servos_rf_1.obj'],
       shankGeo: geos['shank_rf_1.obj'],
       dir: -1
@@ -397,11 +379,9 @@ export class BittleViewer {
     // ─── Front-Left Leg (Joints 8 & 12) ─────────────────────────
     buildLeg({
       shoulderJointId: 8, kneeJointId: 12, name: "Left Front",
-      servoPos: new THREE.Vector3(0.0596, 0.036, 0.0179),
       shoulderPos: new THREE.Vector3(0.0525, 0.0485, 0.022),
-      kneePos: new THREE.Vector3(0, -0.0078, 0),
-      servoGeo: geos['servo_lfs_1.obj'],
-      thighGeos: [geos['c_thlf_1.obj'], geos['th_lf_1.obj'], geos['tho_lf_1.obj'], geos['tube_lf_1.obj']],
+      kneeWorldPos: new THREE.Vector3(0.008067, 0.04708, 0.010094),
+      thighGeos: [geos['c_thlf_1.obj'], geos['th_lf_1.obj'], geos['tho_lf_1.obj'], geos['c_tholf_1.obj'], geos['tube_lf_1.obj']],
       kneeServoGeo: geos['servos_lf_1.obj'],
       shankGeo: geos['shank_lf_1.obj'],
       dir: 1
@@ -410,11 +390,9 @@ export class BittleViewer {
     // ─── Rear-Right Leg (Joints 10 & 14) ────────────────────────
     buildLeg({
       shoulderJointId: 10, kneeJointId: 14, name: "Right Rear",
-      servoPos: new THREE.Vector3(-0.0596, -0.036, 0.0179),
       shoulderPos: new THREE.Vector3(-0.0525, -0.0485, 0.022),
-      kneePos: new THREE.Vector3(0, 0.0078, 0),
-      servoGeo: geos['servo_rrs__1.obj'],
-      thighGeos: [geos['c_thrr_1.obj'], geos['th_rr_1.obj'], geos['tho_rr_1.obj'], geos['tube_rr_1.obj']],
+      kneeWorldPos: new THREE.Vector3(-0.096933, -0.04708, 0.010094),
+      thighGeos: [geos['c_thrr_1.obj'], geos['th_rr_1.obj'], geos['tho_rr_1.obj'], geos['c_thorr_1.obj'], geos['tube_rr_1.obj']],
       kneeServoGeo: geos['servos_rr_1.obj'],
       shankGeo: geos['shank_rr_1.obj'],
       dir: -1
@@ -423,11 +401,9 @@ export class BittleViewer {
     // ─── Rear-Left Leg (Joints 11 & 15) ─────────────────────────
     buildLeg({
       shoulderJointId: 11, kneeJointId: 15, name: "Left Rear",
-      servoPos: new THREE.Vector3(-0.0596, 0.036, 0.0179),
       shoulderPos: new THREE.Vector3(-0.0525, 0.0485, 0.022),
-      kneePos: new THREE.Vector3(0, -0.0078, 0),
-      servoGeo: geos['servo_lrs__1.obj'],
-      thighGeos: [geos['c_thlr_1.obj'], geos['th_lr__1.obj'], geos['tho_lr_1.obj'], geos['tube_lr_1.obj']],
+      kneeWorldPos: new THREE.Vector3(-0.096933, 0.047082, 0.010094),
+      thighGeos: [geos['c_thlr_1.obj'], geos['th_lr__1.obj'], geos['tho_lr_1.obj'], geos['c_tholr__1.obj'], geos['tube_lr_1.obj']],
       kneeServoGeo: geos['servos_lr_1.obj'],
       shankGeo: geos['shank_lr_1.obj'],
       dir: 1
