@@ -110,12 +110,11 @@ function checkZeroPenetration(angles, pitch = 0) {
   });
 
   torso.rotation.x = -Math.PI / 2;
-  torso.rotation.z = Math.PI / 2;
+  torso.rotation.z = 0;
   robotGroup.add(torso);
 
-  robotGroup.rotation.x = pitch;
-  robotGroup.rotation.y = 0;
-  robotGroup.rotation.z = 0;
+  robotGroup.rotation.order = 'YZX';
+  robotGroup.rotation.set(0, 0, pitch, 'YZX');
   robotGroup.position.y = 0.0532;
   robotGroup.updateMatrixWorld(true);
 

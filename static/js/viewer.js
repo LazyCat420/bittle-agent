@@ -218,7 +218,7 @@ export class BittleViewer {
     this.robotGroup.position.z = z;
     if (yaw !== null && !isNaN(yaw)) {
       this.robotYaw = yaw;
-      this.robotGroup.rotation.y = yaw;
+      this.robotGroup.rotation.set(0, this.robotYaw, this.robotPitch, 'YZX');
     }
     if (this.onPoseUpdate) {
       this.onPoseUpdate({
@@ -238,8 +238,7 @@ export class BittleViewer {
   resetRobotPosition() {
     this.robotYaw = 0;
     this.robotPitch = 0;
-    this.robotGroup.rotation.y = 0;
-    this.robotGroup.rotation.z = 0;
+    this.robotGroup.rotation.set(0, 0, 0, 'YZX');
     this.setRobotPosition(0, 0, 0);
   }
 
@@ -410,9 +409,9 @@ export class BittleViewer {
 
     this.container.appendChild(this.renderer.domElement);
 
-    // Root robot group - placed with YXZ Euler rotation order for decoupled pitch and yaw
+    // Root robot group - placed with YZX Euler rotation order for decoupled pitch and yaw
     this.robotGroup = new THREE.Group();
-    this.robotGroup.rotation.order = 'YXZ';
+    this.robotGroup.rotation.order = 'YZX';
     this.robotGroup.position.set(0, 0.0547, 0);
     this.scene.add(this.robotGroup);
     this.contactAnchors = [];
@@ -725,7 +724,7 @@ export class BittleViewer {
 
     // Rotate robot so +Z points up and +X forward in standard view
     torso.rotation.x = -Math.PI / 2;
-    torso.rotation.z = Math.PI / 2;
+    torso.rotation.z = 0;
     this.robotGroup.add(torso);
 
     this.applyAngles(STAND_POSE);
@@ -1096,7 +1095,7 @@ export class BittleViewer {
 
         if (!blocked) {
           this.robotYaw += vyaw * dt;
-          this.robotGroup.rotation.y = this.robotYaw;
+          this.robotGroup.rotation.set(0, this.robotYaw, this.robotPitch, 'YZX');
           this.robotPosition.x += vx * dt * Math.cos(this.robotYaw);
           this.robotPosition.z -= vx * dt * Math.sin(this.robotYaw);
           this.robotGroup.position.x = this.robotPosition.x;
@@ -1122,10 +1121,10 @@ export class BittleViewer {
       const yaw = this.robotYaw || 0;
 
       // Sample terrain elevation ahead and behind along local heading
-      const frontX = x - 0.053 * Math.sin(yaw);
-      const frontZ = z - 0.053 * Math.cos(yaw);
-      const rearX = x + 0.053 * Math.sin(yaw);
-      const rearZ = z + 0.053 * Math.cos(yaw);
+      const frontX = x + 0.053 * Math.cos(yaw);
+      const frontZ = z - 0.053 * Math.sin(yaw);
+      const rearX = x - 0.053 * Math.cos(yaw);
+      const rearZ = z + 0.053 * Math.sin(yaw);
 
       const yFront = this.obstacleCourse ? this.obstacleCourse.getElevationAt(frontX, frontZ) : 0;
       const yRear = this.obstacleCourse ? this.obstacleCourse.getElevationAt(rearX, rearZ) : 0;
@@ -1138,11 +1137,9 @@ export class BittleViewer {
       const targetPitch = Math.atan2(yFrontTarget - yRearTarget, 0.120);
       this.robotPitch = THREE.MathUtils.lerp(this.robotPitch, targetPitch, 0.15);
 
-      // Pure transverse pitch rotation with YXZ Euler ordering
-      this.robotGroup.rotation.order = 'YXZ';
-      this.robotGroup.rotation.y = this.robotYaw;
-      this.robotGroup.rotation.x = this.robotPitch;
-      this.robotGroup.rotation.z = 0;
+      // Pure transverse pitch rotation with YZX Euler ordering
+      this.robotGroup.rotation.order = 'YZX';
+      this.robotGroup.rotation.set(0, this.robotYaw, this.robotPitch, 'YZX');
 
       // Supremum Ground Elevation Solver:
       // Evaluates exact contact anchors across all paws and torso to guarantee
