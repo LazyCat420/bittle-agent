@@ -303,11 +303,15 @@ export class AgentUI {
         if (ev.result && ev.result.ok && this.viewer) {
           if (ev.result.moveset && ev.result.moveset.frames) {
             const seqName = ev.result.name || ev.result.expression || ev.result.moveset.name || 'Sequence';
-            this.viewer.playSequence(ev.result.moveset.frames, {
-              name: seqName,
-              description: ev.result.moveset.description || '',
-              loop: false
-            });
+            if (typeof window.loadAndPlayMoveset === 'function') {
+              window.loadAndPlayMoveset(ev.result.moveset);
+            } else {
+              this.viewer.playSequence(ev.result.moveset.frames, {
+                name: seqName,
+                description: ev.result.moveset.description || '',
+                loop: false
+              });
+            }
           } else if (ev.name === 'bittle_do_skill' && ev.result.skill) {
             const skill = ev.result.skill;
             if (!this.viewer.playSequence(skill, { name: skill, loop: false })) {

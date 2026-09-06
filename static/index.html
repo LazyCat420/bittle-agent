@@ -1120,10 +1120,12 @@
       </div>
 
       <div class="agent-chips">
-        <div class="agent-prompt-chip" data-prompt="Sit down and look around.">Sit down and look around</div>
-        <div class="agent-prompt-chip" data-prompt="Take two steps forward and wag your tail.">Walk forward &amp; wag tail</div>
+        <div class="agent-prompt-chip" data-prompt="Sit down and look around.">Sit down &amp; look around</div>
+        <div class="agent-prompt-chip" data-prompt="Invent a sneaky cat stalk crouch with front paw extended.">🐾 Invent Stalk Pose</div>
+        <div class="agent-prompt-chip" data-prompt="Choreograph a playful wiggle dance with hips and head.">💃 Playful Wiggle Dance</div>
+        <div class="agent-prompt-chip" data-prompt="Invent a novel move called curious_bow and save it.">✨ Invent &amp; Save Move</div>
+        <div class="agent-prompt-chip" data-prompt="Take two steps forward and wag your tail.">Walk &amp; wag tail</div>
         <div class="agent-prompt-chip" data-prompt="Give me a high five then stand in balance.">High five &amp; stand</div>
-        <div class="agent-prompt-chip" data-prompt="Check current robot capabilities and status.">Check capabilities</div>
       </div>
 
       <div class="agent-input-row">
@@ -1739,6 +1741,8 @@ function loadAndPlayMoveset(m) {
   }
   log(`3D Preview: Playing "${m.label || m.name}" (${(m.frames || []).length} frames)`, 'ok');
 }
+window.loadAndPlayMoveset = loadAndPlayMoveset;
+window.refreshMovesetLibrary = refreshMovesetLibrary;
 
 async function runMovesetOnRobot(m) {
   if (TARGET === 'real') {

@@ -180,3 +180,30 @@ def test_builtin_moveset_coverage():
         frames = BUILTIN_MOVESETS[move]["frames"]
         assert len(frames) >= 1, f"Moveset {move} must have at least 1 frame"
 
+
+def test_glm_choreograph_novel_sequence(harness, client):
+    """Test GLM creating and executing an entirely novel multi-step choreography."""
+    novel_steps = [
+        # Step 1: Lower into stalking crouch
+        {"type": "move", "angles": {"8": -75, "9": -75, "12": 105, "13": 105}, "delay_ms": 250},
+        # Step 2: Tilt head left and extend front-left paw
+        {"type": "move", "angles": {"0": 30, "8": 20, "12": -10}, "delay_ms": 300},
+        # Step 3: Pause to stalk
+        {"type": "pause", "delay_ms": 150},
+        # Step 4: Step paw back down
+        {"type": "move", "angles": {"0": 0, "8": -75, "12": 105}, "delay_ms": 200},
+    ]
+
+    res = asyncio.run(harness.execute_tool("bittle_execute_sequence", {
+        "name": "stealth_stalk",
+        "steps": novel_steps,
+        "target": "sim",
+    }))
+
+    assert res["ok"] is True
+    assert res["name"] == "stealth_stalk"
+    assert len(res["executed_steps"]) == 4
+    assert len(res["moveset"]["frames"]) >= 3
+    assert res["moveset"]["total_duration_ms"] == 900
+
+
