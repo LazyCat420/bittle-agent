@@ -428,10 +428,10 @@ class GLMAgentHarness:
         confirm_token: str | None = None,
         max_turns: int = 6,
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Run multi-turn agent loop communicating with local GLM instance."""
+        """Run multi-turn agent loop communicating with local GLM instance via real-time SSE streaming."""
         api_base, model = await self.resolve_endpoint_and_model()
         api_key = self.settings.llm_api_key or "EMPTY"
-        url = f"{api_base}/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
         full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         for m in messages:
@@ -445,36 +445,113 @@ class GLMAgentHarness:
                     "tools": TOOLS,
                     "tool_choice": "auto",
                     "temperature": 0.2,
+                    "stream": True,
                 }
+                url = f"{api_base}/chat/completions"
+
+                thought_acc = ""
+                content_acc = ""
+                tool_calls_acc: dict[int, dict[str, Any]] = {}
 
                 try:
-                    res = await client.post(
-                        url,
-                        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                        json=payload,
-                    )
-                    res.raise_for_status()
-                    data = res.json()
+                    async with client.stream("POST", url, headers=headers, json=payload) as stream_resp:
+                        if stream_resp.status_code >= 400:
+                            err_body = await stream_resp.aread()
+                            err_text = err_body.decode("utf-8", errors="replace")
+                            yield {
+                                "type": "error",
+                                "error": f"http_{stream_resp.status_code}",
+                                "detail": err_text,
+                                "content": f"Model endpoint error {stream_resp.status_code}: {err_text}",
+                            }
+                            return
+
+                        async for line in stream_resp.aiter_lines():
+                            line = line.strip()
+                            if not line or not line.startswith("data:"):
+                                continue
+                            raw_data = line[5:].strip()
+                            if raw_data == "[DONE]":
+                                break
+
+                            try:
+                                chunk = json.loads(raw_data)
+                            except Exception:
+                                continue
+
+                            choices = chunk.get("choices", [])
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta", {})
+
+                            # 1. Reasoning / thought tokens from GLM
+                            reasoning_chunk = delta.get("reasoning")
+                            if reasoning_chunk:
+                                thought_acc += reasoning_chunk
+                                yield {"type": "thought", "content": reasoning_chunk}
+
+                            # 2. Text response tokens
+                            content_chunk = delta.get("content")
+                            if content_chunk:
+                                content_acc += content_chunk
+                                yield {"type": "text", "content": content_chunk}
+
+                            # 3. Incremental tool calls delta
+                            delta_tcs = delta.get("tool_calls")
+                            if delta_tcs:
+                                for dtc in delta_tcs:
+                                    idx = dtc.get("index", 0)
+                                    if idx not in tool_calls_acc:
+                                        tool_calls_acc[idx] = {
+                                            "id": dtc.get("id") or f"call_{idx}",
+                                            "name": "",
+                                            "arguments": "",
+                                        }
+                                    if dtc.get("id"):
+                                        tool_calls_acc[idx]["id"] = dtc["id"]
+                                    fn = dtc.get("function", {})
+                                    if fn.get("name"):
+                                        tool_calls_acc[idx]["name"] += fn["name"]
+                                    if fn.get("arguments"):
+                                        tool_calls_acc[idx]["arguments"] += fn["arguments"]
+
                 except Exception as exc:
-                    yield {"type": "error", "content": f"GLM endpoint error ({api_base} / {model}): {exc}"}
+                    yield {
+                        "type": "error",
+                        "error": "endpoint_error",
+                        "detail": str(exc),
+                        "content": f"GLM endpoint error ({api_base} / {model}): {exc}",
+                    }
                     return
 
-                choice = data["choices"][0]
-                message = choice["message"]
-                full_messages.append(message)
-
-                if message.get("content"):
-                    yield {"type": "text", "content": message["content"]}
-
-                tool_calls = message.get("tool_calls", [])
-                if not tool_calls:
+                # If no tool calls were requested, yield completion and finish
+                if not tool_calls_acc:
+                    yield {"type": "done", "final_message": content_acc}
                     return
 
-                for tc in tool_calls:
-                    fn = tc["function"]
-                    fn_name = fn["name"]
+                # Build assistant message with accumulated tool calls
+                assistant_msg: dict[str, Any] = {"role": "assistant"}
+                if content_acc:
+                    assistant_msg["content"] = content_acc
+                assistant_msg["tool_calls"] = [
+                    {
+                        "id": item["id"],
+                        "type": "function",
+                        "function": {
+                            "name": item["name"],
+                            "arguments": item["arguments"],
+                        },
+                    }
+                    for _, item in sorted(tool_calls_acc.items())
+                ]
+                full_messages.append(assistant_msg)
+
+                # Execute all requested tool calls
+                for _, item in sorted(tool_calls_acc.items()):
+                    fn_name = item["name"]
+                    tc_id = item["id"]
                     try:
-                        args = json.loads(fn["arguments"])
+                        args = json.loads(item["arguments"]) if item["arguments"] else {}
                     except Exception:
                         args = {}
 
@@ -482,7 +559,7 @@ class GLMAgentHarness:
                         "type": "tool_call",
                         "name": fn_name,
                         "args": args,
-                        "id": tc.get("id"),
+                        "id": tc_id,
                     }
 
                     tool_res = await self.execute_tool(
@@ -496,11 +573,11 @@ class GLMAgentHarness:
                         "type": "tool_result",
                         "name": fn_name,
                         "result": tool_res,
-                        "id": tc.get("id"),
+                        "id": tc_id,
                     }
 
                     full_messages.append({
                         "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
+                        "tool_call_id": tc_id,
                         "content": json.dumps(tool_res),
                     })

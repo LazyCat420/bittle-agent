@@ -165,3 +165,160 @@ def test_resolve_endpoint_auto_discovery_mock(harness, monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
     base, model = asyncio.run(harness.resolve_endpoint_and_model())
     assert model == "GLM-5.3-Flash-EXL3"
+
+
+def test_agent_chat_stream_error_schema_conformance(harness, monkeypatch):
+    import httpx
+
+    async def mock_resolve():
+        return "http://test-cluster:8000/v1", "GLM-5.3-Flash-EXL3"
+
+    monkeypatch.setattr(harness, "resolve_endpoint_and_model", mock_resolve)
+
+    def mock_stream(self, method, url, **kwargs):
+        raise httpx.ConnectError("Connection refused to test cluster")
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", mock_stream)
+
+    async def collect_events():
+        events = []
+        async for ev in harness.chat_stream([{"role": "user", "content": "hello"}]):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(collect_events())
+    assert len(events) >= 1
+    err_ev = events[0]
+    assert err_ev["type"] == "error"
+    # Must contain error, detail, and content so UI never renders undefined
+    assert "error" in err_ev and err_ev["error"]
+    assert "detail" in err_ev and err_ev["detail"]
+    assert "content" in err_ev and err_ev["content"]
+
+
+def test_agent_chat_stream_streaming_reasoning_and_text(harness, monkeypatch):
+    import httpx
+    import json
+
+    async def mock_resolve():
+        return "http://test-cluster:8000/v1", "GLM-5.3-Flash-EXL3"
+
+    monkeypatch.setattr(harness, "resolve_endpoint_and_model", mock_resolve)
+
+    sse_lines = [
+        'data: ' + json.dumps({
+            "choices": [{"delta": {"reasoning": "Analyzing robot stability..."}}]
+        }),
+        'data: ' + json.dumps({
+            "choices": [{"delta": {"content": "I am standing steady."}}]
+        }),
+        'data: [DONE]'
+    ]
+
+    class MockStreamResponse:
+        status_code = 200
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+        def raise_for_status(self):
+            pass
+        async def aiter_lines(self):
+            for line in sse_lines:
+                yield line
+
+    def mock_stream(self, method, url, **kwargs):
+        return MockStreamResponse()
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", mock_stream)
+
+    async def collect_events():
+        events = []
+        async for ev in harness.chat_stream([{"role": "user", "content": "status"}]):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(collect_events())
+    types = [e["type"] for e in events]
+    assert "thought" in types
+    assert "text" in types
+    thought_ev = next(e for e in events if e["type"] == "thought")
+    assert "Analyzing robot stability..." in thought_ev["content"]
+    text_ev = next(e for e in events if e["type"] == "text")
+    assert "I am standing steady." in text_ev["content"]
+
+
+def test_agent_chat_stream_streaming_tool_call(harness, monkeypatch):
+    import httpx
+    import json
+
+    async def mock_resolve():
+        return "http://test-cluster:8000/v1", "GLM-5.3-Flash-EXL3"
+
+    monkeypatch.setattr(harness, "resolve_endpoint_and_model", mock_resolve)
+
+    # Turn 1: tool call -> Turn 2: explanation
+    turn1_lines = [
+        'data: ' + json.dumps({
+            "choices": [{"delta": {
+                "tool_calls": [{
+                    "index": 0,
+                    "id": "call_balance_1",
+                    "function": {"name": "bittle_do_skill", "arguments": "{\"skill\": \"balance\"}"}
+                }]
+            }}]
+        }),
+        'data: [DONE]'
+    ]
+
+    turn2_lines = [
+        'data: ' + json.dumps({
+            "choices": [{"delta": {"content": "Robot is now balanced."}}]
+        }),
+        'data: [DONE]'
+    ]
+
+    calls = 0
+
+    class MockStreamTurnResponse:
+        def __init__(self, lines):
+            self.status_code = 200
+            self.lines = lines
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+        async def aiter_lines(self):
+            for line in self.lines:
+                yield line
+
+    def mock_stream(self, method, url, **kwargs):
+        nonlocal calls
+        calls += 1
+        lines = turn1_lines if calls == 1 else turn2_lines
+        return MockStreamTurnResponse(lines)
+
+    monkeypatch.setattr(httpx.AsyncClient, "stream", mock_stream)
+
+    async def collect_events():
+        events = []
+        async for ev in harness.chat_stream([{"role": "user", "content": "please balance"}]):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(collect_events())
+    types = [e["type"] for e in events]
+    assert "tool_call" in types
+    assert "tool_result" in types
+    assert "text" in types
+    assert "done" in types
+
+    tc = next(e for e in events if e["type"] == "tool_call")
+    assert tc["name"] == "bittle_do_skill"
+    assert tc["args"] == {"skill": "balance"}
+
+    tr = next(e for e in events if e["type"] == "tool_result")
+    assert tr["name"] == "bittle_do_skill"
+    assert tr["result"]["ok"] is True
+
+

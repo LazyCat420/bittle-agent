@@ -117,11 +117,54 @@ export class AgentUI {
     }
   }
 
+  showThinkingIndicator() {
+    this.removeThinkingIndicator();
+    if (!this.chatLog) return;
+    const el = document.createElement('div');
+    el.id = 'agentThinkingCard';
+    el.className = 'agent-msg agent-msg-assistant agent-thinking-card';
+    el.innerHTML = `
+      <div class="agent-msg-header">🤖 GLM Agent</div>
+      <div class="agent-thinking-body">
+        <span class="thinking-spinner"></span>
+        <span class="thinking-label">GLM is thinking...</span>
+      </div>
+    `;
+    this.chatLog.appendChild(el);
+    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  }
+
+  removeThinkingIndicator() {
+    const el = document.getElementById('agentThinkingCard');
+    if (el) el.remove();
+  }
+
+  appendThoughtBlock() {
+    if (!this.chatLog) return null;
+    const container = document.createElement('details');
+    container.className = 'agent-thought-container';
+    container.open = true;
+
+    const summary = document.createElement('summary');
+    summary.className = 'agent-thought-summary';
+    summary.innerHTML = '🧠 <em>Thinking process...</em>';
+
+    const content = document.createElement('div');
+    content.className = 'agent-thought-content';
+
+    container.appendChild(summary);
+    container.appendChild(content);
+    this.chatLog.appendChild(container);
+    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+    return content;
+  }
+
   cancelStream() {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
     }
+    this.removeThinkingIndicator();
     this.setStreaming(false);
     this.appendMessage('system', 'Agent run cancelled by operator.');
   }
@@ -140,12 +183,14 @@ export class AgentUI {
     this.promptInput.value = '';
     this.appendMessage('user', text);
     this.setStreaming(true);
+    this.showThinkingIndicator();
 
     this.abortController = new AbortController();
     const target = this.targetGetter();
     const confirm = this.confirmTokenGetter();
 
     let thoughtContentDiv = null;
+    let textContentDiv = null;
 
     try {
       const response = await fetch('/api/agent/chat', {
@@ -162,6 +207,7 @@ export class AgentUI {
       });
 
       if (!response.ok) {
+        this.removeThinkingIndicator();
         const err = await response.json().catch(() => ({}));
         this.appendMessage('system', `Error ${response.status}: ${err.detail || 'Agent service error'}`);
         this.setStreaming(false);
@@ -187,40 +233,66 @@ export class AgentUI {
 
           try {
             const ev = JSON.parse(jsonStr);
-            this.handleAgentEvent(ev, (text) => {
-              if (!thoughtContentDiv) {
-                thoughtContentDiv = this.appendMessage('assistant', '');
+            this.handleAgentEvent(
+              ev,
+              (chunk) => {
+                if (!thoughtContentDiv) {
+                  thoughtContentDiv = this.appendThoughtBlock();
+                }
+                thoughtContentDiv.textContent += chunk;
+                if (this.chatLog) this.chatLog.scrollTop = this.chatLog.scrollHeight;
+              },
+              (chunk) => {
+                if (!textContentDiv) {
+                  textContentDiv = this.appendMessage('assistant', '');
+                }
+                textContentDiv.textContent += chunk;
+                if (this.chatLog) this.chatLog.scrollTop = this.chatLog.scrollHeight;
               }
-              thoughtContentDiv.textContent += text;
-            });
+            );
           } catch (e) {
             console.warn('Failed to parse SSE line', e, jsonStr);
           }
         }
       }
 
+      this.removeThinkingIndicator();
       this.history.push({ role: 'user', content: text });
-      if (thoughtContentDiv && thoughtContentDiv.textContent) {
-        this.history.push({ role: 'assistant', content: thoughtContentDiv.textContent });
+      const finalReply = (textContentDiv && textContentDiv.textContent) || '';
+      if (finalReply) {
+        this.history.push({ role: 'assistant', content: finalReply });
       }
 
     } catch (err) {
+      this.removeThinkingIndicator();
       if (err.name !== 'AbortError') {
         this.appendMessage('system', `Network or runtime failure: ${err.message}`);
       }
     } finally {
+      this.removeThinkingIndicator();
       this.setStreaming(false);
       this.onActionExecuted();
     }
   }
 
-  handleAgentEvent(ev, appendThought) {
+  handleAgentEvent(ev, onThought, onText) {
     switch (ev.type) {
       case 'thought':
-        appendThought(ev.content);
+        this.removeThinkingIndicator();
+        if (onThought && ev.content) {
+          onThought(ev.content);
+        }
+        break;
+
+      case 'text':
+        this.removeThinkingIndicator();
+        if (onText && ev.content) {
+          onText(ev.content);
+        }
         break;
 
       case 'tool_call':
+        this.removeThinkingIndicator();
         this.appendToolCard(ev.name, ev.args, ev.id);
         break;
 
@@ -247,13 +319,16 @@ export class AgentUI {
         break;
 
       case 'done':
-        if (ev.final_message && !appendThought.hasContent) {
-          appendThought(ev.final_message);
+        this.removeThinkingIndicator();
+        if (ev.final_message && onText) {
+          onText(ev.final_message);
         }
         break;
 
       case 'error':
-        this.appendMessage('system', `[${ev.error}] ${ev.detail || ''}`);
+        this.removeThinkingIndicator();
+        const errText = ev.content || ev.detail || ev.error || 'Unknown agent error';
+        this.appendMessage('system', `[Error] ${errText}`);
         break;
     }
   }

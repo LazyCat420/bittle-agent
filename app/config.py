@@ -44,7 +44,7 @@ class Settings:
     llm_api_base: str = os.getenv("BITTLE_LLM_API_BASE", "http://10.0.0.141:8000/v1")
     llm_model: str = os.getenv("BITTLE_LLM_MODEL", "GLM-5.3-Flash-EXL3")
     llm_api_key: str = os.getenv("BITTLE_LLM_API_KEY", "EMPTY")
-    llm_timeout: float = float(os.getenv("BITTLE_LLM_TIMEOUT", "60.0"))
+    llm_timeout: float = float(os.getenv("BITTLE_LLM_TIMEOUT", "120.0"))
 
     @property
     def requires_confirm_token(self) -> bool:

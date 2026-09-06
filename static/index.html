@@ -380,6 +380,69 @@
     border-left: 3px solid var(--real);
   }
 
+  .agent-thinking-card {
+    opacity: 0.95;
+    animation: fadeIn 0.2s ease-in-out;
+  }
+  .agent-thinking-body {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(30, 41, 59, 0.75);
+    border: 1px solid rgba(96, 165, 250, 0.35);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 12.5px;
+    color: #93c5fd;
+    box-shadow: 0 0 14px rgba(59, 130, 246, 0.2);
+  }
+  .thinking-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(96, 165, 250, 0.25);
+    border-top-color: #60a5fa;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .agent-thought-container {
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: var(--radius-sm);
+    padding: 6px 10px;
+    margin: 4px 0;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .agent-thought-summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #94a3b8;
+    user-select: none;
+    outline: none;
+  }
+  .agent-thought-summary:hover {
+    color: #cbd5e1;
+  }
+  .agent-thought-content {
+    margin-top: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.45;
+    color: #94a3b8;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border-left: 2px solid rgba(96, 165, 250, 0.45);
+    padding-left: 8px;
+  }
+
   .agent-tool-card {
     background: #0f1623;
     border: 1px solid var(--border-highlight);
