@@ -34,6 +34,8 @@ RUN apt-get update \
 COPY app/ ./app/
 COPY static/ ./static/
 COPY mcp/ ./mcp/
+COPY hardware_profiles/ ./hardware_profiles/
+COPY upstream.lock ./upstream.lock
 
 RUN chown -R appusr:appgrp /app
 

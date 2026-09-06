@@ -121,16 +121,58 @@ class ProfileRegistry:
         self.load_all()
 
     def load_all(self) -> None:
-        if not self.directory.exists():
-            return
-        for path in self.directory.glob("*.json"):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                profile = HardwareProfile.from_dict(data)
-                self._profiles[profile.profile_id] = profile
-            except Exception:
-                continue
+        candidates = [
+            self.directory,
+            Path("/app/hardware_profiles"),
+            Path(__file__).resolve().parent.parent / "hardware_profiles",
+            Path.cwd() / "hardware_profiles",
+        ]
+        loaded_any = False
+        for d in candidates:
+            if d.exists() and d.is_dir():
+                for path in d.glob("*.json"):
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        profile = HardwareProfile.from_dict(data)
+                        self._profiles[profile.profile_id] = profile
+                        loaded_any = True
+                    except Exception:
+                        continue
+            if loaded_any:
+                break
+
+        if not self._profiles:
+            fallback = self._build_embedded_fallback()
+            self._profiles[fallback.profile_id] = fallback
+
+    @staticmethod
+    def _build_embedded_fallback() -> HardwareProfile:
+        env_defaults = {
+            0: JointEnvelope(-120, 120, -128, 127, -90, 90, -60, 60),
+            1: JointEnvelope(-85, 85, -128, 127, -60, 60, -45, 45),
+            8: JointEnvelope(-200, 80, -128, 80, -115, 65, -80, 50),
+            9: JointEnvelope(-200, 80, -128, 80, -115, 65, -80, 50),
+            10: JointEnvelope(-80, 200, -80, 127, -65, 115, -50, 80),
+            11: JointEnvelope(-80, 200, -80, 127, -65, 115, -50, 80),
+            12: JointEnvelope(-80, 200, -80, 127, -65, 115, 30, 95),
+            13: JointEnvelope(-80, 200, -80, 127, -65, 115, 30, 95),
+            14: JointEnvelope(-80, 200, -80, 127, -65, 115, 30, 95),
+            15: JointEnvelope(-80, 200, -80, 127, -65, 115, 30, 95),
+        }
+        return HardwareProfile(
+            profile_id="bittle-standard-biboard-v1-p1s",
+            robot_model="BITTLE",
+            board="BiBoard_V1_0",
+            firmware_repo="PetoiCamp/OpenCatEsp32",
+            firmware_commit="e8d6411",
+            firmware_version="2.1",
+            servo_model="P1S",
+            feedback_capable=True,
+            installed_joints=frozenset({0, 8, 9, 10, 11, 12, 13, 14, 15}),
+            calibration_offsets={i: 0 for i in range(16)},
+            envelopes=env_defaults,
+        )
 
     def get(self, profile_id: str) -> HardwareProfile:
         if profile_id not in self._profiles:
