@@ -6,6 +6,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from '/vendor/OrbitControls.js';
 import { OBJLoader } from '/vendor/OBJLoader.js';
+import { BUILTIN_MOVESETS } from './builtin_movesets.js';
+
+export { BUILTIN_MOVESETS };
 
 // OpenCat standard poses
 export const STAND_POSE = {
@@ -32,121 +35,6 @@ export const REST_POSE = {
   13: 60,  // Knee FR
   14: 60,  // Knee BR
   15: 60   // Knee BL
-};
-
-export const BUILTIN_MOVESETS = {
-  sit: {
-    name: 'sit',
-    label: 'Sit',
-    description: 'Standard Bittle seated posture',
-    kind: 'posture',
-    frames: [
-      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 300, speed_deg_per_step: 8 }
-    ]
-  },
-  balance: {
-    name: 'balance',
-    label: 'Stand / Balance',
-    description: 'Neutral four-legged standing posture',
-    kind: 'posture',
-    frames: [
-      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 }
-    ]
-  },
-  rest: {
-    name: 'rest',
-    label: 'Rest (Relax)',
-    description: 'Flat rested posture on belly',
-    kind: 'posture',
-    frames: [
-      { angles: { ...REST_POSE }, delay_ms: 300, speed_deg_per_step: 8 }
-    ]
-  },
-  ck: {
-    name: 'ck',
-    label: 'Check Around',
-    description: 'Scans left and right with head pan while standing steady',
-    kind: 'behavior',
-    frames: [
-      { angles: { ...STAND_POSE, 0: 45 }, delay_ms: 350, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE, 0: -45 }, delay_ms: 350, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE, 0: 30 }, delay_ms: 250, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE, 0: 0 }, delay_ms: 200, speed_deg_per_step: 6 },
-    ]
-  },
-  hi: {
-    name: 'hi',
-    label: 'Wave Hello',
-    description: 'Sits down and waves front-right paw twice',
-    kind: 'behavior',
-    frames: [
-      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 250, speed_deg_per_step: 8 },
-      { angles: { 0: 0, 8: -30, 9: 20, 10: 80, 11: 80, 12: 40, 13: -25, 14: 75, 15: 75 }, delay_ms: 200, speed_deg_per_step: 8 },
-      { angles: { 0: 0, 8: -30, 9: 35, 10: 80, 11: 80, 12: 40, 13: 15, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
-      { angles: { 0: 0, 8: -30, 9: 15, 10: 80, 11: 80, 12: 40, 13: -30, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
-      { angles: { 0: 0, 8: -30, 9: 35, 10: 80, 11: 80, 12: 40, 13: 15, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
-      { angles: { 0: 0, 8: -30, 9: 20, 10: 80, 11: 80, 12: 40, 13: -25, 14: 75, 15: 75 }, delay_ms: 200, speed_deg_per_step: 8 },
-      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 250, speed_deg_per_step: 8 },
-      { angles: { ...STAND_POSE }, delay_ms: 250, speed_deg_per_step: 8 },
-    ]
-  },
-  pu: {
-    name: 'pu',
-    label: 'Push Ups',
-    description: 'Lowers front chest to floor and presses up two times',
-    kind: 'behavior',
-    frames: [
-      { angles: { ...STAND_POSE, 8: -75, 9: -75, 12: 105, 13: 105 }, delay_ms: 350, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 },
-      { angles: { ...STAND_POSE, 8: -75, 9: -75, 12: 105, 13: 105 }, delay_ms: 350, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 },
-    ]
-  },
-  nd: {
-    name: 'nd',
-    label: 'Nod',
-    description: 'Affirmative nodding motion',
-    kind: 'behavior',
-    frames: [
-      { angles: { ...STAND_POSE, 8: -55, 9: -55, 10: -35, 11: -35 }, delay_ms: 200, speed_deg_per_step: 8 },
-      { angles: { ...STAND_POSE, 8: -35, 9: -35, 10: -55, 11: -55 }, delay_ms: 200, speed_deg_per_step: 8 },
-      { angles: { ...STAND_POSE, 8: -55, 9: -55, 10: -35, 11: -35 }, delay_ms: 200, speed_deg_per_step: 8 },
-      { angles: { ...STAND_POSE }, delay_ms: 200, speed_deg_per_step: 8 },
-    ]
-  },
-  bf: {
-    name: 'bf',
-    label: 'Backflip',
-    description: 'High-energy backward somersault landing squarely on all four feet',
-    kind: 'behavior',
-    frames: [
-      { angles: { 0: 0, 8: -80, 9: -80, 10: 75, 11: 75, 12: 110, 13: 110, 14: 70, 15: 70 }, delay_ms: 250, speed_deg_per_step: 14 },
-      { angles: { 0: 0, 8: 30, 9: 30, 10: -90, 11: -90, 12: 20, 13: 20, 14: 120, 15: 120 }, delay_ms: 150, speed_deg_per_step: 30 },
-      { angles: { 0: 0, 8: -70, 9: -70, 10: 70, 11: 70, 12: 90, 13: 90, 14: 90, 15: 90 }, delay_ms: 200, speed_deg_per_step: 30 },
-      { angles: { 0: 0, 8: -60, 9: -60, 10: -60, 11: -60, 12: 95, 13: 95, 14: 95, 15: 95 }, delay_ms: 180, speed_deg_per_step: 16 },
-      { angles: { ...STAND_POSE }, delay_ms: 250, speed_deg_per_step: 8 },
-    ]
-  },
-  pee: {
-    name: 'pee',
-    label: 'Pee',
-    description: 'Playful single rear-leg lift posture',
-    kind: 'behavior',
-    frames: [
-      { angles: { ...STAND_POSE, 10: -30, 14: 40 }, delay_ms: 800, speed_deg_per_step: 6 },
-      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 6 },
-    ]
-  },
-  str: {
-    name: 'str',
-    label: 'Stretch',
-    description: 'Full body waking stretch',
-    kind: 'behavior',
-    frames: [
-      { angles: { ...STAND_POSE, 8: -75, 9: -75, 10: -20, 11: -20, 12: 110, 13: 110, 14: 50, 15: 50 }, delay_ms: 600, speed_deg_per_step: 5 },
-      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 6 },
-    ]
-  }
 };
 
 // Slew speed: 320 degrees per second matching SimBackend
@@ -210,6 +98,7 @@ export class BittleViewer {
 
     // Moveset Sequence Player State
     this.activeSequence = null;
+    this.registeredMovesets = {};
     this.currentFrameIdx = 0;
     this.frameTimer = 0;
     this.isPlaying = false;
@@ -550,26 +439,40 @@ export class BittleViewer {
     this.targetAngles[jointId] = angleDeg;
   }
 
-  setPose(angles) {
+  setPose(angles, force = false) {
+    if (this.isPlaying && this.activeSequence && !force) return;
     Object.entries(angles).forEach(([k, v]) => {
       this.setJointTarget(Number(k), Number(v));
     });
   }
 
   resetPose(preset = 'stand') {
-    this.setPose(preset === 'rest' ? REST_POSE : STAND_POSE);
+    this.isPlaying = false;
+    this.setPose(preset === 'rest' ? REST_POSE : STAND_POSE, true);
   }
 
   setEstop(engaged) {
+    if (this.estopEngaged === engaged) return;
     this.estopEngaged = engaged;
     if (engaged) {
       // Robot drops limp
-      this.setPose(REST_POSE);
+      this.isPlaying = false;
+      this.setPose(REST_POSE, true);
       this.robotGroup.position.y = 0.02; // sink to floor
     } else {
       this.robotGroup.position.y = 0.0532;
-      this.setPose(STAND_POSE);
+      this.setPose(STAND_POSE, true);
     }
+  }
+
+  registerMovesets(movesets) {
+    if (!movesets) return;
+    const list = Array.isArray(movesets) ? movesets : Object.values(movesets);
+    list.forEach(m => {
+      if (m && m.name) {
+        this.registeredMovesets[m.name] = m;
+      }
+    });
   }
 
   setCameraPreset(name) {
@@ -617,7 +520,7 @@ export class BittleViewer {
     let description = options.description || '';
 
     if (typeof sequenceOrName === 'string') {
-      const b = BUILTIN_MOVESETS[sequenceOrName];
+      const b = this.registeredMovesets[sequenceOrName] || BUILTIN_MOVESETS[sequenceOrName];
       if (b) {
         frames = b.frames;
         name = b.label || b.name;

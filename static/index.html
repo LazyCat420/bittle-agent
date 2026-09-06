@@ -587,6 +587,12 @@
     border-color: var(--accent);
     background: #202b3c;
   }
+  .skill-card.active-running {
+    border-color: var(--accent) !important;
+    background: rgba(59, 130, 246, 0.25) !important;
+    box-shadow: 0 0 12px rgba(59, 130, 246, 0.5) !important;
+    transform: translateY(-1px);
+  }
   .skill-card.loco {
     border-left: 3px solid var(--warn);
   }
@@ -1406,7 +1412,9 @@ async function refreshJointState() {
   try {
     const { angles } = await api(`/api/joints/state?target=${TARGET}`);
     if (angles && viewer) {
-      viewer.setPose(angles);
+      if (!viewer.isPlaying) {
+        viewer.setPose(angles);
+      }
       Object.entries(angles).forEach(([i, a]) => {
         const s = document.querySelector(`#jointsContainer input[data-i="${i}"]`);
         if (s) {
@@ -1425,11 +1433,21 @@ async function loadSkills() {
   const posturesHost = document.getElementById("posturesGrid");
   const gaitsHost = document.getElementById("gaitsGrid");
 
+  posturesHost.innerHTML = "";
+  gaitsHost.innerHTML = "";
+
+  // Register backend movesets into viewer so all sequences are playable
+  try {
+    const { movesets } = await api("/api/movesets");
+    if (viewer && movesets) viewer.registerMovesets(movesets);
+  } catch {}
+
   const mk = (s) => {
     const b = document.createElement("button");
     b.className = "skill-card" + (s.locomotes ? " loco" : "");
+    b.dataset.skill = s.name;
     b.innerHTML = `<strong>${s.label}</strong><span class="skill-token">${s.token}</span>`;
-    b.onclick = () => runSkill(s);
+    b.onclick = () => runSkill(s, b);
     return b;
   };
 
@@ -1437,10 +1455,31 @@ async function loadSkills() {
   skills.filter(s => s.locomotes).forEach(s => gaitsHost.appendChild(mk(s)));
 }
 
-async function runSkill(s) {
+async function runSkill(s, cardEl) {
   if (s.locomotes && TARGET === "real") {
     if (!window.confirm(`${s.label} will move the physical robot. Is the area clear?`)) return;
   }
+
+  // Active glowing state on button
+  document.querySelectorAll('.skill-card.active-running').forEach(el => el.classList.remove('active-running'));
+  if (cardEl) {
+    cardEl.classList.add('active-running');
+  } else {
+    const found = document.querySelector(`.skill-card[data-skill="${s.name}"]`);
+    if (found) found.classList.add('active-running');
+  }
+
+  // Start 3D animation immediately in Three.js viewport
+  if (viewer) {
+    const loop = Boolean(s.locomotes);
+    const played = viewer.playSequence(s.name, { name: s.label || s.name, loop });
+    if (!played) {
+      if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, true);
+      else if (s.name === 'balance' || s.name === 'up' || s.name === 'stand') viewer.setPose(STAND_POSE, true);
+      else if (s.name === 'rest') viewer.setPose(REST_POSE, true);
+    }
+  }
+
   try {
     const r = await api("/api/skill", {
       method: "POST",
@@ -1451,16 +1490,10 @@ async function runSkill(s) {
       }),
     });
     log(`${r.token} → ${r.sent.trim()} ${r.ok ? "ok" : ""}`, "ok");
-    if (viewer) {
-      if (!viewer.playSequence(s.name, { name: s.label || s.name, loop: false })) {
-        if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
-        else if (s.name === 'balance' || s.name === 'up' || s.name === 'stand') viewer.setPose(STAND_POSE);
-        else if (s.name === 'rest') viewer.setPose(REST_POSE);
-      }
-    }
-    refreshJointState();
   } catch (e) {
     log(e.message, "err");
+    document.querySelectorAll('.skill-card.active-running').forEach(el => el.classList.remove('active-running'));
+    if (viewer) viewer.stopSequence();
   }
 }
 
@@ -1586,6 +1619,8 @@ function setupTimelineControls() {
 
     viewer.onSequenceDone = () => {
       if (btnPlay) btnPlay.textContent = '▶';
+      document.querySelectorAll('.skill-card.active-running').forEach(el => el.classList.remove('active-running'));
+      refreshJointState();
     };
   }
 }
@@ -1595,6 +1630,7 @@ async function refreshMovesetLibrary() {
   if (!host) return;
   try {
     const res = await api('/api/movesets');
+    if (viewer && res.movesets) viewer.registerMovesets(res.movesets);
     host.innerHTML = '';
     const list = res.movesets || [];
     if (list.length === 0) {

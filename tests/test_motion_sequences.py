@@ -130,3 +130,53 @@ def test_save_and_list_moveset(harness, client):
     data = list_res.json()
     names = [m["name"] for m in data.get("movesets", [])]
     assert "test_nod_wave" in names
+
+
+def test_sim_skill_updates_joint_state(client):
+    """Ensure running a posture like 'sit' updates SimBackend._angles so readbacks are accurate."""
+    res = client.post("/api/skill", json={"skill": "sit", "target": "sim"})
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    # State readback must reflect sit angles, NOT the default stand pose!
+    state_res = client.get("/api/joints/state?target=sim")
+    assert state_res.status_code == 200
+    angles = state_res.json()["angles"]
+    assert angles["8"] == -30
+    assert angles["10"] == 80
+    assert angles["12"] == 40
+
+    # Reset back to balance/stand
+    stand_res = client.post("/api/skill", json={"skill": "balance", "target": "sim"})
+    assert stand_res.status_code == 200
+    state_after = client.get("/api/joints/state?target=sim").json()["angles"]
+    assert state_after["8"] == -45
+    assert state_after["12"] == 80
+
+
+def test_gait_locomotion_execution(client):
+    """Ensure locomotion gaits execute cleanly with ack_locomotion."""
+    for gait in ["wkF", "wkL", "trF", "crF", "bk"]:
+        res = client.post("/api/skill", json={
+            "skill": gait,
+            "target": "sim",
+            "ack_locomotion": True
+        })
+        assert res.status_code == 200
+        assert res.json()["ok"] is True
+        assert res.json()["token"] == f"k{gait}"
+
+
+def test_builtin_moveset_coverage():
+    """Ensure all common gaits and behaviors have rich multi-frame keyframes."""
+    from app.motion.builtin_library import BUILTIN_MOVESETS
+    expected_moves = [
+        "sit", "balance", "rest", "zero", "up", "str",
+        "wkF", "wkL", "trF", "bk", "crF",
+        "bf", "ck", "hi", "pu", "nd", "pee", "fiv", "gdb", "hsk", "hu", "jmp", "kc"
+    ]
+    for move in expected_moves:
+        assert move in BUILTIN_MOVESETS, f"Missing keyframe moveset definition for {move}"
+        frames = BUILTIN_MOVESETS[move]["frames"]
+        assert len(frames) >= 1, f"Moveset {move} must have at least 1 frame"
+

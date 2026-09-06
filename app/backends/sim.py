@@ -16,6 +16,7 @@ import asyncio
 import time
 
 from .. import joints, protocol, skills
+from ..motion.builtin_library import BUILTIN_MOVESETS
 from .base import Backend, CommandResult
 
 #: Approximate servo slew, degrees per second. Used to report a plausible
@@ -74,7 +75,13 @@ class SimBackend(Backend):
         async with self._lock:
             self._last_skill = skill_name
             self._resting = skill_name == "rest"
-            if skill_name in ("balance", "stand", "up"):
+            if skill_name in BUILTIN_MOVESETS:
+                frames = BUILTIN_MOVESETS[skill_name].get("frames", [])
+                if frames:
+                    self._angles.update(frames[-1]["angles"])
+                if skill_name in ("balance", "stand", "up"):
+                    self._resting = False
+            elif skill_name in ("balance", "stand", "up"):
                 self._angles = dict(joints.STAND_POSE)
                 self._resting = False
             elif self._resting:
