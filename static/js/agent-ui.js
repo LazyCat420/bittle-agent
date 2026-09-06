@@ -299,21 +299,35 @@ export class AgentUI {
       case 'tool_result':
         this.updateToolResult(ev.id, ev.result);
 
-        // Reflect movement directly on the 3D Viewer!
+        // Reflect movement directly on the 3D Viewer & Sequence Timeline!
         if (ev.result && ev.result.ok && this.viewer) {
-          if (ev.name === 'bittle_move_joints' && ev.result.applied) {
-            this.viewer.setPose(ev.result.applied);
-          } else if (ev.name === 'bittle_do_skill') {
-            if (ev.result.skill === 'sit') {
-              this.viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
-            } else if (ev.result.skill === 'balance' || ev.result.skill === 'up') {
-              this.viewer.resetPose();
-            } else if (ev.result.skill === 'rest') {
-              this.viewer.resetPose();
-              this.viewer.setEstop(false);
+          if (ev.result.moveset && ev.result.moveset.frames) {
+            const seqName = ev.result.name || ev.result.expression || ev.result.moveset.name || 'Sequence';
+            this.viewer.playSequence(ev.result.moveset.frames, {
+              name: seqName,
+              description: ev.result.moveset.description || '',
+              loop: false
+            });
+          } else if (ev.name === 'bittle_do_skill' && ev.result.skill) {
+            const skill = ev.result.skill;
+            if (!this.viewer.playSequence(skill, { name: skill, loop: false })) {
+              if (skill === 'sit') {
+                this.viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
+              } else if (skill === 'balance' || skill === 'up') {
+                this.viewer.resetPose('stand');
+              } else if (skill === 'rest') {
+                this.viewer.resetPose('rest');
+                this.viewer.setEstop(false);
+              }
             }
+          } else if (ev.name === 'bittle_move_joints' && ev.result.applied) {
+            this.viewer.setPose(ev.result.applied);
           } else if (ev.name === 'bittle_estop') {
             this.viewer.setEstop(true);
+          }
+
+          if (ev.name === 'bittle_save_moveset' && typeof window.refreshMovesetLibrary === 'function') {
+            window.refreshMovesetLibrary();
           }
         }
         break;

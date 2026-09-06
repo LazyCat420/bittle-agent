@@ -34,6 +34,121 @@ export const REST_POSE = {
   15: 60   // Knee BL
 };
 
+export const BUILTIN_MOVESETS = {
+  sit: {
+    name: 'sit',
+    label: 'Sit',
+    description: 'Standard Bittle seated posture',
+    kind: 'posture',
+    frames: [
+      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 300, speed_deg_per_step: 8 }
+    ]
+  },
+  balance: {
+    name: 'balance',
+    label: 'Stand / Balance',
+    description: 'Neutral four-legged standing posture',
+    kind: 'posture',
+    frames: [
+      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 }
+    ]
+  },
+  rest: {
+    name: 'rest',
+    label: 'Rest (Relax)',
+    description: 'Flat rested posture on belly',
+    kind: 'posture',
+    frames: [
+      { angles: { ...REST_POSE }, delay_ms: 300, speed_deg_per_step: 8 }
+    ]
+  },
+  ck: {
+    name: 'ck',
+    label: 'Check Around',
+    description: 'Scans left and right with head pan while standing steady',
+    kind: 'behavior',
+    frames: [
+      { angles: { ...STAND_POSE, 0: 45 }, delay_ms: 350, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE, 0: -45 }, delay_ms: 350, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE, 0: 30 }, delay_ms: 250, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE, 0: 0 }, delay_ms: 200, speed_deg_per_step: 6 },
+    ]
+  },
+  hi: {
+    name: 'hi',
+    label: 'Wave Hello',
+    description: 'Sits down and waves front-right paw twice',
+    kind: 'behavior',
+    frames: [
+      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 250, speed_deg_per_step: 8 },
+      { angles: { 0: 0, 8: -30, 9: 20, 10: 80, 11: 80, 12: 40, 13: -25, 14: 75, 15: 75 }, delay_ms: 200, speed_deg_per_step: 8 },
+      { angles: { 0: 0, 8: -30, 9: 35, 10: 80, 11: 80, 12: 40, 13: 15, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
+      { angles: { 0: 0, 8: -30, 9: 15, 10: 80, 11: 80, 12: 40, 13: -30, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
+      { angles: { 0: 0, 8: -30, 9: 35, 10: 80, 11: 80, 12: 40, 13: 15, 14: 75, 15: 75 }, delay_ms: 180, speed_deg_per_step: 12 },
+      { angles: { 0: 0, 8: -30, 9: 20, 10: 80, 11: 80, 12: 40, 13: -25, 14: 75, 15: 75 }, delay_ms: 200, speed_deg_per_step: 8 },
+      { angles: { 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 }, delay_ms: 250, speed_deg_per_step: 8 },
+      { angles: { ...STAND_POSE }, delay_ms: 250, speed_deg_per_step: 8 },
+    ]
+  },
+  pu: {
+    name: 'pu',
+    label: 'Push Ups',
+    description: 'Lowers front chest to floor and presses up two times',
+    kind: 'behavior',
+    frames: [
+      { angles: { ...STAND_POSE, 8: -75, 9: -75, 12: 105, 13: 105 }, delay_ms: 350, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 },
+      { angles: { ...STAND_POSE, 8: -75, 9: -75, 12: 105, 13: 105 }, delay_ms: 350, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 8 },
+    ]
+  },
+  nd: {
+    name: 'nd',
+    label: 'Nod',
+    description: 'Affirmative nodding motion',
+    kind: 'behavior',
+    frames: [
+      { angles: { ...STAND_POSE, 8: -55, 9: -55, 10: -35, 11: -35 }, delay_ms: 200, speed_deg_per_step: 8 },
+      { angles: { ...STAND_POSE, 8: -35, 9: -35, 10: -55, 11: -55 }, delay_ms: 200, speed_deg_per_step: 8 },
+      { angles: { ...STAND_POSE, 8: -55, 9: -55, 10: -35, 11: -35 }, delay_ms: 200, speed_deg_per_step: 8 },
+      { angles: { ...STAND_POSE }, delay_ms: 200, speed_deg_per_step: 8 },
+    ]
+  },
+  bf: {
+    name: 'bf',
+    label: 'Backflip',
+    description: 'High-energy backward somersault landing squarely on all four feet',
+    kind: 'behavior',
+    frames: [
+      { angles: { 0: 0, 8: -80, 9: -80, 10: 75, 11: 75, 12: 110, 13: 110, 14: 70, 15: 70 }, delay_ms: 250, speed_deg_per_step: 14 },
+      { angles: { 0: 0, 8: 30, 9: 30, 10: -90, 11: -90, 12: 20, 13: 20, 14: 120, 15: 120 }, delay_ms: 150, speed_deg_per_step: 30 },
+      { angles: { 0: 0, 8: -70, 9: -70, 10: 70, 11: 70, 12: 90, 13: 90, 14: 90, 15: 90 }, delay_ms: 200, speed_deg_per_step: 30 },
+      { angles: { 0: 0, 8: -60, 9: -60, 10: -60, 11: -60, 12: 95, 13: 95, 14: 95, 15: 95 }, delay_ms: 180, speed_deg_per_step: 16 },
+      { angles: { ...STAND_POSE }, delay_ms: 250, speed_deg_per_step: 8 },
+    ]
+  },
+  pee: {
+    name: 'pee',
+    label: 'Pee',
+    description: 'Playful single rear-leg lift posture',
+    kind: 'behavior',
+    frames: [
+      { angles: { ...STAND_POSE, 10: -30, 14: 40 }, delay_ms: 800, speed_deg_per_step: 6 },
+      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 6 },
+    ]
+  },
+  str: {
+    name: 'str',
+    label: 'Stretch',
+    description: 'Full body waking stretch',
+    kind: 'behavior',
+    frames: [
+      { angles: { ...STAND_POSE, 8: -75, 9: -75, 10: -20, 11: -20, 12: 110, 13: 110, 14: 50, 15: 50 }, delay_ms: 600, speed_deg_per_step: 5 },
+      { angles: { ...STAND_POSE }, delay_ms: 300, speed_deg_per_step: 6 },
+    ]
+  }
+};
+
 // Slew speed: 320 degrees per second matching SimBackend
 const SLEW_DEG_PER_SEC = 320.0;
 
@@ -92,6 +207,16 @@ export class BittleViewer {
     this.onSelectCallback = null;
     this.estopEngaged = false;
     this.isLoaded = false;
+
+    // Moveset Sequence Player State
+    this.activeSequence = null;
+    this.currentFrameIdx = 0;
+    this.frameTimer = 0;
+    this.isPlaying = false;
+    this.isLooping = false;
+    this.playbackSpeed = 1.0;
+    this.onSequenceProgress = null;
+    this.onSequenceDone = null;
 
     this.initScene();
     this.initLighting();
@@ -486,9 +611,204 @@ export class BittleViewer {
     });
   }
 
+  playSequence(sequenceOrName, options = {}) {
+    let frames = null;
+    let name = options.name || 'Sequence';
+    let description = options.description || '';
+
+    if (typeof sequenceOrName === 'string') {
+      const b = BUILTIN_MOVESETS[sequenceOrName];
+      if (b) {
+        frames = b.frames;
+        name = b.label || b.name;
+        description = b.description || '';
+      }
+    } else if (Array.isArray(sequenceOrName)) {
+      frames = sequenceOrName;
+    } else if (sequenceOrName && Array.isArray(sequenceOrName.frames)) {
+      frames = sequenceOrName.frames;
+      name = sequenceOrName.name || name;
+      description = sequenceOrName.description || description;
+    }
+
+    if (!frames || frames.length === 0) {
+      console.warn('playSequence: No valid frames found', sequenceOrName);
+      return false;
+    }
+
+    this.activeSequence = {
+      name,
+      description,
+      frames: frames.map(f => ({
+        angles: { ...(f.angles || {}) },
+        speed_deg_per_step: f.speed_deg_per_step || 8,
+        delay_ms: f.delay_ms || 200,
+      }))
+    };
+
+    if (options.loop !== undefined) {
+      this.isLooping = Boolean(options.loop);
+    }
+    this.currentFrameIdx = 0;
+    this.frameTimer = 0;
+    this.isPlaying = true;
+    this.applyFrame(0, false);
+    this.notifyProgress();
+    return true;
+  }
+
+  applyFrame(idx, snap = false) {
+    if (!this.activeSequence || !this.activeSequence.frames[idx]) return;
+    const frame = this.activeSequence.frames[idx];
+    const angles = frame.angles;
+    this.currentFrameIdx = idx;
+
+    Object.entries(angles).forEach(([k, v]) => {
+      const id = Number(k);
+      const val = Number(v);
+      this.targetAngles[id] = val;
+      if (snap) {
+        this.currentAngles[id] = val;
+      }
+    });
+
+    if (snap) {
+      this.applyAngles(this.currentAngles);
+    }
+  }
+
+  pauseSequence() {
+    this.isPlaying = false;
+    this.notifyProgress();
+  }
+
+  resumeSequence() {
+    if (!this.activeSequence) return;
+    this.isPlaying = true;
+    this.notifyProgress();
+  }
+
+  togglePlayPause() {
+    if (this.isPlaying) {
+      this.pauseSequence();
+    } else {
+      this.resumeSequence();
+    }
+  }
+
+  stopSequence() {
+    this.isPlaying = false;
+    this.currentFrameIdx = 0;
+    this.frameTimer = 0;
+    this.applyFrame(0, false);
+    this.notifyProgress();
+  }
+
+  seekFrame(idx) {
+    if (!this.activeSequence) return;
+    const clamped = Math.max(0, Math.min(idx, this.activeSequence.frames.length - 1));
+    this.applyFrame(clamped, true);
+    this.notifyProgress();
+  }
+
+  seekFraction(frac) {
+    if (!this.activeSequence) return;
+    const totalFrames = this.activeSequence.frames.length;
+    const idx = Math.min(Math.floor(frac * totalFrames), totalFrames - 1);
+    this.seekFrame(idx);
+  }
+
+  stepForward() {
+    if (!this.activeSequence) return;
+    this.pauseSequence();
+    const nextIdx = (this.currentFrameIdx + 1) % this.activeSequence.frames.length;
+    this.seekFrame(nextIdx);
+  }
+
+  stepBackward() {
+    if (!this.activeSequence) return;
+    this.pauseSequence();
+    const prevIdx = (this.currentFrameIdx - 1 + this.activeSequence.frames.length) % this.activeSequence.frames.length;
+    this.seekFrame(prevIdx);
+  }
+
+  setPlaybackSpeed(speed) {
+    this.playbackSpeed = Number(speed) || 1.0;
+    this.notifyProgress();
+  }
+
+  setLoop(loop) {
+    this.isLooping = Boolean(loop);
+    this.notifyProgress();
+  }
+
+  notifyProgress() {
+    if (!this.onSequenceProgress) return;
+    const totalFrames = this.activeSequence ? this.activeSequence.frames.length : 0;
+    const currentFrame = this.currentFrameIdx;
+    const currentFrameData = this.activeSequence ? this.activeSequence.frames[currentFrame] : null;
+
+    let totalMs = 0;
+    let currentMs = 0;
+    if (this.activeSequence) {
+      this.activeSequence.frames.forEach((f, i) => {
+        const dur = f.delay_ms || 200;
+        if (i < currentFrame) currentMs += dur;
+        else if (i === currentFrame) currentMs += this.frameTimer * 1000;
+        totalMs += dur;
+      });
+    }
+
+    this.onSequenceProgress({
+      sequenceName: this.activeSequence ? this.activeSequence.name : 'No active sequence',
+      description: this.activeSequence ? this.activeSequence.description : '',
+      currentFrameIndex: currentFrame,
+      totalFrames: totalFrames,
+      currentTimeSec: currentMs / 1000,
+      totalTimeSec: totalMs / 1000,
+      isPlaying: this.isPlaying,
+      isLooping: this.isLooping,
+      speed: this.playbackSpeed,
+      angles: currentFrameData ? currentFrameData.angles : this.currentAngles,
+    });
+  }
+
   animate() {
     requestAnimationFrame(this.animate);
     const dt = Math.min(this.clock.getDelta(), 0.1);
+
+    // Sequence advance logic
+    if (this.isLoaded && this.isPlaying && this.activeSequence) {
+      const currentFrame = this.activeSequence.frames[this.currentFrameIdx];
+      const targetDelaySec = ((currentFrame.delay_ms || 200) / 1000) / this.playbackSpeed;
+
+      let jointsSettled = true;
+      Object.keys(currentFrame.angles).forEach(k => {
+        const id = Number(k);
+        if (Math.abs(this.targetAngles[id] - this.currentAngles[id]) > 3.0) {
+          jointsSettled = false;
+        }
+      });
+
+      this.frameTimer += dt;
+
+      if (this.frameTimer >= targetDelaySec && jointsSettled) {
+        this.frameTimer = 0;
+        if (this.currentFrameIdx < this.activeSequence.frames.length - 1) {
+          this.applyFrame(this.currentFrameIdx + 1, false);
+          this.notifyProgress();
+        } else {
+          if (this.isLooping) {
+            this.applyFrame(0, false);
+            this.notifyProgress();
+          } else {
+            this.isPlaying = false;
+            this.notifyProgress();
+            if (this.onSequenceDone) this.onSequenceDone();
+          }
+        }
+      }
+    }
 
     // Servo slew interpolation
     if (this.isLoaded) {

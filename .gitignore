@@ -8,3 +8,5 @@ __pycache__/
 node_modules/
 pnpm-lock.yaml
 .worktrees/
+storage/movesets/*.json
+!storage/movesets/.gitkeep

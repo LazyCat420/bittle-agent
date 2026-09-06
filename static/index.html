@@ -636,6 +636,367 @@
     border-radius: 4px;
     cursor: pointer;
   }
+
+  /* ── Floating Timeline Player & Scrubber ── */
+  .timeline-bar {
+    position: absolute;
+    bottom: 58px;
+    left: 16px;
+    right: 16px;
+    background: rgba(15, 20, 30, 0.90);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--border-highlight);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 20;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    transition: all 0.2s ease;
+  }
+  .timeline-bar:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  }
+  .timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+  }
+  .timeline-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .timeline-title {
+    font-weight: 700;
+    color: var(--text);
+    font-size: 12.5px;
+    letter-spacing: 0.2px;
+  }
+  .timeline-badge {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    background: rgba(59, 130, 246, 0.18);
+    color: #60a5fa;
+    border-radius: 4px;
+  }
+  .timeline-time {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .timeline-track-container {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+  }
+  .timeline-scrubber {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #1f2937;
+    outline: none;
+    cursor: pointer;
+    accent-color: var(--accent);
+    transition: all 0.15s ease;
+  }
+  .timeline-scrubber:hover {
+    height: 8px;
+  }
+  .timeline-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .timeline-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .timeline-btn {
+    background: #1a2232;
+    border: 1px solid var(--border);
+    color: var(--text);
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .timeline-btn:hover {
+    background: #26334d;
+    border-color: var(--accent);
+    color: #93c5fd;
+  }
+  .timeline-btn-play {
+    width: 34px;
+    height: 30px;
+    background: #1e3a8a;
+    border-color: #3b82f6;
+    color: #eff6ff;
+    font-size: 13px;
+    font-weight: bold;
+  }
+  .timeline-btn-play:hover {
+    background: #2563eb;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  }
+  .timeline-btn.active {
+    background: #1e3a8a;
+    border-color: var(--accent);
+    color: #60a5fa;
+  }
+  .timeline-controls-center {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .timeline-speed-label {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .timeline-speed-chips {
+    display: flex;
+    gap: 3px;
+    background: #111827;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .speed-chip {
+    background: transparent;
+    border: 0;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+  }
+  .speed-chip.active, .speed-chip:hover {
+    background: #202c42;
+    color: var(--text);
+  }
+  .timeline-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .timeline-action-btn {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #34d399;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .timeline-action-btn:hover {
+    background: rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+  }
+
+  /* ── Tab: Movesets & Replay ── */
+  .moveset-hero {
+    background: linear-gradient(135deg, rgba(30, 58, 138, 0.25), rgba(15, 23, 42, 0.5));
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .moveset-hero-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #93c5fd;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .moveset-hero-desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .moveset-frames-table-wrap {
+    max-height: 180px;
+    overflow-y: auto;
+    background: #090d14;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .moveset-frames-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-align: left;
+  }
+  .moveset-frames-table th {
+    background: #111824;
+    color: var(--muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    font-size: 10px;
+    text-transform: uppercase;
+  }
+  .moveset-frames-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #1a2232;
+    color: #cbd5e1;
+  }
+  .moveset-frames-table tr.active-frame-row {
+    background: rgba(59, 130, 246, 0.22);
+    color: #93c5fd;
+    font-weight: bold;
+  }
+  .moveset-frames-table tr {
+    cursor: pointer;
+    transition: background 0.1s ease;
+  }
+  .moveset-frames-table tr:hover {
+    background: #1a2436;
+  }
+  .moveset-card {
+    background: var(--panel-sub);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .moveset-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .moveset-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .moveset-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .moveset-kind-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+  }
+  .moveset-kind-badge.custom {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+  }
+  .moveset-card-desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+  .moveset-card-meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    display: flex;
+    gap: 12px;
+  }
+  .moveset-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .btn-sm-primary {
+    background: #1e3a8a;
+    border: 1px solid #3b82f6;
+    color: #eff6ff;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-sm-primary:hover {
+    background: #2563eb;
+  }
+  .btn-sm-run {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid #10b981;
+    color: #34d399;
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-sm-run:hover {
+    background: rgba(16, 185, 129, 0.35);
+  }
+  .btn-sm-sub {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-sm-sub:hover {
+    background: #1e293b;
+    color: var(--text);
+  }
+
+  /* ── Modal Overlay ── */
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .modal-card {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-highlight);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    width: 380px;
+    max-width: 90vw;
+    box-shadow: 0 16px 36px rgba(0,0,0,0.6);
+  }
+  .modal-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
 </style>
 </head>
 <body>
@@ -679,6 +1040,41 @@
       </div>
     </div>
 
+    <!-- Floating Moveset Player & Timeline Scrubber -->
+    <div class="timeline-bar" id="timelineBar">
+      <div class="timeline-header">
+        <div class="timeline-title-row">
+          <span class="timeline-icon">🎬</span>
+          <span class="timeline-title" id="timelineSeqName">No active sequence</span>
+          <span class="timeline-badge" id="timelineFrameBadge">0 frames</span>
+        </div>
+        <div class="timeline-time" id="timelineTimeDisplay">0.0s / 0.0s</div>
+      </div>
+      <div class="timeline-track-container">
+        <input type="range" class="timeline-scrubber" id="timelineScrubber" min="0" max="100" value="0" step="0.1" />
+      </div>
+      <div class="timeline-actions">
+        <div class="timeline-controls-left">
+          <button class="timeline-btn" id="btnTimelineRewind" title="Rewind">⏮</button>
+          <button class="timeline-btn" id="btnTimelinePrev" title="Step backward">◀</button>
+          <button class="timeline-btn timeline-btn-play" id="btnTimelinePlay" title="Play/Pause">▶</button>
+          <button class="timeline-btn" id="btnTimelineNext" title="Step forward">▶</button>
+          <button class="timeline-btn" id="btnTimelineLoop" title="Toggle Loop">🔁</button>
+        </div>
+        <div class="timeline-controls-center">
+          <span class="timeline-speed-label">Speed:</span>
+          <div class="timeline-speed-chips">
+            <button class="speed-chip" data-speed="0.5">0.5x</button>
+            <button class="speed-chip active" data-speed="1.0">1.0x</button>
+            <button class="speed-chip" data-speed="2.0">2.0x</button>
+          </div>
+        </div>
+        <div class="timeline-controls-right">
+          <button class="timeline-action-btn" id="btnSaveMoveset" title="Save current sequence to Library">💾 Save Moveset</button>
+        </div>
+      </div>
+    </div>
+
     <div class="viewport-controls">
       <div class="btn-group">
         <button class="vbtn active" onclick="setCam('iso')">Isometric</button>
@@ -698,6 +1094,7 @@
   <div class="panel-col">
     <div class="tabs-nav">
       <button class="tab-btn active" data-tab="tab-agent">🤖 GLM Agent</button>
+      <button class="tab-btn" data-tab="tab-movesets">🎬 Movesets &amp; Replay</button>
       <button class="tab-btn" data-tab="tab-joints">🦿 Joints</button>
       <button class="tab-btn" data-tab="tab-skills">⚡ Skills &amp; Gaits</button>
       <button class="tab-btn" data-tab="tab-activity">📡 Activity</button>
@@ -727,6 +1124,51 @@
         <input type="text" id="agentPromptInput" placeholder="Give GLM a goal (e.g. 'sit down and wave hello')..." />
         <button class="btn-primary" id="agentSendBtn">Send</button>
         <button class="vbtn" id="agentCancelBtn" style="display:none; border:1px solid var(--real); color:var(--real)">Stop</button>
+      </div>
+    </div>
+
+    <!-- Tab: Movesets & Replay -->
+    <div class="tab-content" id="tab-movesets">
+      <div class="moveset-hero" id="activeMovesetHero">
+        <div class="moveset-hero-title">
+          <span>🎬 Active Sequence:</span>
+          <span id="heroSeqName" style="color: #fff;">None</span>
+          <span class="timeline-badge" id="heroSeqBadge">0 frames</span>
+        </div>
+        <div class="moveset-hero-desc" id="heroSeqDesc">No sequence currently loaded. Click any moveset below or ask GLM to compose a motion.</div>
+        
+        <div class="moveset-frames-table-wrap">
+          <table class="moveset-frames-table" id="heroFramesTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Head(0)</th>
+                <th>FL Sh(8)</th>
+                <th>FR Sh(9)</th>
+                <th>FL Kn(12)</th>
+                <th>FR Kn(13)</th>
+                <th>Delay</th>
+              </tr>
+            </thead>
+            <tbody id="heroFramesTableBody">
+              <tr><td colspan="7" style="text-align:center; color:var(--muted); padding:12px;">Select a moveset below to inspect keyframes</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:4px;">
+          <button class="btn-sm-primary" id="btnHeroPlay">▶ Play in 3D</button>
+          <button class="btn-sm-run" id="btnHeroRunRobot">⚡ Run on Robot</button>
+        </div>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+        <div class="section-title" style="margin:0;">Moveset Library</div>
+        <button class="btn-sm-sub" id="btnRefreshMovesets">🔄 Refresh</button>
+      </div>
+
+      <div id="movesetLibraryList" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="color:var(--muted); font-size:12px;">Loading library...</div>
       </div>
     </div>
 
@@ -763,7 +1205,7 @@
 </div>
 
 <script type="module">
-import { BittleViewer, REST_POSE, STAND_POSE } from '/js/viewer.js';
+import { BittleViewer, REST_POSE, STAND_POSE, BUILTIN_MOVESETS } from '/js/viewer.js';
 import { AgentUI } from '/js/agent-ui.js';
 
 let viewer = null;
@@ -811,9 +1253,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   setupTabs();
+  setupTimelineControls();
   await refreshStatus();
   await loadJoints();
   await loadSkills();
+  await refreshMovesetLibrary();
   await refreshJointState();
   setInterval(refreshStatus, 5000);
 });
@@ -1008,15 +1452,331 @@ async function runSkill(s) {
     });
     log(`${r.token} → ${r.sent.trim()} ${r.ok ? "ok" : ""}`, "ok");
     if (viewer) {
-      if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
-      else if (s.name === 'balance' || s.name === 'up' || s.name === 'stand') viewer.setPose(STAND_POSE);
-      else if (s.name === 'rest') viewer.setPose(REST_POSE);
+      if (!viewer.playSequence(s.name, { name: s.label || s.name, loop: false })) {
+        if (s.name === 'sit') viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
+        else if (s.name === 'balance' || s.name === 'up' || s.name === 'stand') viewer.setPose(STAND_POSE);
+        else if (s.name === 'rest') viewer.setPose(REST_POSE);
+      }
     }
     refreshJointState();
   } catch (e) {
     log(e.message, "err");
   }
 }
+
+// ── Timeline Scrubber & Moveset Player Logic ────────────────────
+let currentInspectedMoveset = null;
+
+function setupTimelineControls() {
+  const scrubber = document.getElementById('timelineScrubber');
+  const btnPlay = document.getElementById('btnTimelinePlay');
+  const btnRewind = document.getElementById('btnTimelineRewind');
+  const btnPrev = document.getElementById('btnTimelinePrev');
+  const btnNext = document.getElementById('btnTimelineNext');
+  const btnLoop = document.getElementById('btnTimelineLoop');
+  const btnSave = document.getElementById('btnSaveMoveset');
+  const seqNameEl = document.getElementById('timelineSeqName');
+  const frameBadgeEl = document.getElementById('timelineFrameBadge');
+  const timeDispEl = document.getElementById('timelineTimeDisplay');
+
+  let isUserScrubbing = false;
+
+  if (scrubber) {
+    scrubber.addEventListener('input', () => {
+      isUserScrubbing = true;
+      if (viewer) viewer.seekFraction(Number(scrubber.value) / 100);
+    });
+    scrubber.addEventListener('change', () => {
+      isUserScrubbing = false;
+      if (viewer) viewer.seekFraction(Number(scrubber.value) / 100);
+    });
+  }
+
+  if (btnPlay) {
+    btnPlay.onclick = () => {
+      if (viewer) viewer.togglePlayPause();
+    };
+  }
+  if (btnRewind) {
+    btnRewind.onclick = () => {
+      if (viewer) viewer.seekFrame(0);
+    };
+  }
+  if (btnPrev) {
+    btnPrev.onclick = () => {
+      if (viewer) viewer.stepBackward();
+    };
+  }
+  if (btnNext) {
+    btnNext.onclick = () => {
+      if (viewer) viewer.stepForward();
+    };
+  }
+  if (btnLoop) {
+    btnLoop.onclick = () => {
+      if (viewer) {
+        viewer.setLoop(!viewer.isLooping);
+        btnLoop.classList.toggle('active', viewer.isLooping);
+      }
+    };
+  }
+
+  document.querySelectorAll('.speed-chip').forEach(chip => {
+    chip.onclick = () => {
+      document.querySelectorAll('.speed-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const spd = Number(chip.dataset.speed) || 1.0;
+      if (viewer) viewer.setPlaybackSpeed(spd);
+    };
+  });
+
+  if (btnSave) {
+    btnSave.onclick = () => openSaveMovesetModal();
+  }
+
+  const btnHeroPlay = document.getElementById('btnHeroPlay');
+  if (btnHeroPlay) {
+    btnHeroPlay.onclick = () => {
+      if (currentInspectedMoveset) {
+        loadAndPlayMoveset(currentInspectedMoveset);
+      } else if (viewer && viewer.activeSequence) {
+        viewer.togglePlayPause();
+      }
+    };
+  }
+
+  const btnHeroRunRobot = document.getElementById('btnHeroRunRobot');
+  if (btnHeroRunRobot) {
+    btnHeroRunRobot.onclick = () => {
+      if (currentInspectedMoveset) {
+        runMovesetOnRobot(currentInspectedMoveset);
+      } else {
+        alert('Select a moveset from the library first.');
+      }
+    };
+  }
+
+  const btnRefresh = document.getElementById('btnRefreshMovesets');
+  if (btnRefresh) {
+    btnRefresh.onclick = () => refreshMovesetLibrary();
+  }
+
+  if (viewer) {
+    viewer.onSequenceProgress = (p) => {
+      if (seqNameEl) seqNameEl.textContent = p.sequenceName;
+      if (frameBadgeEl) frameBadgeEl.textContent = `${p.totalFrames} frames (${p.currentFrameIndex + 1}/${p.totalFrames})`;
+      if (timeDispEl) timeDispEl.textContent = `${p.currentTimeSec.toFixed(1)}s / ${p.totalTimeSec.toFixed(1)}s`;
+      if (scrubber && !isUserScrubbing) {
+        const pct = p.totalTimeSec > 0 ? (p.currentTimeSec / p.totalTimeSec) * 100 : 0;
+        scrubber.value = pct;
+      }
+      if (btnPlay) {
+        btnPlay.textContent = p.isPlaying ? '⏸' : '▶';
+        btnPlay.title = p.isPlaying ? 'Pause' : 'Play';
+      }
+
+      // Sync active hero badge and table row
+      const heroBadge = document.getElementById('heroSeqBadge');
+      if (heroBadge) heroBadge.textContent = `${p.totalFrames} frames (${p.currentFrameIndex + 1}/${p.totalFrames})`;
+
+      document.querySelectorAll('#heroFramesTableBody tr').forEach((tr, i) => {
+        tr.classList.toggle('active-frame-row', i === p.currentFrameIndex);
+      });
+    };
+
+    viewer.onSequenceDone = () => {
+      if (btnPlay) btnPlay.textContent = '▶';
+    };
+  }
+}
+
+async function refreshMovesetLibrary() {
+  const host = document.getElementById('movesetLibraryList');
+  if (!host) return;
+  try {
+    const res = await api('/api/movesets');
+    host.innerHTML = '';
+    const list = res.movesets || [];
+    if (list.length === 0) {
+      host.innerHTML = '<div style="color:var(--muted); font-size:12px;">No movesets available.</div>';
+      return;
+    }
+
+    list.forEach(m => {
+      const card = document.createElement('div');
+      card.className = 'moveset-card';
+      const isCustom = m.kind === 'custom';
+      const durSec = ((m.frames || []).reduce((acc, f) => acc + (f.delay_ms || 200), 0) / 1000).toFixed(1);
+      const frameCount = (m.frames || []).length;
+
+      card.innerHTML = `
+        <div class="moveset-card-header">
+          <div class="moveset-card-title">${m.label || m.name}</div>
+          <span class="moveset-kind-badge ${isCustom ? 'custom' : ''}">${m.kind || 'behavior'}</span>
+        </div>
+        <div class="moveset-card-desc">${m.description || 'Keyframe animation sequence'}</div>
+        <div class="moveset-card-meta">
+          <span>Frames: ${frameCount}</span>
+          <span>Duration: ~${durSec}s</span>
+        </div>
+        <div class="moveset-card-actions">
+          <button class="btn-sm-primary play-3d-btn">▶ Preview in 3D</button>
+          <button class="btn-sm-run run-robot-btn">⚡ Run on Robot</button>
+          <button class="btn-sm-sub inspect-btn">📋 Inspect</button>
+          ${isCustom ? '<button class="btn-sm-sub del-btn" style="color:var(--real); border-color:var(--real);">🗑</button>' : ''}
+        </div>
+      `;
+
+      card.querySelector('.play-3d-btn').onclick = () => loadAndPlayMoveset(m);
+      card.querySelector('.inspect-btn').onclick = () => inspectMoveset(m);
+      card.querySelector('.run-robot-btn').onclick = () => runMovesetOnRobot(m);
+      if (isCustom) {
+        const delBtn = card.querySelector('.del-btn');
+        if (delBtn) {
+          delBtn.onclick = async () => {
+            if (!window.confirm(`Delete custom moveset "${m.name}"?`)) return;
+            await api(`/api/movesets/${encodeURIComponent(m.name)}`, { method: 'DELETE' });
+            log(`Deleted moveset "${m.name}"`, 'dim');
+            refreshMovesetLibrary();
+          };
+        }
+      }
+
+      host.appendChild(card);
+    });
+  } catch (err) {
+    host.innerHTML = `<div style="color:var(--real); font-size:12px;">Failed to load library: ${err.message}</div>`;
+  }
+}
+window.refreshMovesetLibrary = refreshMovesetLibrary;
+
+function inspectMoveset(m) {
+  currentInspectedMoveset = m;
+  const heroTitle = document.getElementById('heroSeqName');
+  const heroBadge = document.getElementById('heroSeqBadge');
+  const heroDesc = document.getElementById('heroSeqDesc');
+  const tbody = document.getElementById('heroFramesTableBody');
+
+  if (heroTitle) heroTitle.textContent = m.label || m.name;
+  if (heroBadge) heroBadge.textContent = `${(m.frames || []).length} frames`;
+  if (heroDesc) heroDesc.textContent = m.description || 'Keyframe animation sequence';
+
+  if (tbody) {
+    tbody.innerHTML = '';
+    (m.frames || []).forEach((f, idx) => {
+      const tr = document.createElement('tr');
+      const a = f.angles || {};
+      tr.innerHTML = `
+        <td><strong>#${idx + 1}</strong></td>
+        <td>${a[0] !== undefined ? a[0] + '°' : '—'}</td>
+        <td>${a[8] !== undefined ? a[8] + '°' : '—'}</td>
+        <td>${a[9] !== undefined ? a[9] + '°' : '—'}</td>
+        <td>${a[12] !== undefined ? a[12] + '°' : '—'}</td>
+        <td>${a[13] !== undefined ? a[13] + '°' : '—'}</td>
+        <td>${f.delay_ms || 200}ms</td>
+      `;
+      tr.title = `Click to inspect frame #${idx + 1} in 3D`;
+      tr.onclick = () => {
+        if (viewer) {
+          if (viewer.activeSequence && viewer.activeSequence.name === (m.label || m.name)) {
+            viewer.seekFrame(idx);
+          } else {
+            viewer.playSequence(m.frames, { name: m.label || m.name, description: m.description, loop: false });
+            viewer.pauseSequence();
+            viewer.seekFrame(idx);
+          }
+        }
+      };
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+function loadAndPlayMoveset(m) {
+  inspectMoveset(m);
+  if (viewer) {
+    viewer.playSequence(m.frames, {
+      name: m.label || m.name,
+      description: m.description || '',
+      loop: false,
+    });
+  }
+  log(`3D Preview: Playing "${m.label || m.name}" (${(m.frames || []).length} frames)`, 'ok');
+}
+
+async function runMovesetOnRobot(m) {
+  if (TARGET === 'real') {
+    if (!window.confirm(`Execute moveset "${m.label || m.name}" on PHYSICAL ROBOT?`)) return;
+  }
+  try {
+    loadAndPlayMoveset(m);
+    const res = await api('/api/movesets/play', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: m.name,
+        frames: m.frames,
+        target: TARGET,
+        confirm: confirmToken,
+      })
+    });
+    log(`Executed moveset "${m.label || m.name}" on ${TARGET}: ${res.executed_steps || 0} steps`, 'ok');
+    refreshJointState();
+  } catch (err) {
+    log(`Moveset execution failed: ${err.message}`, 'err');
+  }
+}
+
+// ── Save Moveset Modal ──────────────────────────────────────────
+function openSaveMovesetModal() {
+  if (!viewer || !viewer.activeSequence || !viewer.activeSequence.frames.length) {
+    alert('No sequence is currently active. Play or compose a moveset first.');
+    return;
+  }
+  const modal = document.getElementById('saveMovesetModal');
+  const nameInput = document.getElementById('saveMovesetName');
+  const descInput = document.getElementById('saveMovesetDesc');
+  if (nameInput) nameInput.value = (viewer.activeSequence.name || 'custom_moveset').toLowerCase().replace(/\s+/g, '_');
+  if (descInput) descInput.value = viewer.activeSequence.description || '';
+  if (modal) modal.style.display = 'flex';
+}
+window.openSaveMovesetModal = openSaveMovesetModal;
+
+function closeSaveMovesetModal() {
+  const modal = document.getElementById('saveMovesetModal');
+  if (modal) modal.style.display = 'none';
+}
+window.closeSaveMovesetModal = closeSaveMovesetModal;
+
+async function confirmSaveMoveset() {
+  const nameInput = document.getElementById('saveMovesetName');
+  const descInput = document.getElementById('saveMovesetDesc');
+  const name = nameInput ? nameInput.value.trim() : '';
+  const desc = descInput ? descInput.value.trim() : '';
+  if (!name) {
+    alert('Please enter a valid moveset name.');
+    return;
+  }
+  if (!viewer || !viewer.activeSequence || !viewer.activeSequence.frames.length) {
+    alert('No sequence frames to save.');
+    return;
+  }
+  try {
+    await api('/api/movesets/save', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: name,
+        description: desc,
+        frames: viewer.activeSequence.frames,
+      })
+    });
+    log(`💾 Saved moveset "${name}" to library!`, 'ok');
+    closeSaveMovesetModal();
+    refreshMovesetLibrary();
+  } catch (err) {
+    alert(`Failed to save: ${err.message}`);
+  }
+}
+window.confirmSaveMoveset = confirmSaveMoveset;
 
 // ── Stop & Safety Controls ──────────────────────────────────────
 window.controlledStop = async function() {
@@ -1070,5 +1830,30 @@ window.resetToStand = () => {
   if (viewer) viewer.resetPose('stand');
 };
 </script>
+
+<!-- Save Moveset Modal -->
+<div id="saveMovesetModal" class="modal-overlay" style="display:none;">
+  <div class="modal-card">
+    <div class="modal-title">💾 Save Active Moveset</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:12px; line-height:1.4;">
+      Persist this keyframe animation into your permanent moveset library so you can replay or run it anytime.
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <div>
+        <label style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Moveset Identifier:</label>
+        <input type="text" id="saveMovesetName" placeholder="e.g. backflip_combo" style="width:100%; box-sizing:border-box; padding:8px 10px; background:#0d1117; border:1px solid var(--border); border-radius:6px; color:#fff; font-family:var(--font-mono); font-size:12px; margin-top:4px;" />
+      </div>
+      <div>
+        <label style="font-size:11px; color:var(--muted); font-weight:600; text-transform:uppercase;">Description:</label>
+        <input type="text" id="saveMovesetDesc" placeholder="e.g. Dynamic 4-frame somersault landing squarely" style="width:100%; box-sizing:border-box; padding:8px 10px; background:#0d1117; border:1px solid var(--border); border-radius:6px; color:#fff; font-size:12px; margin-top:4px;" />
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="vbtn" onclick="closeSaveMovesetModal()">Cancel</button>
+      <button class="btn-primary" onclick="confirmSaveMoveset()">Save to Library</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

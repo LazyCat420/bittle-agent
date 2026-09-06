@@ -368,6 +368,86 @@ async def preview(
     return {"wire": controller.preview(resolved, simultaneous)}
 
 
+# ── Moveset & Animation Library Endpoints ─────────────────────────────────
+
+
+@app.get("/api/movesets")
+async def list_movesets():
+    from .motion.builtin_library import list_builtin_movesets
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    builtins = list_builtin_movesets()
+    customs = lifecycle.list_movesets()
+    return {
+        "builtins": builtins,
+        "customs": customs,
+        "movesets": builtins + customs,
+    }
+
+
+class SaveMovesetRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    description: str = ""
+    frames: list[dict[str, Any]] = Field(..., min_length=1)
+
+
+@app.post("/api/movesets/save")
+async def save_moveset_endpoint(req: SaveMovesetRequest):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    saved = lifecycle.save_moveset(req.name, {
+        "description": req.description,
+        "frames": req.frames,
+    })
+    return {"ok": True, "name": req.name, "moveset": saved}
+
+
+@app.delete("/api/movesets/{name}")
+async def delete_moveset_endpoint(name: str):
+    from .motion import get_lifecycle
+    lifecycle = get_lifecycle()
+    deleted = lifecycle.delete_moveset(name)
+    return {"ok": True, "deleted": deleted}
+
+
+class PlayMovesetRequest(BaseModel):
+    name: str | None = None
+    frames: list[dict[str, Any]] | None = None
+    target: str = "sim"
+    confirm: str | None = None
+
+
+@app.post("/api/movesets/play")
+async def play_moveset_endpoint(req: PlayMovesetRequest):
+    from .motion.builtin_library import get_builtin_moveset
+    from .motion import get_lifecycle
+    frames = req.frames
+    if not frames and req.name:
+        lifecycle = get_lifecycle()
+        m = lifecycle.get_moveset(req.name) or get_builtin_moveset(req.name)
+        if m:
+            frames = m.get("frames", [])
+
+    if not frames:
+        raise HTTPException(status_code=404, detail="Moveset frames not found")
+
+    steps = []
+    for f in frames:
+        steps.append({
+            "type": "move",
+            "angles": f.get("angles", {}),
+            "delay_ms": f.get("delay_ms", 150),
+            "speed_deg_per_step": f.get("speed_deg_per_step", 8),
+        })
+
+    res = await agent_harness.execute_tool("bittle_execute_sequence", {
+        "name": req.name or "custom_playback",
+        "steps": steps,
+        "target": req.target,
+    }, target_override=req.target, confirm_token=req.confirm)
+    return res
+
+
 # ── Agent Harness Endpoints ───────────────────────────────────────────────
 
 

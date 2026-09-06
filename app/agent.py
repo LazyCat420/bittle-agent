@@ -19,6 +19,7 @@ from . import skills as skills_mod
 from .config import Settings
 from .controller import Controller, TargetUnavailable
 from .motion import TrajectoryValidator, get_lifecycle
+from .motion.builtin_library import BUILTIN_MOVESETS, EXPRESSIVE_MACROS, get_builtin_moveset
 from .motion.schema import SkillIR
 from .profiles import get_registry
 from .safety import SafetyError
@@ -43,6 +44,83 @@ CORE SAFETY RULES:
 """
 
 TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_execute_sequence",
+            "description": "Execute a composite multi-step behavior or motion sequence in one atomic call without multi-turn latency.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Descriptive name for the sequence (e.g. 'sit_and_look_around')"},
+                    "steps": {
+                        "type": "array",
+                        "description": "Ordered steps: skill, move (angles map), or pause",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {"type": "string", "enum": ["skill", "move", "pause"]},
+                                "skill": {"type": "string", "description": "Skill name e.g. 'sit', 'ck', 'bf', 'hi'"},
+                                "angles": {"type": "object", "description": "Joint angles map e.g. {\"0\": 30}"},
+                                "delay_ms": {"type": "integer", "description": "Delay in ms after step"},
+                                "ack_locomotion": {"type": "boolean", "description": "Required if gait is used"}
+                            },
+                            "required": ["type"]
+                        }
+                    },
+                    "target": {"type": "string", "enum": ["sim", "real"], "description": "Target backend"}
+                },
+                "required": ["steps"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_express",
+            "description": "Trigger an expressive emotive macro behavior (e.g. 'look_around', 'nod_yes', 'shake_no', 'curious_tilt', 'stretch_and_rest', 'happy_wiggle', 'bow').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {
+                        "type": "string",
+                        "enum": ["look_around", "nod_yes", "shake_no", "curious_tilt", "stretch_and_rest", "happy_wiggle", "bow"],
+                        "description": "Expression macro name"
+                    },
+                    "target": {"type": "string", "enum": ["sim", "real"]}
+                },
+                "required": ["expression"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_save_moveset",
+            "description": "Save a named moveset with keyframe angles and delays into the persistent library for 3D timeline replay and reuse.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "Unique moveset identifier name"},
+                    "description": {"type": "string", "description": "Human-readable description"},
+                    "frames": {
+                        "type": "array",
+                        "description": "Keyframe list with angles and delay_ms",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "angles": {"type": "object", "description": "Joint angles map"},
+                                "delay_ms": {"type": "integer", "description": "Hold duration in ms"},
+                                "speed_deg_per_step": {"type": "integer", "description": "Interpolation speed"}
+                            },
+                            "required": ["angles"]
+                        }
+                    }
+                },
+                "required": ["name", "frames"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -224,6 +302,31 @@ class GLMAgentHarness:
         self.settings = settings
         self.lifecycle = get_lifecycle()
 
+    def get_system_prompt(self, target: str = "sim") -> str:
+        """Construct context-rich system prompt with pre-injected active hardware state and latency directives."""
+        prof = self.controller.profile
+        installed = sorted(list(prof.installed_joints))
+        skills_summary = "sit, balance (stand), rest, up, str, zero, ck (check around), hi (wave hello), pu (pushups), nd (nod), bf (backflip), pee, rc (recover), wkF (walk forward)"
+        estop_status = "ENGAGED" if self.controller.safety.estop_engaged else "disengaged"
+
+        return f"""{SYSTEM_PROMPT}
+
+CURRENT ROBOT RUNTIME STATE:
+- Target Backend: {target}
+- Active Hardware Profile: {prof.profile_id} (Model: {prof.robot_model}, Board: {prof.board})
+- Installed Joints: {installed} (Head pan: 0, Front shoulders: 8-9, Rear shoulders: 10-11, Knees: 12-15).
+- Joint Envelopes: Head [-60, 60], Shoulders [-110, 65], Knees [-65, 110]. Joint 1 is UNINSTALLED.
+- Common Pre-Approved Skills: {skills_summary}
+- E-Stop: {estop_status} | Locomotion Allowed: {self.settings.allow_locomotion}
+
+REAL-TIME LATENCY DIRECTIVE:
+Capabilities, joint envelopes, and robot status are already pre-loaded into your context above.
+DO NOT waste turns calling `bittle_list_capabilities`, `bittle_get_hardware_profile`, or `bittle_status` unless the operator specifically asks for diagnostics.
+- For single actions: call `bittle_do_skill` immediately on Turn 1.
+- For compound actions (e.g. 'sit down and look around'): call `bittle_execute_sequence` to perform all steps in ONE atomic tool call.
+- For expressive gestures (e.g. 'look around', 'nod'): call `bittle_express`.
+Execute user movement goals immediately on Turn 1."""
+
     async def execute_tool(
         self,
         name: str,
@@ -300,7 +403,115 @@ class GLMAgentHarness:
                     "sent": result.sent.strip(),
                     "response": result.response,
                     "meta": result.meta,
+                    "moveset": get_builtin_moveset(resolved.name),
                 }
+
+            if name == "bittle_execute_sequence":
+                seq_name = args.get("name", "custom_sequence")
+                steps = args.get("steps", [])
+                prof = self.controller.profile
+                tier = "agent" if target == "real" else "transport"
+
+                # 1. Atomic pre-flight dry run: validate all steps before execution
+                for idx, step in enumerate(steps):
+                    stype = step.get("type")
+                    if stype == "skill":
+                        sname = step.get("skill", "")
+                        resolved_skill = skills_mod.resolve(sname)
+                        if resolved_skill.locomotes and not step.get("ack_locomotion", False):
+                            raise SafetyError(
+                                reason="locomotion_unacked",
+                                detail=f"Step {idx} ({sname}) locomotes across floor and requires ack_locomotion=true"
+                            )
+                    elif stype == "move":
+                        angles = step.get("angles", {})
+                        for k in angles:
+                            j = joints_mod.resolve(k)
+                            if not prof.is_installed(j.index):
+                                raise SafetyError(
+                                    reason="unused_joint",
+                                    detail=f"Joint {k} is uninstalled on profile {prof.profile_id}"
+                                )
+
+                # 2. Execution of validated steps
+                executed_steps = []
+                moveset_frames = []
+                total_duration = 0
+
+                for step in steps:
+                    stype = step.get("type")
+                    delay = int(step.get("delay_ms", 150))
+                    total_duration += delay
+
+                    if stype == "skill":
+                        sname = step["skill"]
+                        ack = step.get("ack_locomotion", False)
+                        res, resolved = await self.controller.skill(
+                            sname, target=target, ack_locomotion=ack, confirm=confirm
+                        )
+                        executed_steps.append({"type": "skill", "skill": resolved.name, "ok": res.ok})
+                        b_mset = get_builtin_moveset(resolved.name)
+                        if b_mset:
+                            moveset_frames.extend(b_mset["frames"])
+                        else:
+                            moveset_frames.append({"angles": {}, "label": resolved.name, "delay_ms": delay})
+
+                    elif stype == "move":
+                        angles_in = step["angles"]
+                        res, val = await self.controller.move(
+                            angles_in, target=target, confirm=confirm, envelope_tier=tier
+                        )
+                        applied_map = {int(i): a for i, a in val.pairs}
+                        executed_steps.append({"type": "move", "angles": applied_map, "ok": res.ok})
+                        moveset_frames.append({
+                            "angles": applied_map,
+                            "delay_ms": delay,
+                            "speed_deg_per_step": int(step.get("speed_deg_per_step", 8))
+                        })
+
+                    elif stype == "pause":
+                        executed_steps.append({"type": "pause", "delay_ms": delay})
+                        if moveset_frames:
+                            moveset_frames[-1]["delay_ms"] += delay
+
+                moveset = {
+                    "name": seq_name,
+                    "frames": moveset_frames,
+                    "total_duration_ms": total_duration,
+                }
+                return {
+                    "ok": True,
+                    "name": seq_name,
+                    "executed_steps": executed_steps,
+                    "moveset": moveset,
+                }
+
+            if name == "bittle_express":
+                expr = args.get("expression", "")
+                macro = EXPRESSIVE_MACROS.get(expr)
+                if not macro:
+                    return {
+                        "ok": False,
+                        "error": f"unknown expression: {expr}. Available: {list(EXPRESSIVE_MACROS.keys())}"
+                    }
+                res = await self.execute_tool("bittle_execute_sequence", {
+                    "name": expr,
+                    "steps": macro,
+                    "target": target,
+                }, target_override=target, confirm_token=confirm)
+                if isinstance(res, dict):
+                    res["expression"] = expr
+                return res
+
+            if name == "bittle_save_moveset":
+                m_name = args["name"]
+                desc = args.get("description", "")
+                frames = args["frames"]
+                saved = self.lifecycle.save_moveset(m_name, {
+                    "description": desc,
+                    "frames": frames,
+                })
+                return {"ok": True, "name": m_name, "moveset": saved}
 
             if name == "bittle_move_joints":
                 angles_in = args["angles"]
@@ -433,7 +644,7 @@ class GLMAgentHarness:
         api_key = self.settings.llm_api_key or "EMPTY"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-        full_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        full_messages = [{"role": "system", "content": self.get_system_prompt(target=target)}]
         for m in messages:
             full_messages.append(m)
 

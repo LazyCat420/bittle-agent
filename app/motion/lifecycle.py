@@ -22,10 +22,13 @@ class LifecycleError(RuntimeError):
 
 class SkillLifecycleManager:
     def __init__(self, storage_dir: Path | None = None):
+        if storage_dir is None:
+            storage_dir = Path(__file__).resolve().parent.parent.parent / "storage" / "movesets"
         self.storage_dir = storage_dir
         self.manifests: dict[str, SkillManifest] = {}
         self.simulation_records: dict[str, dict[str, Any]] = {}
         self.canary_records: dict[str, dict[str, Any]] = {}
+        self.movesets: dict[str, dict[str, Any]] = {}
         self.compiler = SkillCompiler()
         self.validator = TrajectoryValidator()
 
@@ -101,6 +104,59 @@ class SkillLifecycleManager:
         if status:
             res = [m for m in res if m.status == status]
         return res
+
+    def save_moveset(self, name: str, moveset_data: dict[str, Any]) -> dict[str, Any]:
+        data = dict(moveset_data)
+        data["name"] = name
+        data.setdefault("created_at", datetime.datetime.now(datetime.timezone.utc).isoformat())
+        self.movesets[name] = data
+        if self.storage_dir:
+            try:
+                import json
+                self.storage_dir.mkdir(parents=True, exist_ok=True)
+                path = self.storage_dir / f"{name}.json"
+                path.write_text(json.dumps(data, indent=2))
+            except Exception:
+                pass
+        return data
+
+    def get_moveset(self, name: str) -> dict[str, Any] | None:
+        if name in self.movesets:
+            return self.movesets[name]
+        if self.storage_dir:
+            path = self.storage_dir / f"{name}.json"
+            if path.is_file():
+                import json
+                try:
+                    data = json.loads(path.read_text())
+                    self.movesets[name] = data
+                    return data
+                except Exception:
+                    pass
+        return None
+
+    def list_movesets(self) -> list[dict[str, Any]]:
+        if self.storage_dir and self.storage_dir.is_dir():
+            import json
+            for p in self.storage_dir.glob("*.json"):
+                if p.stem not in self.movesets:
+                    try:
+                        self.movesets[p.stem] = json.loads(p.read_text())
+                    except Exception:
+                        pass
+        return list(self.movesets.values())
+
+    def delete_moveset(self, name: str) -> bool:
+        existed = False
+        if name in self.movesets:
+            del self.movesets[name]
+            existed = True
+        if self.storage_dir:
+            p = self.storage_dir / f"{name}.json"
+            if p.is_file():
+                p.unlink()
+                existed = True
+        return existed
 
 
 _GLOBAL_LIFECYCLE: SkillLifecycleManager | None = None
