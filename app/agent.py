@@ -67,6 +67,17 @@ MOTION PRIMITIVE COMPOSITION (preferred for novel moves):
     6. `bittle_save_moveset` → persist winners to the library for reuse
     Parallel mode merges joint-disjoint primitives into simultaneous frames (e.g. head_scan + rear_wiggle).
     Sequential mode concatenates primitives end-to-end with optional transition blending.
+
+OBSTACLE COURSES & TERRAIN ADAPTATION:
+    You can inspect, spawn, and conquer 3D obstacle challenges in the digital twin:
+    1. `bittle_load_course` → spawn a terrain preset:
+       - 'mini_stairs': 3-step staircase with 18mm risers (requires high-lift knee flexion >= 95°).
+       - 'ramp_bridge': 18° incline ramp and elevated narrow balance plank.
+       - 'crawl_tunnel': 65mm ceiling (requires belly crawl `low_tunnel_crawl` or `crF` with body height < 60mm).
+       - 'agility_slalom': 4 slalom cones (requires coordinated yaw turns and weave gaits).
+    2. `bittle_get_course_layout` → inspect obstacle dimensions, bounds, and physical constraints.
+    3. `bittle_evaluate_terrain_clearance` → verify if your candidate moveset kinematically clears the obstacles before execution.
+    4. Built-in obstacle gaits: 'stair_step_up', 'ramp_climb', 'low_tunnel_crawl', 'slalom_weave_left', 'slalom_weave_right'.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -425,6 +436,71 @@ TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_load_course",
+            "description": "Load a 3D obstacle course preset in the digital twin simulator (mini_stairs, ramp_bridge, crawl_tunnel, agility_slalom, or none).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset": {
+                        "type": "string",
+                        "enum": ["none", "mini_stairs", "ramp_bridge", "crawl_tunnel", "agility_slalom"],
+                        "description": "Obstacle course preset name",
+                    }
+                },
+                "required": ["preset"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_get_course_layout",
+            "description": "Get the active obstacle course layout, obstacle dimensions, and clearance constraints.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "preset": {
+                        "type": "string",
+                        "description": "Optional preset name (defaults to active course)",
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "bittle_evaluate_terrain_clearance",
+            "description": "Kinematically evaluate whether a candidate moveset or joint posture clears the obstacle course.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "course_preset": {
+                        "type": "string",
+                        "enum": ["mini_stairs", "ramp_bridge", "crawl_tunnel", "agility_slalom"],
+                        "description": "Target course to evaluate against",
+                    },
+                    "angles": {
+                        "type": "object",
+                        "description": "Joint angles map for single pose clearance",
+                    },
+                    "sequence": {
+                        "type": "array",
+                        "description": "Array of keyframe step objects",
+                    },
+                    "moveset_name": {
+                        "type": "string",
+                        "description": "Name of saved or built-in moveset to evaluate",
+                    },
+                },
+                "required": ["course_preset"],
+            },
+        },
+    },
 ]
 
 
@@ -434,6 +510,7 @@ class GLMAgentHarness:
         self.settings = settings
         self.lifecycle = get_lifecycle()
         self.composer = get_composer()
+        self.active_course = "none"
 
     def get_system_prompt(self, target: str = "sim") -> str:
         """Construct context-rich system prompt with pre-injected active hardware state and latency directives."""
@@ -641,10 +718,14 @@ Execute user movement goals immediately on Turn 1."""
                 m_name = args["name"]
                 desc = args.get("description", "")
                 frames = args["frames"]
-                saved = self.lifecycle.save_moveset(m_name, {
+                payload = {
+                    "name": m_name,
                     "description": desc,
                     "frames": frames,
-                })
+                    "kind": "custom",
+                }
+                saved = self.lifecycle.save_moveset(m_name, payload)
+                get_composer().save_moveset(m_name, payload)
                 return {"ok": True, "name": m_name, "moveset": saved}
 
             if name == "bittle_move_joints":
@@ -785,6 +866,47 @@ Execute user movement goals immediately on Turn 1."""
                 if moveset is None:
                     return {"ok": False, "error": f"Moveset {m_name!r} not found"}
                 return {"ok": True, "moveset": moveset}
+
+            # ── Obstacle Course & Terrain Tools ─────────────────────────
+            if name == "bittle_load_course":
+                preset = args["preset"]
+                from .motion.obstacles import COURSE_LAYOUTS, get_course_layout
+                if preset not in COURSE_LAYOUTS:
+                    return {"ok": False, "error": f"Unknown preset '{preset}'. Choose from {list(COURSE_LAYOUTS.keys())}"}
+                self.active_course = preset
+                layout = get_course_layout(preset)
+                return {
+                    "ok": True,
+                    "preset": preset,
+                    "description": layout.get("description", ""),
+                    "layout": layout,
+                }
+
+            if name == "bittle_get_course_layout":
+                preset = args.get("preset") or self.active_course
+                from .motion.obstacles import get_course_layout
+                layout = get_course_layout(preset)
+                return {"ok": True, "preset": preset, "layout": layout}
+
+            if name == "bittle_evaluate_terrain_clearance":
+                from .motion.obstacles import evaluate_terrain_clearance
+                c_preset = args["course_preset"]
+                data_to_eval = None
+                if "sequence" in args:
+                    data_to_eval = args["sequence"]
+                elif "angles" in args:
+                    data_to_eval = args["angles"]
+                elif "moveset_name" in args:
+                    m_name = args["moveset_name"]
+                    m = get_builtin_moveset(m_name) or self.composer.get_moveset(m_name)
+                    if m:
+                        data_to_eval = m.get("frames", [])
+                    else:
+                        return {"ok": False, "error": f"Moveset '{m_name}' not found in library."}
+                else:
+                    return {"ok": False, "error": "Provide either 'angles', 'sequence', or 'moveset_name' to evaluate."}
+
+                return evaluate_terrain_clearance(c_preset, data_to_eval)
 
             return {"ok": False, "error": f"unknown tool: {name}"}
 

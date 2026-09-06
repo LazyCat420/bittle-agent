@@ -3144,5 +3144,125 @@ export const BUILTIN_MOVESETS = {
         "delay_ms": 250
       }
     ]
+  },
+  "stair_step_up": {
+    "name": "stair_step_up",
+    "label": "Stair Step Up (18mm)",
+    "description": "4-stage dynamic hoist onto an 18mm step riser",
+    "kind": "obstacle",
+    "frames": [
+      {
+        "angles": { "0": 0, "8": -35, "9": -35, "10": -50, "11": -50, "12": 102, "13": 102, "14": 75, "15": 75 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 280
+      },
+      {
+        "angles": { "0": 0, "8": -55, "9": -55, "10": -45, "11": -45, "12": 85, "13": 85, "14": 75, "15": 75 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 300
+      },
+      {
+        "angles": { "0": 0, "8": -45, "9": -45, "10": -30, "11": -30, "12": 80, "13": 80, "14": 102, "15": 102 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 300
+      },
+      {
+        "angles": { "0": 0, "8": -45, "9": -45, "10": -45, "11": -45, "12": 80, "13": 80, "14": 80, "15": 80 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 250
+      }
+    ]
+  },
+  "ramp_climb": {
+    "name": "ramp_climb",
+    "label": "Ramp Incline Climb",
+    "description": "Low-center-of-mass forward gait with pitch compensation for 18° incline ramps",
+    "kind": "obstacle",
+    "frames": [
+      {
+        "angles": { "0": 0, "8": -55, "9": -45, "10": -40, "11": -50, "12": 70, "13": 85, "14": 90, "15": 75 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 220
+      },
+      {
+        "angles": { "0": 0, "8": -40, "9": -55, "10": -50, "11": -40, "12": 85, "13": 70, "14": 75, "15": 90 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 220
+      },
+      {
+        "angles": { "0": 0, "8": -55, "9": -40, "10": -40, "11": -50, "12": 70, "13": 85, "14": 90, "15": 75 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 220
+      },
+      {
+        "angles": { "0": 0, "8": -50, "9": -50, "10": -45, "11": -45, "12": 75, "13": 75, "14": 85, "15": 85 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 200
+      }
+    ]
+  },
+  "low_tunnel_crawl": {
+    "name": "low_tunnel_crawl",
+    "label": "Low Tunnel Belly Crawl",
+    "description": "Low-profile belly crawl gait maintaining under 60mm clearance for low-ceiling tunnels",
+    "kind": "obstacle",
+    "frames": [
+      {
+        "angles": { "0": 0, "8": -55, "9": -55, "10": 55, "11": 55, "12": 50, "13": 50, "14": 50, "15": 50 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 300
+      },
+      {
+        "angles": { "0": 10, "8": -45, "9": -65, "10": 45, "11": 65, "12": 55, "13": 45, "14": 55, "15": 45 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 250
+      },
+      {
+        "angles": { "0": -10, "8": -65, "9": -45, "10": 65, "11": 45, "12": 45, "13": 55, "14": 45, "15": 55 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 250
+      },
+      {
+        "angles": { "0": 0, "8": -55, "9": -55, "10": 55, "11": 55, "12": 50, "13": 50, "14": 50, "15": 50 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 250
+      }
+    ]
+  },
+  "slalom_weave_left": {
+    "name": "slalom_weave_left",
+    "label": "Slalom Weave Left",
+    "description": "Coordinated head scan left and differential leg stance for precision slalom cone avoidance",
+    "kind": "obstacle",
+    "frames": [
+      {
+        "angles": { "0": 30, "8": -35, "9": -55, "10": -40, "11": -50, "12": 85, "13": 75, "14": 80, "15": 80 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 250
+      },
+      {
+        "angles": { "0": 0, "8": -45, "9": -45, "10": -45, "11": -45, "12": 80, "13": 80, "14": 80, "15": 80 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 200
+      }
+    ]
+  },
+  "slalom_weave_right": {
+    "name": "slalom_weave_right",
+    "label": "Slalom Weave Right",
+    "description": "Coordinated head scan right and differential leg stance for precision slalom cone avoidance",
+    "kind": "obstacle",
+    "frames": [
+      {
+        "angles": { "0": -30, "8": -55, "9": -35, "10": -50, "11": -40, "12": 75, "13": 85, "14": 80, "15": 80 },
+        "speed_deg_per_step": 10,
+        "delay_ms": 250
+      },
+      {
+        "angles": { "0": 0, "8": -45, "9": -45, "10": -45, "11": -45, "12": 80, "13": 80, "14": 80, "15": 80 },
+        "speed_deg_per_step": 8,
+        "delay_ms": 200
+      }
+    ]
   }
 };

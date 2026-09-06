@@ -7,8 +7,9 @@ import * as THREE from 'three';
 import { OrbitControls } from '/vendor/OrbitControls.js';
 import { OBJLoader } from '/vendor/OBJLoader.js';
 import { BUILTIN_MOVESETS } from './builtin_movesets.js';
+import { ObstacleCourse, COURSE_PRESETS } from './obstacle_course.js';
 
-export { BUILTIN_MOVESETS };
+export { BUILTIN_MOVESETS, COURSE_PRESETS, ObstacleCourse };
 
 // OpenCat standard poses
 export const STAND_POSE = {
@@ -113,11 +114,46 @@ export class BittleViewer {
     this.initControls();
     this.setupInteraction();
 
+    // Obstacle Course & Terrain Engine
+    this.obstacleCourse = new ObstacleCourse(this.scene);
+    this.robotPosition = { x: 0, z: 0 };
+
     this.clock = new THREE.Clock();
     this.animate = this.animate.bind(this);
     requestAnimationFrame(this.animate);
 
     window.addEventListener('resize', () => this.onWindowResize());
+  }
+
+  loadCourse(presetName) {
+    if (this.obstacleCourse) {
+      this.obstacleCourse.loadPreset(presetName);
+    }
+  }
+
+  clearCourse() {
+    if (this.obstacleCourse) {
+      this.obstacleCourse.clear();
+    }
+  }
+
+  getCourseState() {
+    return this.obstacleCourse ? this.obstacleCourse.getLayout() : { preset: 'none', obstacles: [] };
+  }
+
+  setRobotPosition(x, z) {
+    this.robotPosition.x = x;
+    this.robotPosition.z = z;
+    this.robotGroup.position.x = x;
+    this.robotGroup.position.z = z;
+  }
+
+  moveRobot(dx, dz) {
+    this.setRobotPosition(this.robotPosition.x + dx, this.robotPosition.z + dz);
+  }
+
+  resetRobotPosition() {
+    this.setRobotPosition(0, 0);
   }
 
   initScene() {
@@ -734,6 +770,13 @@ export class BittleViewer {
       if (changed) {
         this.applyAngles(this.currentAngles);
       }
+    }
+
+    // Dynamic terrain elevation tracking
+    if (this.obstacleCourse) {
+      const terrainY = this.obstacleCourse.getElevationAt(this.robotGroup.position.x, this.robotGroup.position.z);
+      const targetY = 0.0532 + terrainY;
+      this.robotGroup.position.y = THREE.MathUtils.lerp(this.robotGroup.position.y, targetY, 0.15);
     }
 
     this.controls.update();

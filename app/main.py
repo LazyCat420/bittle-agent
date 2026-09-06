@@ -377,8 +377,14 @@ async def list_movesets():
     from .motion.builtin_library import list_builtin_movesets
     from .motion import get_lifecycle, get_composer
     composer = get_composer()
+    lifecycle = get_lifecycle()
     builtins = list_builtin_movesets()
     customs = composer.list_movesets()
+    seen = {c.get("name") for c in customs if isinstance(c, dict) and "name" in c}
+    for lm in lifecycle.list_movesets():
+        if isinstance(lm, dict) and "name" in lm and lm["name"] not in seen:
+            customs.append(lm)
+            seen.add(lm["name"])
     for c in customs:
         c.setdefault("kind", "custom")
     return {
@@ -453,6 +459,53 @@ async def play_moveset_endpoint(req: PlayMovesetRequest):
         "target": req.target,
     }, target_override=req.target, confirm_token=req.confirm)
     return res
+
+
+# ── Obstacle Course & Terrain Endpoints ────────────────────────────────────
+
+
+@app.get("/api/obstacles/presets")
+async def get_obstacle_presets():
+    from .motion.obstacles import COURSE_PRESETS
+    return {"presets": COURSE_PRESETS}
+
+
+@app.get("/api/obstacles/layout/{preset}")
+async def get_obstacle_layout_endpoint(preset: str):
+    from .motion.obstacles import get_course_layout
+    layout = get_course_layout(preset)
+    return {"preset": preset, "layout": layout}
+
+
+class EvaluateObstacleRequest(BaseModel):
+    course_preset: str
+    angles: dict[str, float] | None = None
+    sequence: list[dict[str, Any]] | None = None
+    moveset_name: str | None = None
+
+
+@app.post("/api/obstacles/evaluate")
+async def evaluate_obstacle_endpoint(req: EvaluateObstacleRequest):
+    from .motion.builtin_library import get_builtin_moveset
+    from .motion.obstacles import evaluate_terrain_clearance
+    from .motion import get_composer, get_lifecycle
+    data = None
+    if req.sequence:
+        data = req.sequence
+    elif req.angles:
+        data = req.angles
+    elif req.moveset_name:
+        composer = get_composer()
+        lifecycle = get_lifecycle()
+        m = composer.get_moveset(req.moveset_name) or lifecycle.get_moveset(req.moveset_name) or get_builtin_moveset(req.moveset_name)
+        if m:
+            data = m.get("frames", [])
+        else:
+            raise HTTPException(status_code=404, detail=f"Moveset '{req.moveset_name}' not found in library")
+    else:
+        raise HTTPException(status_code=400, detail="Must specify 'sequence', 'angles', or 'moveset_name'")
+
+    return evaluate_terrain_clearance(req.course_preset, data)
 
 
 class ExecuteSequenceRequest(BaseModel):

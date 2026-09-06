@@ -1256,6 +1256,17 @@
         <button class="vbtn" onclick="toggleWireframe()">Wireframe</button>
         <button class="vbtn" onclick="resetToStand()">Rest Pose</button>
       </div>
+
+      <div class="btn-group" style="align-items:center; display:flex; gap:6px;">
+        <span style="font-size:11px; font-weight:600; color:var(--muted); margin-left:4px;">Terrain:</span>
+        <select id="courseSelect" onchange="onCourseSelected(this.value)" style="background:#0d1117; color:#e6edf3; border:1px solid var(--border); padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer;">
+          <option value="none">Flat Ground</option>
+          <option value="mini_stairs">Mini Stairs (18mm Steps)</option>
+          <option value="ramp_bridge">Ramp &amp; Bridge (18° Incline)</option>
+          <option value="crawl_tunnel">Crawl Tunnel (65mm Ceiling)</option>
+          <option value="agility_slalom">Agility Slalom</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -1290,6 +1301,9 @@
         <div class="agent-prompt-chip" data-prompt="Invent a novel move called curious_bow and save it.">✨ Invent &amp; Save Move</div>
         <div class="agent-prompt-chip" data-prompt="Take two steps forward and wag your tail.">Walk &amp; wag tail</div>
         <div class="agent-prompt-chip" data-prompt="Give me a high five then stand in balance.">High five &amp; stand</div>
+        <div class="agent-prompt-chip" data-prompt="Load the mini stairs course and compose a move to climb the first step.">🧗 Mini Stairs</div>
+        <div class="agent-prompt-chip" data-prompt="Load the crawl tunnel and demonstrate a belly crawl to navigate through it.">🚇 Crawl Tunnel</div>
+        <div class="agent-prompt-chip" data-prompt="Load the ramp bridge and climb the incline without tipping backwards.">🌉 Ramp &amp; Bridge</div>
       </div>
 
       <div class="agent-input-row">
@@ -2302,6 +2316,13 @@ window.toggleWireframe = () => {
 
 window.resetToStand = () => {
   if (viewer) viewer.resetPose('stand');
+};
+
+window.onCourseSelected = (name) => {
+  if (viewer) {
+    viewer.loadCourse(name);
+    log(`3D Terrain preset loaded: ${name}`, 'ok');
+  }
 };
 </script>
 
