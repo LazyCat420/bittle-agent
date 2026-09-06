@@ -341,7 +341,8 @@ export class AgentUI {
             }
           } else if (ev.name === 'bittle_do_skill' && ev.result.skill) {
             const skill = ev.result.skill;
-            if (!this.viewer.playSequence(skill, { name: skill, loop: false })) {
+            const isGait = ['wkf', 'bdf', 'jpf', 'trf', 'crf', 'bk', 'bkl', 'wkl', 'wkr', 'walk', 'back', 'step'].some(g => (skill || '').toLowerCase().includes(g));
+            if (!this.viewer.playSequence(skill, { name: skill, loop: isGait })) {
               if (skill === 'sit') {
                 this.viewer.setPose({ 0: 0, 8: -30, 9: -30, 10: 80, 11: 80, 12: 40, 13: 40, 14: 75, 15: 75 });
               } else if (skill === 'balance' || skill === 'up') {

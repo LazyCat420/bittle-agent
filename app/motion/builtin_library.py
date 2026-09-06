@@ -185,6 +185,18 @@ BUILTIN_MOVESETS: dict[str, dict[str, Any]] = {
             {"angles": STAND_ANGLES, "speed_deg_per_step": 10, "delay_ms": 140},
         ]
     },
+    "wkR": {
+        "name": "wkR",
+        "label": "Walk Right",
+        "description": "Turning walk to the right",
+        "kind": "gait",
+        "frames": [
+            {"angles": {**STAND_ANGLES, 0: -25, 9: -70, 13: 95, 11: -30, 15: 70}, "speed_deg_per_step": 10, "delay_ms": 180},
+            {"angles": {**STAND_ANGLES, 0: -10}, "speed_deg_per_step": 10, "delay_ms": 140},
+            {"angles": {**STAND_ANGLES, 0: -25, 8: -50, 12: 75, 10: -45, 14: 80}, "speed_deg_per_step": 10, "delay_ms": 180},
+            {"angles": STAND_ANGLES, "speed_deg_per_step": 10, "delay_ms": 140},
+        ]
+    },
     "trF": {
         "name": "trF",
         "label": "Trot Forward",

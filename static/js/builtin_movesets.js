@@ -749,6 +749,74 @@ export const BUILTIN_MOVESETS = {
       }
     ]
   },
+  "wkR": {
+    "name": "wkR",
+    "label": "Walk Right",
+    "description": "Turning walk to the right",
+    "kind": "gait",
+    "frames": [
+      {
+        "angles": {
+          "0": -25,
+          "8": -45,
+          "9": -70,
+          "10": -45,
+          "11": -30,
+          "12": 80,
+          "13": 95,
+          "14": 80,
+          "15": 70
+        },
+        "speed_deg_per_step": 10,
+        "delay_ms": 180
+      },
+      {
+        "angles": {
+          "0": -10,
+          "8": -45,
+          "9": -45,
+          "10": -45,
+          "11": -45,
+          "12": 80,
+          "13": 80,
+          "14": 80,
+          "15": 80
+        },
+        "speed_deg_per_step": 10,
+        "delay_ms": 140
+      },
+      {
+        "angles": {
+          "0": -25,
+          "8": -50,
+          "9": -45,
+          "10": -45,
+          "11": -45,
+          "12": 75,
+          "13": 80,
+          "14": 80,
+          "15": 80
+        },
+        "speed_deg_per_step": 10,
+        "delay_ms": 180
+      },
+      {
+        "angles": {
+          "0": 0,
+          "8": -45,
+          "9": -45,
+          "10": -45,
+          "11": -45,
+          "12": 80,
+          "13": 80,
+          "14": 80,
+          "15": 80
+        },
+        "speed_deg_per_step": 10,
+        "delay_ms": 140
+      }
+    ]
+  },
   "trF": {
     "name": "trF",
     "label": "Trot Forward",

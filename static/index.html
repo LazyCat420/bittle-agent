@@ -282,6 +282,90 @@
     color: var(--text);
   }
 
+  /* ── Floating Drive Pad (WASD / Locomotion) ── */
+  .drive-pad-overlay {
+    position: absolute;
+    bottom: 136px;
+    right: 18px;
+    background: rgba(15, 20, 30, 0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-highlight);
+    border-radius: var(--radius-md);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    z-index: 25;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    user-select: none;
+  }
+  .drive-pad-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .drive-pad-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 36px);
+    grid-template-rows: repeat(3, 36px);
+    gap: 5px;
+  }
+  .dpad-btn {
+    background: #1a2230;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    touch-action: manipulation;
+  }
+  .dpad-btn:hover {
+    background: #263042;
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .dpad-btn:active, .dpad-btn.active {
+    background: var(--accent);
+    border-color: #60a5fa;
+    color: #fff;
+    box-shadow: 0 0 12px var(--accent-glow);
+    transform: scale(0.94);
+  }
+  .dpad-btn.stop-btn {
+    font-size: 11px;
+    background: #2a1515;
+    border-color: #4b1d1d;
+    color: #f87171;
+  }
+  .dpad-btn.stop-btn:hover {
+    background: #3f1a1a;
+    border-color: #ef4444;
+  }
+  .dpad-btn.stop-btn:active, .dpad-btn.stop-btn.active {
+    background: #ef4444;
+    color: #fff;
+  }
+  .drive-pad-hint {
+    font-size: 9.5px;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 2px;
+    font-family: var(--font-mono);
+  }
+
   /* ── Right Panel & Tabs ── */
   .panel-col {
     background: var(--panel-bg);
@@ -1247,6 +1331,26 @@
       </div>
     </div>
 
+    <!-- Floating Drive Pad (WASD / Locomotion) -->
+    <div class="drive-pad-overlay" id="drivePadOverlay">
+      <div class="drive-pad-header">
+        <span>🎮 Manual Drive</span>
+        <span style="font-size: 10px; opacity: 0.7;">WASD / Keys</span>
+      </div>
+      <div class="drive-pad-grid">
+        <div></div>
+        <button class="dpad-btn" id="dpadFwd" title="Walk Forward (W / ↑)">▲</button>
+        <div></div>
+        <button class="dpad-btn" id="dpadLeft" title="Turn Left (A / ←)">◀</button>
+        <button class="dpad-btn stop-btn" id="dpadStop" title="Stop / Stand (Space / Esc)">⏹</button>
+        <button class="dpad-btn" id="dpadRight" title="Turn Right (D / →)">▶</button>
+        <div></div>
+        <button class="dpad-btn" id="dpadBack" title="Back Up (S / ↓)">▼</button>
+        <div></div>
+      </div>
+      <div class="drive-pad-hint">Hold to Walk • Release to Stand</div>
+    </div>
+
     <div class="viewport-controls">
       <div class="btn-group">
         <button class="vbtn active" onclick="setCam('iso')">Isometric</button>
@@ -1298,6 +1402,8 @@
       </div>
 
       <div class="agent-chips">
+        <div class="agent-prompt-chip" data-prompt="Walk forward across the room for 4 steps.">🚶 Walk Forward (4 steps)</div>
+        <div class="agent-prompt-chip" data-prompt="Back up 3 steps in reverse to clear the obstacle.">🔙 Back Up (3 steps)</div>
         <div class="agent-prompt-chip" data-prompt="Sit down on the floor under gravity and rest your paws.">🐕 Sit Down</div>
         <div class="agent-prompt-chip" data-prompt="Load the mini stairs course and run an autonomous stair training episode to optimize foot clearance.">🏋️ Stair Training Run</div>
         <div class="agent-prompt-chip" data-prompt="Sit down and look around.">Sit down &amp; look around</div>
@@ -1519,7 +1625,19 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     };
 
-    viewer.onPoseUpdate = (x, y, z, yaw, pitch) => {
+    viewer.onPoseUpdate = (data, yArg, zArg, yawArg, pitchArg) => {
+      let x = 0, y = 0.0532, z = 0, pitch = 0;
+      if (typeof data === 'object' && data !== null) {
+        x = data.x ?? 0;
+        y = data.y ?? 0.0532;
+        z = data.z ?? 0;
+        pitch = data.pitch ?? 0;
+      } else {
+        x = Number(data) || 0;
+        y = Number(yArg) || 0.0532;
+        z = Number(zArg) || 0;
+        pitch = Number(pitchArg) || 0;
+      }
       const poseEl = document.getElementById('viewerPoseDisplay');
       if (poseEl) {
         poseEl.textContent = `Pose: X: ${x.toFixed(3)}m | Y: ${(y * 1000).toFixed(1)}mm | Z: ${z.toFixed(3)}m | Pitch: ${(pitch * 180 / Math.PI).toFixed(1)}°`;
@@ -1533,6 +1651,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   setupTabs();
   setupTimelineControls();
+  setupDriveControls();
   await refreshStatus();
   await loadJoints();
   await loadSkills();
@@ -1897,6 +2016,110 @@ function setupTimelineControls() {
       refreshJointState();
     };
   }
+}
+
+// ── Manual Drive Pad & Keyboard Locomotion Controls ──────────────
+function setupDriveControls() {
+  const dpadFwd = document.getElementById('dpadFwd');
+  const dpadBack = document.getElementById('dpadBack');
+  const dpadLeft = document.getElementById('dpadLeft');
+  const dpadRight = document.getElementById('dpadRight');
+  const dpadStop = document.getElementById('dpadStop');
+
+  function bindHold(btn, startAction) {
+    if (!btn) return;
+    let isPressed = false;
+    const start = (e) => {
+      e.preventDefault();
+      if (isPressed) return;
+      isPressed = true;
+      btn.classList.add('active');
+      startAction();
+    };
+    const end = (e) => {
+      if (!isPressed) return;
+      isPressed = false;
+      btn.classList.remove('active');
+      if (viewer) viewer.driveStop();
+    };
+    btn.addEventListener('mousedown', start);
+    btn.addEventListener('touchstart', start, { passive: false });
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchend', end);
+    window.addEventListener('touchcancel', end);
+  }
+
+  bindHold(dpadFwd, () => viewer && viewer.driveForward(true));
+  bindHold(dpadBack, () => viewer && viewer.driveBackward(true));
+  bindHold(dpadLeft, () => viewer && viewer.driveLeft(true));
+  bindHold(dpadRight, () => viewer && viewer.driveRight(true));
+
+  if (dpadStop) {
+    dpadStop.onclick = () => {
+      if (viewer) viewer.driveStop();
+    };
+  }
+
+  // Keyboard controls (WASD / Arrows)
+  const keyState = { forward: false, backward: false, left: false, right: false };
+
+  window.addEventListener('keydown', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (document.activeElement && document.activeElement.isContentEditable)) {
+      return;
+    }
+    if (e.repeat) return;
+
+    if (e.code === 'KeyW' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      keyState.forward = true;
+      if (dpadFwd) dpadFwd.classList.add('active');
+      if (viewer) viewer.driveForward(true);
+    } else if (e.code === 'KeyS' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      keyState.backward = true;
+      if (dpadBack) dpadBack.classList.add('active');
+      if (viewer) viewer.driveBackward(true);
+    } else if (e.code === 'KeyA' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      keyState.left = true;
+      if (dpadLeft) dpadLeft.classList.add('active');
+      if (viewer) viewer.driveLeft(true);
+    } else if (e.code === 'KeyD' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      keyState.right = true;
+      if (dpadRight) dpadRight.classList.add('active');
+      if (viewer) viewer.driveRight(true);
+    } else if (e.code === 'Space' || e.key === 'Escape') {
+      e.preventDefault();
+      if (viewer) viewer.driveStop();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      return;
+    }
+
+    if (e.code === 'KeyW' || e.key === 'ArrowUp') {
+      keyState.forward = false;
+      if (dpadFwd) dpadFwd.classList.remove('active');
+      if (viewer && !keyState.backward && !keyState.left && !keyState.right) viewer.driveStop();
+    } else if (e.code === 'KeyS' || e.key === 'ArrowDown') {
+      keyState.backward = false;
+      if (dpadBack) dpadBack.classList.remove('active');
+      if (viewer && !keyState.forward && !keyState.left && !keyState.right) viewer.driveStop();
+    } else if (e.code === 'KeyA' || e.key === 'ArrowLeft') {
+      keyState.left = false;
+      if (dpadLeft) dpadLeft.classList.remove('active');
+      if (viewer && !keyState.forward && !keyState.backward && !keyState.right) viewer.driveStop();
+    } else if (e.code === 'KeyD' || e.key === 'ArrowRight') {
+      keyState.right = false;
+      if (dpadRight) dpadRight.classList.remove('active');
+      if (viewer && !keyState.forward && !keyState.backward && !keyState.left) viewer.driveStop();
+    }
+  });
 }
 
 async function refreshMovesetLibrary() {

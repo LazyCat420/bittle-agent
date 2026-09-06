@@ -244,16 +244,96 @@ export class BittleViewer {
   }
 
   getLocomotionSpeed(sequenceName) {
-    const name = (sequenceName || '').toLowerCase();
-    if (name.includes('wkf') || name.includes('walk_forward') || name === 'walk') return { vx: 0.080, vyaw: 0 };
-    if (name.includes('trf') || name.includes('trot')) return { vx: 0.115, vyaw: 0 };
-    if (name.includes('stair_step_up')) return { vx: 0.055, vyaw: 0 };
-    if (name.includes('ramp_climb')) return { vx: 0.060, vyaw: 0 };
-    if (name.includes('crf') || name.includes('crawl')) return { vx: 0.035, vyaw: 0 };
-    if (name.includes('bk') || name.includes('backup') || name.includes('back')) return { vx: -0.050, vyaw: 0 };
-    if (name.includes('wkl') || name.includes('turn_left') || name.includes('left')) return { vx: 0.035, vyaw: 0.35 };
-    if (name.includes('wkr') || name.includes('turn_right') || name.includes('right')) return { vx: 0.035, vyaw: -0.35 };
+    const raw = (sequenceName || '').toLowerCase().trim();
+    const name = raw.replace(/[-_]/g, ' ');
+
+    // 1. Backward / Reverse gaits
+    if (
+      raw === 'bk' ||
+      name.includes('back') ||
+      name.includes('backup') ||
+      name.includes('backward') ||
+      name.includes('reverse') ||
+      name.includes('retreat')
+    ) {
+      return { vx: -0.055, vyaw: 0 };
+    }
+
+    // 2. Left turns
+    if (
+      raw === 'wkl' ||
+      raw === 'trfl' ||
+      name.includes('turn left') ||
+      name.includes('walk left') ||
+      name.includes('step left') ||
+      name === 'left'
+    ) {
+      return { vx: 0.030, vyaw: 0.40 };
+    }
+
+    // 3. Right turns
+    if (
+      raw === 'wkr' ||
+      raw === 'trfr' ||
+      name.includes('turn right') ||
+      name.includes('walk right') ||
+      name.includes('step right') ||
+      name === 'right'
+    ) {
+      return { vx: 0.030, vyaw: -0.40 };
+    }
+
+    // 4. Trot forward
+    if (raw === 'trf' || name.includes('trot')) {
+      return { vx: 0.115, vyaw: 0 };
+    }
+
+    // 5. Special obstacle gaits
+    if (name.includes('stair step') || name.includes('stair_step')) {
+      return { vx: 0.055, vyaw: 0 };
+    }
+    if (name.includes('ramp climb') || name.includes('ramp_climb')) {
+      return { vx: 0.060, vyaw: 0 };
+    }
+    if (raw === 'crf' || name.includes('crawl')) {
+      return { vx: 0.035, vyaw: 0 };
+    }
+
+    // 6. Forward walking gaits
+    if (
+      raw === 'wkf' ||
+      name.includes('walk') ||
+      name.includes('forward') ||
+      name.includes('step forward') ||
+      name.includes('run') ||
+      name.includes('march') ||
+      name.includes('stalk')
+    ) {
+      return { vx: 0.075, vyaw: 0 };
+    }
+
     return { vx: 0, vyaw: 0 };
+  }
+
+  driveForward(loop = true) {
+    return this.playSequence('wkF', { name: 'Walk forward', loop });
+  }
+
+  driveBackward(loop = true) {
+    return this.playSequence('bk', { name: 'Back up', loop });
+  }
+
+  driveLeft(loop = true) {
+    return this.playSequence('wkL', { name: 'Walk left', loop });
+  }
+
+  driveRight(loop = true) {
+    return this.playSequence('wkR', { name: 'Walk right', loop });
+  }
+
+  driveStop() {
+    this.stopSequence();
+    this.resetPose('stand');
   }
 
   computeLegReach(shoulderDeg, kneeDeg) {
@@ -745,11 +825,25 @@ export class BittleViewer {
     let description = options.description || '';
 
     if (typeof sequenceOrName === 'string') {
-      const b = this.registeredMovesets[sequenceOrName] || BUILTIN_MOVESETS[sequenceOrName];
+      let key = sequenceOrName;
+      if (!this.registeredMovesets[key] && !BUILTIN_MOVESETS[key]) {
+        const lower = key.toLowerCase().replace(/[-_\s]/g, '');
+        if (lower === 'walk' || lower === 'walkforward' || lower === 'forward' || lower === 'wkf' || lower === 'stepforward') key = 'wkF';
+        else if (lower === 'walkleft' || lower === 'wkl' || lower === 'turnleft' || lower === 'left') key = 'wkL';
+        else if (lower === 'walkright' || lower === 'wkr' || lower === 'turnright' || lower === 'right') key = 'wkR';
+        else if (lower === 'back' || lower === 'backup' || lower === 'backward' || lower === 'reverse' || lower === 'bk') key = 'bk';
+        else if (lower === 'backleft' || lower === 'backupleft' || lower === 'bkl') key = 'bkL';
+        else if (lower === 'trot' || lower === 'trotforward' || lower === 'trf') key = 'trF';
+        else if (lower === 'crawl' || lower === 'crawlforward' || lower === 'crf') key = 'crF';
+        else if (lower === 'sit') key = 'sit';
+        else if (lower === 'stand' || lower === 'balance' || lower === 'up') key = 'balance';
+        else if (lower === 'rest') key = 'rest';
+      }
+      const b = this.registeredMovesets[key] || BUILTIN_MOVESETS[key];
       if (b) {
         frames = b.frames;
-        name = b.label || b.name;
-        description = b.description || '';
+        name = options.name || b.label || b.name;
+        description = options.description || b.description || '';
       }
     } else if (Array.isArray(sequenceOrName)) {
       frames = sequenceOrName;
