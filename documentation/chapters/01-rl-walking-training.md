@@ -1,3 +1,9 @@
+---
+part: RL walking trainer
+status: shipped
+updated: 2026-09-07
+---
+
 # Teaching Bittle to walk: the RL training loop
 
 *Status 2026-09-07. Everything below was measured on the WSL2 dev PC (RTX 3090 Ti) unless marked otherwise.*
@@ -16,15 +22,15 @@ frame shows the distance covered. The neural-net policies walk further than the 
 
 ## 1. What was built
 
-```mermaid
-flowchart LR
-    GLM["GLM-5.3-Flash<br/>(Gold Spark vLLM)"] -- tool calls --> Agent["bittle-agent<br/>NAS :8008<br/>512 MB, no GPU"]
-    Agent -- HTTP --> Trainer["bittle-trainer<br/>WSL2 PC :8009<br/>RTX 3090 Ti"]
-    Trainer --> Train["train/<br/>MuJoCo Warp + Brax PPO<br/>2048 envs on the GPU"]
-    Trainer --> Eval["eval/<br/>CPU MuJoCo, full-mesh model<br/>20 seeded episodes"]
-    Eval --> Gates["gates.yaml<br/>the policy test suite"]
-    Gates -- "gate table + reflection" --> Agent
-    Agent -- "viewer_url" --> Viewer["3D viewer<br/>rollout playback"]
+```
+GLM-5.3-Flash (Gold Spark vLLM)
+      │ tool calls
+      ▼
+bittle-agent  (NAS :8008, 512 MB, no GPU)  ──HTTP──▶  bittle-trainer  (WSL2 PC :8009, RTX 3090 Ti)
+      ▲                                                  ├─ train/  MuJoCo Warp + Brax PPO, 2048 envs on the GPU
+      │ gate table + reflection                          ├─ eval/   CPU MuJoCo, full-mesh model, 20 seeded episodes
+      │                                                  └─ gates.yaml = the policy test suite
+      └── viewer_url ──▶ 3D viewer rollout playback
 ```
 
 The agent never writes training code. It edits a **validated JSON config** (reward weights, curriculum stage,

@@ -36,6 +36,8 @@ COPY static/ ./static/
 COPY mcp/ ./mcp/
 COPY hardware_profiles/ ./hardware_profiles/
 COPY upstream.lock ./upstream.lock
+# The generated docs page + media, served at /documentation (index.html is committed).
+COPY documentation/ ./documentation/
 
 RUN chown -R appusr:appgrp /app
 

@@ -1,0 +1,2 @@
+Bittle Agent — Working Documentation
+The living record of the Petoi Bittle X control plane and its RL walking trainer: what was built, every training run, what is verified, what is still open.

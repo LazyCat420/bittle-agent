@@ -175,8 +175,91 @@ def plot_gait(runs_dir: Path, rid: str, out: Path) -> None:
     fig.savefig(out / "gait_diagram.png", dpi=110)
 
 
+# ── run ledger chapter ──────────────────────────────────────────────────────
+
+LEDGER_HEAD = """---
+part: RL walking trainer
+status: shipped
+updated: {date}
+---
+
+# Training run ledger
+
+Every policy training run recorded by the trainer, newest last. Generated from `runs/` by
+`trainer/scripts/render_docs.py --ledger`; rerun it after training and commit the result.
+Distances are the flat_v1 protocol (20 seeded episodes, 10 s, 0.12 m/s command, CPU MuJoCo on the
+mesh model). Score = gates passed + 0.5·min(distance, 1) − fall rate.
+
+## Runs in the store ({n} runs)
+
+| # | run | started | parent | steps | envs | wall-clock | gates | distance p50 | falls | score | clip |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+{rows}
+
+"""
+
+
+def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -> None:
+    import time
+
+    from trainer.config import TrainConfig, config_diff
+
+    idx = json.loads((runs_dir / "index.json").read_text())["runs"]
+    runs = sorted(idx, key=lambda r: r["created"] or "")
+    defaults = TrainConfig().model_dump(mode="json")
+    rows, details = [], []
+    for i, r in enumerate(runs, 1):
+        rid = r["run_id"]
+        st = json.loads((runs_dir / rid / "state.json").read_text())
+        cfg = json.loads((runs_dir / rid / "config.json").read_text())
+        met = {}
+        if (runs_dir / rid / "metrics.json").is_file():
+            met = json.loads((runs_dir / rid / "metrics.json").read_text())
+        reps = sorted((runs_dir / rid / "benchmark").glob("flat_v1@*/report.json")) if (runs_dir / rid / "benchmark").is_dir() else []
+        rep = json.loads(reps[-1].read_text()) if reps else {}
+        gif = f"policy_{st.get('name', rid)}.gif"
+        clip = f"[gif]({media_rel}/{gif})" if (out_md.parent.parent / "media" / "rl-training" / gif).is_file() else "—"
+        wall = f"{met.get('elapsed_s', 0) / 60:.1f} min" if met.get("elapsed_s") else "—"
+        rows.append(f"| {i} | `{rid}`<br>{st.get('name', '')} | {st.get('created', '')[:16]} | {st.get('parent') or '—'} | "
+                    f"{cfg.get('ppo', {}).get('num_timesteps', 0) / 1e6:.0f}M | {cfg.get('ppo', {}).get('num_envs', '')} | {wall} | "
+                    f"{rep.get('gates_passed', '—')}/{rep.get('gates_total', '—')} | "
+                    f"{rep.get('metrics', {}).get('forward_distance_p50', float('nan')):.2f} m | "
+                    f"{rep.get('metrics', {}).get('fall_rate', float('nan')):.2f} | {rep.get('score', '—')} | {clip} |")
+        base = json.loads((runs_dir / st["parent"] / "config.json").read_text()) if st.get("parent") and (runs_dir / st["parent"] / "config.json").is_file() else defaults
+        diff = config_diff(base, cfg)
+        diff_s = "\n".join(f"- `{d['path']}`: {d['from']} → {d['to']}" for d in diff) or "- (defaults)"
+        failing = [g for g in rep.get("gates", []) if g["pass"] is False]
+        fail_s = ", ".join(f"{g['gate']} ({g['value']:.3f} {g['op']} {g['threshold']})" for g in failing) or "none"
+        details.append(f"""### Run {i}: {st.get('name', rid)} (`{rid}`)
+
+- **Status:** {st.get('status')}{(' — ' + st['error']) if st.get('error') else ''}
+- **Hypothesis / notes:** {st.get('notes') or '—'}
+- **Config vs {'parent ' + st['parent'] if st.get('parent') else 'defaults'}:**
+{diff_s}
+- **Training:** {met.get('num_timesteps', 0) / 1e6:.0f}M steps, {met.get('num_envs', '')} envs, {met.get('elapsed_s', 0):.0f} s, {met.get('steps_per_s_mean', 0):,.0f} steps/s ({met.get('impl', '')}); eval reward {met.get('reward_first', 0):.0f} → {met.get('reward_final', 0):.0f}
+- **Gates:** {rep.get('gates_passed', '—')}/{rep.get('gates_total', '—')}; failing: {fail_s}
+- **Reflection:** {rep.get('reflection', '—')}
+""")
+    text = LEDGER_HEAD.format(date=time.strftime("%Y-%m-%d"), n=len(runs), rows="\n".join(rows)) + "\n".join(details)
+    text += """
+## Runs outside the store (development smoke tests, 2026-09-07)
+
+| run | steps | envs | result | lesson |
+|---|---|---|---|---|
+| smoke1 | 0.3M | 256 | reward 344 → 324, no learning | first end-to-end PPO run; too short to judge |
+| crippled 40M (cancelled) | — | 2048 | cancelled after 80 s | servos could not move under the torque cap (kp 40, damping 1.5): trot replay 0.000 m |
+| smoke2 | 3M | 1024 | reward 58 → 452, stands, falls when asked to walk (clip on the main page) | pipeline learns; 3M steps is ~6 episodes per env |
+
+The first two ran on the original servo parameters, which is why they are not in the store: the model was rebuilt
+with a torque-limited servo (kp 10, ±0.25 N·m, damping 0.05) before run 1.
+"""
+    out_md.write_text(text)
+    print(f"ledger: {len(runs)} runs -> {out_md}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--ledger", default=None, help="write the run-ledger chapter to this path and exit")
     ap.add_argument("--runs-dir", default="runs")
     ap.add_argument("--out", default="documentation/media/rl-training")
     ap.add_argument("--runs", nargs="*", default=None, help="run ids (default: all done runs, oldest first)")
@@ -184,6 +267,9 @@ def main() -> int:
     a = ap.parse_args()
     runs_dir, out = Path(a.runs_dir), Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    if a.ledger:
+        ledger(runs_dir, Path(a.ledger))
+        return 0
     idx = json.loads((runs_dir / "index.json").read_text())["runs"]
     run_ids = a.runs or sorted(r["run_id"] for r in idx if r["status"] == "done")
     cfg = TrainConfig()
