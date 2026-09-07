@@ -222,33 +222,69 @@ class TrainConfig(_Strict):
         return int(round(self.episode_seconds * self.control_hz))
 
     def resolved(self) -> "TrainConfig":
-        """Apply curriculum-stage defaults to fields the caller did not set.
-
-        Stage 1 widens the forward range and enables turning; stage 2 adds
-        lateral commands and pushes. Explicitly patched values always win.
-        """
-        cmd_set = self.commands.model_fields_set
-        dr_set = self.dr.model_fields_set
-        cmd = self.commands.model_dump()
-        dr = self.dr.model_dump()
-        if self.curriculum_stage >= 1:
-            if "vx" not in cmd_set:
-                cmd["vx"] = (0.0, 0.25)
-            if "wz" not in cmd_set:
-                cmd["wz"] = (-0.5, 0.5)
-        if self.curriculum_stage >= 2:
-            if "vy" not in cmd_set:
-                cmd["vy"] = (-0.05, 0.05)
-            if "push_enabled" not in dr_set:
-                dr["push_enabled"] = True
-        data = self.model_dump()
-        data["commands"] = cmd
-        data["dr"] = dr
-        return TrainConfig.model_validate(data)
+        """Configs are fully explicit after ``apply_patch`` (stage defaults are materialised
+        there, where explicit patch paths are known). Kept for call-site symmetry."""
+        return self
 
     def config_hash(self) -> str:
         canon = json.dumps(self.resolved().model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canon.encode()).hexdigest()[:16]
+
+
+# ── curriculum ────────────────────────────────────────────────────────────
+
+#: Stage-managed fields and their per-stage defaults. A field keeps a stage
+#: default only until the caller patches it explicitly.
+STAGE_DEFAULTS: dict[int, dict[str, Any]] = {
+    0: {"commands.vx": (0.05, 0.20), "commands.vy": (0.0, 0.0), "commands.wz": (0.0, 0.0), "dr.push_enabled": False},
+    1: {"commands.vx": (0.0, 0.25), "commands.vy": (0.0, 0.0), "commands.wz": (-0.5, 0.5), "dr.push_enabled": False},
+    2: {"commands.vx": (0.0, 0.25), "commands.vy": (-0.05, 0.05), "commands.wz": (-0.5, 0.5), "dr.push_enabled": True},
+}
+
+
+def _get_path(d: dict[str, Any], path: str) -> Any:
+    cur: Any = d
+    for k in path.split("."):
+        if not isinstance(cur, dict) or k not in cur:
+            return None
+        cur = cur[k]
+    return cur
+
+
+def _set_path(d: dict[str, Any], path: str, value: Any) -> None:
+    keys = path.split(".")
+    cur = d
+    for k in keys[:-1]:
+        cur = cur.setdefault(k, {})
+    cur[keys[-1]] = value
+
+
+def _norm(v: Any) -> Any:
+    return tuple(v) if isinstance(v, (list, tuple)) else v
+
+
+def _patch_paths(patch: dict[str, Any], prefix: str = "") -> set[str]:
+    out: set[str] = set()
+    for k, v in patch.items():
+        path = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            out |= _patch_paths(v, path)
+        else:
+            out.add(path)
+    return out
+
+
+def apply_stage_defaults(merged: dict[str, Any], *, base_stage: int, explicit: set[str]) -> dict[str, Any]:
+    """Move stage-managed fields from the base stage's defaults to the new stage's."""
+    new_stage = int(merged.get("curriculum_stage", 0))
+    for path, new_default in STAGE_DEFAULTS[new_stage].items():
+        if path in explicit:
+            continue
+        cur = _norm(_get_path(merged, path))
+        was_default = cur is None or cur == _norm(STAGE_DEFAULTS[base_stage][path]) or cur == _norm(STAGE_DEFAULTS[0][path])
+        if was_default:
+            _set_path(merged, path, new_default)
+    return merged
 
 
 # ── patching / diffing ────────────────────────────────────────────────────
@@ -265,9 +301,16 @@ def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_patch(base: TrainConfig | dict[str, Any] | None, patch: dict[str, Any] | None) -> TrainConfig:
-    """Validate ``base`` + ``patch``. Raises ``pydantic.ValidationError``."""
+    """Validate ``base`` + ``patch`` and materialise curriculum-stage defaults.
+
+    Raises ``pydantic.ValidationError``. Fields the patch names explicitly
+    always win; stage-managed fields still at a stage default follow the new stage.
+    """
     base_d = base.model_dump(mode="json") if isinstance(base, TrainConfig) else dict(base or {})
-    merged = deep_merge(base_d, patch or {})
+    base_stage = int(base_d.get("curriculum_stage", 0))
+    patch = patch or {}
+    merged = deep_merge(base_d, patch)
+    merged = apply_stage_defaults(merged, base_stage=base_stage, explicit=_patch_paths(patch))
     return TrainConfig.model_validate(merged)
 
 

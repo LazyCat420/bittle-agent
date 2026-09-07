@@ -84,11 +84,19 @@ def process_action(xp, action, prev_target_deg, scale_deg, lo, hi, mode: str):
     return xp.round(target)
 
 
+SAT_MARGIN_DEG = 5.0
+
+
 def target_saturation(xp, target_deg, lo, hi):
-    """Per-joint saturation in [0,1]: 0 at centre, 1 at the envelope edge."""
-    centre = (lo + hi) / 2.0
-    half = (hi - lo) / 2.0
-    return xp.abs(target_deg - centre) / half
+    """Per-joint edge proximity: 0 more than SAT_MARGIN_DEG inside the envelope, 1 at the edge.
+
+    Measured in degrees from each edge (not normalised to the centre) because the
+    envelopes are asymmetric around STAND — the rear shoulders stand 5 deg from
+    their lower bound, which must not read as saturation.
+    """
+    d_lo = xp.maximum(lo + SAT_MARGIN_DEG - target_deg, 0.0)
+    d_hi = xp.maximum(target_deg - (hi - SAT_MARGIN_DEG), 0.0)
+    return xp.minimum((d_lo + d_hi) / SAT_MARGIN_DEG, 1.0)
 
 
 def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigma: float,
@@ -114,7 +122,7 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         "base_height": xp.square(q["torso_z"] - base_height_target) * 1000.0,  # mm^2/1000 -> ~O(1)
         "action_rate": xp.sum(xp.square(q["action"] - q["last_action"])),
         "energy": xp.sum(xp.abs(q["torques"] * q["joint_vel"])),
-        "joint_saturation": xp.sum(xp.maximum(q["target_norm"] - 0.9, 0.0)),
+        "joint_saturation": xp.sum(q["target_norm"]),
         "feet_air_time": xp.sum((q["feet_air_time"] - 0.1) * q["first_contact"]) * moving,
         "feet_slip": xp.sum(xp.sum(xp.square(q["feet_vel_xy"]), axis=-1) * q["contact"]) * moving,
         "stand_still": xp.sum(xp.abs(q["target_deg"] - xp.asarray(STAND_DEG))) / TARGET_NORM_DEG * (~moving),

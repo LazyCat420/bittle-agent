@@ -46,6 +46,17 @@ class Settings:
     llm_api_key: str = os.getenv("BITTLE_LLM_API_KEY", "EMPTY")
     llm_timeout: float = float(os.getenv("BITTLE_LLM_TIMEOUT", "120.0"))
 
+    #: RL trainer service (GPU box, trainer/service.py). Empty = training tools disabled.
+    trainer_url: str = os.getenv("BITTLE_TRAINER_URL", "")
+    trainer_timeout: float = float(os.getenv("BITTLE_TRAINER_TIMEOUT", "30.0"))
+    #: Budget for one train+benchmark cycle inside a single tool call.
+    trainer_cycle_timeout: float = float(os.getenv("BITTLE_TRAINER_CYCLE_TIMEOUT", "1800.0"))
+    #: Agent turn budgets by chat mode ("control" vs "training").
+    agent_max_turns: int = int(os.getenv("BITTLE_AGENT_MAX_TURNS", "6"))
+    agent_max_turns_training: int = int(os.getenv("BITTLE_AGENT_MAX_TURNS_TRAINING", "12"))
+    #: Web research tools (DuckDuckGo / arXiv / page reader) for the agent.
+    allow_web_research: bool = _flag("BITTLE_ALLOW_WEB_RESEARCH", True)
+
     @property
     def requires_confirm_token(self) -> bool:
         return bool(self.confirm_token)

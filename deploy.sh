@@ -34,6 +34,9 @@ EXTRA_SSH_SYNC() {
   # Ensure GoldSpark cluster settings are present in remote .env
   ssh "$DEPLOY_SSH_HOST" "grep -q 'BITTLE_LLM_API_BASE' '${DEPLOY_COMPOSE_DIR}/.env' || echo 'BITTLE_LLM_API_BASE=http://10.0.0.141:8000/v1' >> '${DEPLOY_COMPOSE_DIR}/.env'"
   ssh "$DEPLOY_SSH_HOST" "grep -q 'BITTLE_LLM_MODEL' '${DEPLOY_COMPOSE_DIR}/.env' || echo 'BITTLE_LLM_MODEL=GLM-5.3-Flash-EXL3' >> '${DEPLOY_COMPOSE_DIR}/.env'"
+  # RL trainer URL (GPU box). Seeded from BITTLE_TRAINER_URL in the local environment if set,
+  # otherwise left empty so the training tools report trainer_not_configured rather than guessing.
+  ssh "$DEPLOY_SSH_HOST" "grep -q 'BITTLE_TRAINER_URL' '${DEPLOY_COMPOSE_DIR}/.env' || echo 'BITTLE_TRAINER_URL=${BITTLE_TRAINER_URL:-}' >> '${DEPLOY_COMPOSE_DIR}/.env'"
   ok ".env.example and GoldSpark cluster config synced"
 }
 

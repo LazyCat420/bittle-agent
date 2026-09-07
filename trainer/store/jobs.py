@@ -152,7 +152,7 @@ class JobManager:
             self._bench_active += 1
         args = ["-m", "trainer.eval.benchmark_cli", "--run-id", run_id,
                 "--suite", str(opts.get("suite", "flat_v1")),
-                "--n-episodes", str(int(opts.get("n_episodes", 20)))]
+                "--n-episodes", str(int(opts.get("n_episodes") or 20))]
         if opts.get("dr_sweep"):
             args.append("--dr-sweep")
         if opts.get("dual_sim"):

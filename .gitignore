@@ -10,3 +10,9 @@ pnpm-lock.yaml
 .worktrees/
 storage/movesets/*.json
 !storage/movesets/.gitkeep
+
+# RL trainer (GPU box)
+.venv-trainer/
+runs/
+storage/research/*.json
+trainer/**/__pycache__/

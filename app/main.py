@@ -20,6 +20,7 @@ from .config import settings
 from .controller import Controller, TargetUnavailable
 from .motion import CompositionError, get_composer
 from .safety import EStopEngaged, SafetyError
+from .trainer_client import TrainerUnavailable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("bittle-agent")
@@ -681,6 +682,7 @@ class AgentChatRequest(BaseModel):
     target: str = Field("sim", description="'sim' or 'real'")
     confirm: str | None = None
     stream: bool = Field(True, description="Whether to stream response via SSE")
+    mode: str = Field("control", description="'control' (robot choreography) or 'training' (RL policy campaign)")
 
 
 class AgentStepRequest(BaseModel):
@@ -720,18 +722,62 @@ async def agent_chat(req: AgentChatRequest):
     if not req.stream:
         events = []
         async for ev in agent_harness.chat_stream(
-            messages, target=req.target, confirm_token=req.confirm
+            messages, target=req.target, confirm_token=req.confirm, mode=req.mode
         ):
             events.append(ev)
         return {"events": events}
 
     async def event_generator():
         async for ev in agent_harness.chat_stream(
-            messages, target=req.target, confirm_token=req.confirm
+            messages, target=req.target, confirm_token=req.confirm, mode=req.mode
         ):
             yield f"data: {json.dumps(ev)}\n\n"
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
+# ── Training (RL trainer proxies; rollouts are streamed, never buffered) ─
+
+
+@app.get("/api/training/health")
+async def training_health():
+    if not agent_harness.trainer.configured:
+        return {"ok": False, "error": "trainer_not_configured"}
+    try:
+        return {"ok": True, "trainer_url": settings.trainer_url, "health": await agent_harness.trainer.health()}
+    except TrainerUnavailable as exc:
+        return {"ok": False, "error": "trainer_unavailable", "detail": str(exc)}
+
+
+@app.get("/api/training/runs")
+async def training_runs(sort: str = "score", limit: int = 20):
+    try:
+        return await agent_harness.trainer.list_runs(sort=sort, limit=limit)
+    except TrainerUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+def _proxy_stream(path: str) -> StreamingResponse:
+    async def gen():
+        async for chunk in agent_harness.trainer.rollout_stream(path):
+            yield chunk
+
+    return StreamingResponse(gen(), media_type="application/json")
+
+
+@app.get("/api/training/rollout/{run_id}")
+async def training_rollout(run_id: str, seed: int = 0, suite: str = "flat_v1"):
+    if not agent_harness.trainer.configured:
+        raise HTTPException(status_code=503, detail="trainer_not_configured")
+    return _proxy_stream(f"/runs/{run_id}/rollout?seed={seed}&suite={suite}")
+
+
+@app.get("/api/training/baselines/{name}/rollout")
+async def training_baseline_rollout(name: str, seed: int = 0):
+    if not agent_harness.trainer.configured:
+        raise HTTPException(status_code=503, detail="trainer_not_configured")
+    return _proxy_stream(f"/baselines/{name}/rollout?seed={seed}")
 
 
 if STATIC_DIR.is_dir():

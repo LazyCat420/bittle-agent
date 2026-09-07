@@ -36,7 +36,8 @@ class BittleCpuEnv:
 
     def __init__(self, config: TrainConfig, *, variant: str = "cpu", seed: int = 0,
                  dr_override: dr_mod.ModelParams | None = None,
-                 episode_override: dr_mod.EpisodeParams | None = None):
+                 episode_override: dr_mod.EpisodeParams | None = None,
+                 envelope_tier: str = "agent"):
         self.cfg = config.resolved()
         self.variant = variant
         self.xml_path = GENERATED / f"bittle_{variant}.xml"
@@ -54,7 +55,7 @@ class BittleCpuEnv:
         self.torso_id = m.body("torso").id
         self.floor_id = m.geom("floor").id
         self.imu_site = m.site("imu_site").id
-        self.lo, self.hi = spec.load_envelope("agent")
+        self.lo, self.hi = spec.load_envelope(envelope_tier)
         self._sensor = {m.sensor(i).name: (m.sensor_adr[i], m.sensor_dim[i]) for i in range(m.nsensor)}
         self.foot_found = [f"{leg}_foot_floor_found" for leg in jm.LEGS]
         self.body_found = [n for n in self._sensor if n.endswith("_floor_found") and "foot" not in n]
@@ -118,12 +119,17 @@ class BittleCpuEnv:
         self.reset_count += 1
         return self._obs()
 
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, StepInfo]:
+    def step(self, action: np.ndarray, *, target_deg: np.ndarray | None = None) -> tuple[np.ndarray, float, bool, StepInfo]:
+        """Advance one control step. ``target_deg`` bypasses the policy (gait replay)."""
         m, d = self.model, self.data
         self.last_action = self.action
-        self.action = np.clip(np.asarray(action, dtype=np.float64), -1, 1)
-        self.target_deg = spec.process_action(np, self.action, self.target_deg, self.cfg.action_scale_deg,
-                                              self.lo, self.hi, self.cfg.action_mode)
+        if target_deg is not None:
+            self.action = np.zeros(8)
+            self.target_deg = np.clip(np.round(np.asarray(target_deg, dtype=np.float64)), self.lo, self.hi)
+        else:
+            self.action = np.clip(np.asarray(action, dtype=np.float64), -1, 1)
+            self.target_deg = spec.process_action(np, self.action, self.target_deg, self.cfg.action_scale_deg,
+                                                  self.lo, self.hi, self.cfg.action_mode)
         # history newest-first; latency picks an older commanded target
         self.hist = np.roll(self.hist, 1, axis=0)
         self.hist[0] = self.target_deg
@@ -220,9 +226,6 @@ class BittleCpuEnv:
             "joint_deg": jm.mjcf_rad_to_agent_deg(d.qpos[self.qpos_idx]).tolist(),
         }
 
-    def set_ctrl_deg(self, target_deg: np.ndarray) -> None:
-        """Bypass the policy: drive commanded targets directly (gait replay)."""
-        self.target_deg = np.clip(np.round(np.asarray(target_deg, dtype=np.float64)), self.lo, self.hi)
 
 
 def _rpy_to_quat(roll: float, pitch: float, yaw: float) -> np.ndarray:

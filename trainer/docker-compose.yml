@@ -1,0 +1,23 @@
+services:
+  bittle-trainer:
+    build:
+      context: ..
+      dockerfile: trainer/Dockerfile
+    image: bittle-trainer:latest
+    container_name: bittle-trainer
+    ports:
+      - "8009:8009"
+    volumes:
+      - ../runs:/runs
+    environment:
+      - TRAINER_CPU_CORES=0-7
+    cpuset: "0-7"
+    mem_limit: 16g
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped

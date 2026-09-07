@@ -8,6 +8,9 @@ HardwareProfile, and SafetyValidator.
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 import json
 import logging
 from typing import Any, AsyncGenerator
@@ -17,6 +20,9 @@ import httpx
 from . import joints as joints_mod
 from . import skills as skills_mod
 from .config import Settings
+from .research_tools import RESEARCH_TOOL_NAMES, RESEARCH_TOOLS, ResearchTools
+from .trainer_client import TrainerClient, TrainerUnavailable
+from .training_tools import TRAINING_TOOL_NAMES, TRAINING_TOOLS, TrainingTools
 from .controller import Controller, TargetUnavailable
 from .motion import TrajectoryValidator, get_lifecycle, get_composer, CompositionError
 from .motion.builtin_library import BUILTIN_MOVESETS, EXPRESSIVE_MACROS, get_builtin_moveset
@@ -584,7 +590,25 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
+TOOLS = TOOLS + TRAINING_TOOLS + RESEARCH_TOOLS
+
+TRAINING_PROTOCOL = """
+
+TRAINING MODE PROTOCOL (RL locomotion policy on the GPU trainer):
+- Goal: a neural-net walking policy that passes every flat_v1 gate. You never write training code; you edit a validated JSON config.
+- Each cycle = ONE call to `bittle_train_and_benchmark` with a `config_patch` (and `base_run_id` = the best run so far). It trains, benchmarks and returns gates + a reflection. It takes minutes; that is expected.
+- Change at most 3 config keys per cycle and state your hypothesis in `notes`. Read the reflection and the failing gates' hints before choosing the next patch.
+- Use `bittle_list_runs` first to see the leaderboard and baselines; use `bittle_compare_runs` to reason about what moved a gate.
+- If you are unsure what to change, RESEARCH: `bittle_web_search` / `bittle_search_papers` / `bittle_read_url` for how others tuned quadruped PPO (reward weights, tracking sigma, DR ranges, PPO hyperparameters); save useful findings with `bittle_save_research_note` and check `bittle_list_research_notes` at the start.
+- Stop when all gates pass (then optionally raise curriculum_stage or request dr_sweep) or when the turn budget is spent; then reply with a short report: best run_id, gates passed, what mattered."""
+
+RESEARCH_HINT = """
+- Research tools are available (`bittle_web_search`, `bittle_search_papers`, `bittle_read_url`, notes). Use them when the operator asks a question you cannot answer from context, or to check how others solved a training problem."""
+
+
 class GLMAgentHarness:
+    KEEPALIVE_S = 15.0
+
     def __init__(self, controller: Controller, settings: Settings):
         self.controller = controller
         self.settings = settings
@@ -592,6 +616,9 @@ class GLMAgentHarness:
         self.composer = get_composer()
         self.active_course = "none"
         self.robot_pose = {"x": 0.0, "y": 0.0532, "z": 0.0, "yaw": 0.0}
+        self.trainer = TrainerClient(settings.trainer_url, timeout=settings.trainer_timeout)
+        self.training = TrainingTools(self.trainer, settings)
+        self.research = ResearchTools(settings)
 
     def _compute_skill_displacement(self, skill_or_name: str) -> tuple[float, float, float]:
         """Return (dx, dz, dyaw_deg) for a given skill or gait."""
@@ -636,7 +663,7 @@ class GLMAgentHarness:
         self.robot_pose["y"] = round(0.0532 + elev_m, 4)
         self.robot_pose["yaw"] = round(new_yaw, 1)
 
-    def get_system_prompt(self, target: str = "sim") -> str:
+    def get_system_prompt(self, target: str = "sim", mode: str = "control") -> str:
         """Construct context-rich system prompt with pre-injected active hardware state and latency directives."""
         prof = self.controller.profile
         installed = sorted(list(prof.installed_joints))
@@ -660,7 +687,7 @@ DO NOT waste turns calling `bittle_list_capabilities`, `bittle_get_hardware_prof
 - Novel poses or custom choreography: call `bittle_execute_sequence` with your chosen keyframe angles and delays on Turn 1.
 - Creating / saving persistent movesets: call `bittle_save_moveset` on Turn 1.
 - Expressive emotive gestures: call `bittle_express`.
-Execute user movement goals immediately on Turn 1."""
+Execute user movement goals immediately on Turn 1.""" + (RESEARCH_HINT if self.settings.allow_web_research else "") + (TRAINING_PROTOCOL if mode == "training" else "")
 
     async def execute_tool(
         self,
@@ -1113,6 +1140,10 @@ Execute user movement goals immediately on Turn 1."""
                     "guidance": episode_result.get("guidance", ""),
                 }
 
+            if name in TRAINING_TOOL_NAMES:
+                return await self.training.execute(name, args)
+            if name in RESEARCH_TOOL_NAMES:
+                return await self.research.execute(name, args)
             return {"ok": False, "error": f"unknown tool: {name}"}
 
         except CompositionError as exc:
@@ -1121,6 +1152,8 @@ Execute user movement goals immediately on Turn 1."""
         except SafetyError as exc:
             logger.warning("Safety gate rejected tool %s: %s (%s)", name, exc.reason, exc.detail)
             return {"ok": False, "error": "safety_refused", "reason": exc.reason, "detail": exc.detail}
+        except TrainerUnavailable as exc:
+            return {"ok": False, "error": "trainer_unavailable", "detail": str(exc)}
         except TargetUnavailable as exc:
             return {"ok": False, "error": "target_unavailable", "detail": str(exc)}
         except Exception as exc:
@@ -1166,14 +1199,21 @@ Execute user movement goals immediately on Turn 1."""
         *,
         target: str = "sim",
         confirm_token: str | None = None,
-        max_turns: int = 6,
+        max_turns: int | None = None,
+        mode: str = "control",
     ) -> AsyncGenerator[dict[str, Any], None]:
-        """Run multi-turn agent loop communicating with local GLM instance via real-time SSE streaming."""
+        """Run multi-turn agent loop communicating with local GLM instance via real-time SSE streaming.
+
+        ``mode="training"`` selects the larger turn budget and appends the training protocol
+        to the system prompt. Long tool calls emit ``progress`` keepalive events every 15 s.
+        """
+        if max_turns is None:
+            max_turns = self.settings.agent_max_turns_training if mode == "training" else self.settings.agent_max_turns
         api_base, model = await self.resolve_endpoint_and_model()
         api_key = self.settings.llm_api_key or "EMPTY"
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-        full_messages = [{"role": "system", "content": self.get_system_prompt(target=target)}]
+        full_messages = [{"role": "system", "content": self.get_system_prompt(target=target, mode=mode)}]
         for m in messages:
             full_messages.append(m)
 
@@ -1302,12 +1342,25 @@ Execute user movement goals immediately on Turn 1."""
                         "id": tc_id,
                     }
 
-                    tool_res = await self.execute_tool(
+                    task = asyncio.ensure_future(self.execute_tool(
                         fn_name,
                         args,
                         target_override=target,
                         confirm_token=confirm_token,
-                    )
+                    ))
+                    started = time.monotonic()
+                    while True:
+                        try:
+                            tool_res = await asyncio.wait_for(asyncio.shield(task), timeout=self.KEEPALIVE_S)
+                            break
+                        except asyncio.TimeoutError:
+                            yield {
+                                "type": "progress",
+                                "name": fn_name,
+                                "id": tc_id,
+                                "elapsed_s": round(time.monotonic() - started, 1),
+                                "detail": self.training.last_progress,
+                            }
 
                     yield {
                         "type": "tool_result",

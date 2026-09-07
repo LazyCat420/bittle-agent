@@ -142,6 +142,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "last_contact": jp.zeros(4, dtype=bool),
             "body_contact_steps": jp.int32(0),
             "step": jp.int32(0),
+            "prev_x": qpos[0],
             "next_push": jp.where(self._dr.push_enabled, ep["push_steps"], jp.int32(-1)),
             "latency": ep["latency"],
             "gyro_bias": ep["gyro_bias"],
@@ -222,7 +223,9 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         info["next_push"] = next_push
         for k, v in terms.items():
             state.metrics[f"reward/{k}"] = v * self._weights[k]
-        state.metrics["distance_x"] = data.qpos[0]
+        # per-step displacement, so brax's episode SUM of this metric is the distance walked
+        state.metrics["distance_x"] = data.qpos[0] - info["prev_x"]
+        info["prev_x"] = data.qpos[0]
 
         obs = self._get_obs(data, info)
         return state.replace(data=data, obs=obs, reward=reward, done=done.astype(reward.dtype))
