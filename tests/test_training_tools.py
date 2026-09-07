@@ -261,3 +261,15 @@ def test_ddg_parser_extracts_results():
     p = _DDGParser()
     p.feed(html)
     assert p.results == [{"title": "Example A", "url": "https://example.com/a", "snippet": "A snippet."}]
+    # absolute redirect form seen live
+    p2 = _DDGParser()
+    p2.feed('<tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fx%2Fy&amp;rut=2">X</a></td></tr>')
+    assert p2.results[0]["url"] == "https://github.com/x/y"
+
+
+def test_read_url_rewrites_github_and_arxiv():
+    from app.research_tools import _rewrite_url
+
+    assert _rewrite_url("https://github.com/ger01d/opencat-gym").endswith("/ger01d/opencat-gym/HEAD/README.md")
+    assert _rewrite_url("https://github.com/a/b/blob/main/x.py") == "https://raw.githubusercontent.com/a/b/main/x.py"
+    assert _rewrite_url("https://arxiv.org/pdf/2502.08844v1.pdf") == "https://arxiv.org/abs/2502.08844"

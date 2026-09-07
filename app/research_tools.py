@@ -168,11 +168,12 @@ class _DDGParser(HTMLParser):
             self._row_sponsored = "sponsored" in cls
         if tag == "a" and "result-link" in cls and not self._row_sponsored:
             href = a.get("href", "") or ""
-            if href.startswith("/l/?"):
-                q = parse_qs(urlparse(href).query)
-                href = q.get("uddg", [href])[0]
             if href.startswith("//"):
                 href = "https:" + href
+            # DDG wraps organic results as /l/?uddg=<target> (relative or absolute)
+            pu = urlparse(href)
+            if pu.path == "/l/" and "uddg" in parse_qs(pu.query):
+                href = parse_qs(pu.query)["uddg"][0]
             self._cur = {"title": "", "url": href, "snippet": ""}
             self._in_link = True
         if tag == "td" and "result-snippet" in cls and self.results:
@@ -241,6 +242,9 @@ def _rewrite_url(url: str) -> str:
     m = re.match(r"https?://github\.com/([^/]+)/([^/]+)/blob/(.+)$", url)
     if m:
         return f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}/{m.group(3)}"
+    m = re.match(r"https?://github\.com/([^/]+)/([^/#?]+)/?$", url)
+    if m:  # repo root -> its README, not the site chrome
+        return f"https://raw.githubusercontent.com/{m.group(1)}/{m.group(2)}/HEAD/README.md"
     m = re.match(r"https?://arxiv\.org/pdf/(\d+\.\d+)(v\d+)?(\.pdf)?$", url)
     if m:
         return f"https://arxiv.org/abs/{m.group(1)}"
