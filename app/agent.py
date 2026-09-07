@@ -1217,7 +1217,8 @@ Execute user movement goals immediately on Turn 1.""" + (RESEARCH_HINT if self.s
         for m in messages:
             full_messages.append(m)
 
-        async with httpx.AsyncClient(timeout=self.settings.llm_timeout) as client:
+        llm_timeout = self.settings.llm_timeout_training if mode == "training" else self.settings.llm_timeout
+        async with httpx.AsyncClient(timeout=httpx.Timeout(llm_timeout, connect=15.0)) as client:
             for turn in range(max_turns):
                 payload = {
                     "model": model,
@@ -1296,11 +1297,12 @@ Execute user movement goals immediately on Turn 1.""" + (RESEARCH_HINT if self.s
                                         tool_calls_acc[idx]["arguments"] += fn["arguments"]
 
                 except Exception as exc:
+                    detail = str(exc) or type(exc).__name__  # httpx.ReadTimeout stringifies to ''
                     yield {
                         "type": "error",
                         "error": "endpoint_error",
-                        "detail": str(exc),
-                        "content": f"GLM endpoint error ({api_base} / {model}): {exc}",
+                        "detail": detail,
+                        "content": f"GLM endpoint error ({api_base} / {model}): {detail}",
                     }
                     return
 

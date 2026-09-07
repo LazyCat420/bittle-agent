@@ -45,6 +45,9 @@ class Settings:
     llm_model: str = os.getenv("BITTLE_LLM_MODEL", "GLM-5.3-Flash-EXL3")
     llm_api_key: str = os.getenv("BITTLE_LLM_API_KEY", "EMPTY")
     llm_timeout: float = float(os.getenv("BITTLE_LLM_TIMEOUT", "120.0"))
+    #: Training-mode prompts are long (37 tool schemas + protocol) and GLM queues behind other
+    #: sequences on Gold Spark; a 120 s read timeout showed up as an empty "endpoint_error".
+    llm_timeout_training: float = float(os.getenv("BITTLE_LLM_TIMEOUT_TRAINING", "600.0"))
 
     #: RL trainer service (GPU box, trainer/service.py). Empty = training tools disabled.
     trainer_url: str = os.getenv("BITTLE_TRAINER_URL", "")
