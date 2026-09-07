@@ -231,6 +231,66 @@ export class BittleViewer {
     }
   }
 
+  setRobotOrientation(rollRad, pitchRad) {
+    this.robotPitch = pitchRad;
+    this.robotRoll = rollRad;
+    this.robotGroup.rotation.set(this.robotRoll || 0, this.robotYaw, this.robotPitch, 'YZX');
+  }
+
+  /**
+   * Play a bittle.rollout.v1 trajectory (from the RL trainer): joint targets in
+   * OpenCat convention plus the simulated base pose per frame. While a rollout
+   * plays, the viewer's own kinematic root motion and ground solver are
+   * suspended — the physics engine already resolved contact and height.
+   */
+  playRollout(rollout, options = {}) {
+    if (!rollout || !Array.isArray(rollout.frames) || rollout.frames.length === 0) {
+      console.warn('playRollout: empty rollout', rollout);
+      return false;
+    }
+    const order = rollout.joint_order || [8, 9, 10, 11, 12, 13, 14, 15];
+    const dtMs = Math.max(5, Math.round(1000 * (rollout.dt || (1 / (rollout.fps || 50)))));
+    const frames = rollout.frames.map(f => {
+      const angles = {};
+      (f.angles_deg || []).forEach((deg, i) => { angles[order[i]] = deg; });
+      return { angles, speed_deg_per_step: 90, delay_ms: dtMs,
+               base_pos_m: f.base_pos_m, base_rpy_deg: f.base_rpy_deg };
+    });
+    this.activeRollout = { frames, source: rollout.source || {}, summary: rollout.summary || {} };
+    this.rootMotionEnabled = false;
+    this._groundSolverSuspended = true;
+    this.resetRobotPosition();
+    const ok = this.playSequence(frames, { name: `rollout ${rollout.source?.run_id || rollout.source?.baseline || ''}`.trim(),
+                                          description: rollout.summary ? `${(rollout.summary.distance_m ?? 0).toFixed ? rollout.summary.distance_m.toFixed(2) : rollout.summary.distance_m} m` : '',
+                                          loop: Boolean(options.loop) });
+    if (!ok) { this.rootMotionEnabled = true; this._groundSolverSuspended = false; }
+    return ok;
+  }
+
+  stopRollout() {
+    this.activeRollout = null;
+    this.rootMotionEnabled = true;
+    this._groundSolverSuspended = false;
+  }
+
+  /** Apply the recorded base pose for the current rollout frame (MuJoCo Z-up -> Three.js Y-up). */
+  _applyRolloutPose(frame) {
+    if (!frame || !frame.base_pos_m) return;
+    const [mx, my, mz] = frame.base_pos_m;
+    const rpy = frame.base_rpy_deg || [0, 0, 0];
+    const yaw = THREE.MathUtils.degToRad(rpy[2]);
+    const pitch = -THREE.MathUtils.degToRad(rpy[1]);
+    const roll = THREE.MathUtils.degToRad(rpy[0]);
+    this.robotPosition.x = mx;
+    this.robotPosition.z = -my;
+    this.robotGroup.position.set(mx, mz + 0.01, -my); // floor plane sits at z=-0.01 in the MJCF
+    this.robotYaw = yaw;
+    this.setRobotOrientation(roll, pitch);
+    if (this.onPoseUpdate) {
+      this.onPoseUpdate({ x: mx, y: mz + 0.01, z: -my, yaw: this.robotYaw, pitch: this.robotPitch });
+    }
+  }
+
   moveRobot(dx, dz, dyaw = 0) {
     this.setRobotPosition(this.robotPosition.x + dx, this.robotPosition.z + dz, this.robotYaw + dyaw);
   }
@@ -819,6 +879,9 @@ export class BittleViewer {
   }
 
   playSequence(sequenceOrName, options = {}) {
+    if (this.activeRollout && !(Array.isArray(sequenceOrName) && sequenceOrName === this.activeRollout.frames)) {
+      this.stopRollout();
+    }
     let frames = null;
     let name = options.name || 'Sequence';
     let description = options.description || '';
@@ -879,6 +942,9 @@ export class BittleViewer {
   }
 
   applyFrame(idx, snap = false) {
+    if (this.activeRollout && this.activeRollout.frames && this.activeRollout.frames[arguments[0]]) {
+      this._applyRolloutPose(this.activeRollout.frames[arguments[0]]);
+    }
     if (!this.activeSequence || !this.activeSequence.frames[idx]) return;
     const frame = this.activeSequence.frames[idx];
     const angles = frame.angles;
@@ -1114,8 +1180,8 @@ export class BittleViewer {
       }
     }
 
-    // Dynamic terrain elevation & pitch conformation
-    if (this.obstacleCourse) {
+    // Dynamic terrain elevation & pitch conformation (suspended during physics rollout playback)
+    if (this.obstacleCourse && !this._groundSolverSuspended) {
       const x = this.robotGroup.position.x;
       const z = this.robotGroup.position.z;
       const yaw = this.robotYaw || 0;

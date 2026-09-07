@@ -90,10 +90,10 @@ class DRConfig(_Strict):
     mass_scale: Range = (0.85, 1.15)
     payload_g: Range = (0.0, 30.0)
     com_shift_mm: Range = (-10.0, 10.0)
-    kp: Range = (25.0, 55.0)
-    forcerange: Range = (0.12, 0.25)
-    damping: Range = (1.0, 2.0)
-    frictionloss: Range = (0.10, 0.25)
+    kp: Range = (6.0, 15.0)
+    forcerange: Range = (0.15, 0.35)
+    damping: Range = (0.02, 0.10)
+    frictionloss: Range = (0.0, 0.03)
     latency_steps: tuple[int, int] = (0, 3)
     gyro_noise: float = Field(0.1, ge=0.0, le=1.0)
     gyro_bias: float = Field(0.05, ge=0.0, le=0.5)
@@ -127,22 +127,22 @@ class DRConfig(_Strict):
     @field_validator("kp")
     @classmethod
     def _kp(cls, v: Range) -> Range:
-        return _check_range(v, 5.0, 120.0, "dr.kp")
+        return _check_range(v, 2.0, 60.0, "dr.kp")
 
     @field_validator("forcerange")
     @classmethod
     def _fr(cls, v: Range) -> Range:
-        return _check_range(v, 0.05, 0.6, "dr.forcerange")
+        return _check_range(v, 0.05, 1.0, "dr.forcerange")
 
     @field_validator("damping")
     @classmethod
     def _d(cls, v: Range) -> Range:
-        return _check_range(v, 0.1, 5.0, "dr.damping")
+        return _check_range(v, 0.005, 2.0, "dr.damping")
 
     @field_validator("frictionloss")
     @classmethod
     def _fl(cls, v: Range) -> Range:
-        return _check_range(v, 0.0, 1.0, "dr.frictionloss")
+        return _check_range(v, 0.0, 0.5, "dr.frictionloss")
 
     @field_validator("latency_steps")
     @classmethod

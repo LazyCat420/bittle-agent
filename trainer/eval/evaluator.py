@@ -71,9 +71,13 @@ class StandController:
 class GaitController:
     """Replay an OpenCat gait table (or keyframe moveset) as commanded targets."""
 
-    def __init__(self, targets_deg: np.ndarray, *, rows_per_step: float = 1.0, lead_in_steps: int = 25):
+    #: OpenCat plays gait rows at roughly 100 Hz (a 48-row trot cycle in ~0.5 s); at 50 Hz control
+    #: that is two rows per step. At one row per step the open-loop trot slips backwards.
+    DEFAULT_ROWS_PER_STEP = 2.0
+
+    def __init__(self, targets_deg: np.ndarray, *, rows_per_step: float | None = None, lead_in_steps: int = 25):
         self.targets = np.asarray(targets_deg, dtype=np.float64)  # (n, 8) policy order, agent degrees
-        self.rows_per_step = rows_per_step
+        self.rows_per_step = self.DEFAULT_ROWS_PER_STEP if rows_per_step is None else rows_per_step
         self.lead_in = lead_in_steps
 
     @classmethod
@@ -206,7 +210,7 @@ DR_PRESETS: dict[str, dict[str, Any]] = {
     "friction_low": {"friction": 0.5},
     "friction_high": {"friction": 1.1},
     "payload_30g": {"payload_kg": 0.03},
-    "kp_low": {"kp": 28.0},
+    "kp_low": {"kp": 6.0},
     "latency_3": {"latency_steps": 3},
 }
 

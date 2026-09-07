@@ -1401,7 +1401,20 @@
         </div>
       </div>
 
-      <div class="agent-chips">
+      <div class="agent-chips" id="agentModeRow" style="align-items:center; gap:10px; margin-bottom:6px">
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer">
+          <input type="checkbox" id="agentTrainingMode" /> 🧠 Training mode (RL policy campaign on the GPU trainer; 12-turn budget)
+        </label>
+        <span id="agentTrainerStatus" style="font-size:11px; color:var(--muted)"></span>
+      </div>
+      <div class="agent-chips agent-training-chips" id="agentTrainingChips" style="display:none">
+        <div class="agent-prompt-chip" data-prompt="Check the trainer health, list the runs and baselines, then run one training cycle with the default config and report the gate results.">🏁 First training cycle</div>
+        <div class="agent-prompt-chip" data-prompt="Train a walking policy until every flat_v1 gate passes. Start from the best run, change at most 3 config keys per cycle, and explain each hypothesis.">🎯 Train until gates pass</div>
+        <div class="agent-prompt-chip" data-prompt="Research how others tuned PPO reward weights and domain randomisation for small quadrupeds (Petoi Bittle, OpenCat, Go1 playground), save the key findings as research notes, then propose a config patch.">📚 Research then propose</div>
+        <div class="agent-prompt-chip" data-prompt="Show the leaderboard, compare the two best runs, and replay the best run's rollout in the viewer.">📊 Leaderboard &amp; replay</div>
+        <div class="agent-prompt-chip" data-prompt="Replay the OpenCat trot baseline (baseline:opencat_trF) in the viewer.">🐾 Replay trot baseline</div>
+      </div>
+      <div class="agent-chips" id="agentControlChips">
         <div class="agent-prompt-chip" data-prompt="Walk forward across the room for 4 steps.">🚶 Walk Forward (4 steps)</div>
         <div class="agent-prompt-chip" data-prompt="Back up 3 steps in reverse to clear the obstacle.">🔙 Back Up (3 steps)</div>
         <div class="agent-prompt-chip" data-prompt="Sit down on the floor under gravity and rest your paws.">🐕 Sit Down</div>
@@ -1612,8 +1625,34 @@ window.addEventListener('DOMContentLoaded', async () => {
     viewer: viewer,
     getTarget: () => TARGET,
     getConfirmToken: () => confirmToken,
+    getMode: () => (document.getElementById('agentTrainingMode')?.checked ? 'training' : 'control'),
     onActionExecuted: () => refreshJointState()
   });
+
+  // Training mode toggle: swaps the prompt chips and probes the trainer once.
+  (() => {
+    const cb = document.getElementById('agentTrainingMode');
+    const trainChips = document.getElementById('agentTrainingChips');
+    const controlChips = document.getElementById('agentControlChips');
+    const status = document.getElementById('agentTrainerStatus');
+    if (!cb) return;
+    const apply = async () => {
+      const on = cb.checked;
+      if (trainChips) trainChips.style.display = on ? '' : 'none';
+      if (controlChips) controlChips.style.display = on ? 'none' : '';
+      if (on && status) {
+        status.textContent = 'checking trainer…';
+        try {
+          const h = await fetch('/api/training/health').then(r => r.json());
+          status.textContent = h.ok ? `trainer ok · ${h.health?.physics_impl || ''} · ${h.health?.gpu?.name || ''}` : `trainer: ${h.error}`;
+        } catch (e) { status.textContent = 'trainer unreachable'; }
+      } else if (status) {
+        status.textContent = '';
+      }
+    };
+    cb.addEventListener('change', apply);
+    apply();
+  })();
 
   if (viewer) {
     viewer.onSelectCallback = (jointId, name) => {

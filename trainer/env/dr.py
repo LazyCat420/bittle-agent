@@ -41,7 +41,7 @@ class EpisodeParams:
 
 def nominal_model_params() -> ModelParams:
     return ModelParams(friction=0.9, mass_scale=1.0, payload_kg=0.0, com_shift_m=np.zeros(3),
-                       kp=40.0, forcerange=0.2, damping=1.5, frictionloss=0.15)
+                       kp=10.0, forcerange=0.25, damping=0.05, frictionloss=0.01)
 
 
 def nominal_episode_params() -> EpisodeParams:

@@ -13,6 +13,8 @@ export class AgentUI {
     this.cancelBtn = document.getElementById('agentCancelBtn');
     this.autoExecToggle = document.getElementById('agentAutoExecToggle');
     this.targetGetter = options.getTarget || (() => 'sim');
+    this.modeGetter = opts.getMode || (() => 'control');
+    this.onTrainingProgress = opts.onTrainingProgress || null;
     this.confirmTokenGetter = options.getConfirmToken || (() => null);
     this.onActionExecuted = options.onActionExecuted || (() => {});
 
@@ -214,7 +216,8 @@ export class AgentUI {
           history: this.history,
           target: target,
           confirm: confirm,
-          stream: true
+          stream: true,
+          mode: (typeof this.modeGetter === 'function' ? this.modeGetter() : 'control')
         }),
         signal: this.abortController ? this.abortController.signal : undefined
       });
@@ -309,8 +312,33 @@ export class AgentUI {
         this.appendToolCard(ev.name, ev.args, ev.id);
         break;
 
+      case 'progress': {
+        // keepalive from a long tool call (training cycles take minutes)
+        this.removeThinkingIndicator();
+        const card = this.toolCards ? this.toolCards[ev.id] : null;
+        const det = ev.detail || {};
+        const prog = det.progress || {};
+        const pct = (prog.total && prog.step) ? ` ${Math.round(100 * prog.step / prog.total)}%` : '';
+        const reward = (prog.reward !== undefined && prog.reward !== null) ? ` reward=${Number(prog.reward).toFixed(1)}` : '';
+        const label = `⏳ ${det.status || 'running'}${pct}${reward} · ${Math.round(ev.elapsed_s || 0)}s`;
+        if (card) {
+          const st = card.querySelector('.agent-tool-status');
+          if (st) st.textContent = label;
+        }
+        if (this.onTrainingProgress) this.onTrainingProgress(ev);
+        break;
+      }
+
       case 'tool_result':
         this.updateToolResult(ev.id, ev.result);
+
+        // Rollout replay: the result carries a viewer_url, never the frames.
+        if (ev.result && ev.result.ok && ev.result.viewer_url && this.viewer && typeof this.viewer.playRollout === 'function') {
+          fetch(ev.result.viewer_url)
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`rollout ${r.status}`)))
+            .then(rollout => this.viewer.playRollout(rollout, { loop: false }))
+            .catch(e => console.warn('rollout replay failed', e));
+        }
 
         // Reflect movement directly on the 3D Viewer & Sequence Timeline!
         if (ev.result && ev.result.ok && this.viewer) {

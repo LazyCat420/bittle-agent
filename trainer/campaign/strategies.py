@@ -12,7 +12,7 @@ SCRIPTED_V1: list[dict[str, Any]] = [
     {"name": "c2-smooth", "patch": {"reward": {"weights": {"action_rate": -0.03}}},
      "notes": "penalise jerky targets more"},
     {"name": "c3-stage1", "patch": {"curriculum_stage": 1}, "notes": "add turning commands"},
-    {"name": "c4-wide-dr", "patch": {"dr": {"kp": [20.0, 60.0], "latency_steps": [0, 4]}},
+    {"name": "c4-wide-dr", "patch": {"dr": {"kp": [4.0, 20.0], "latency_steps": [0, 4]}},
      "notes": "wider servo/latency randomisation for robustness"},
     {"name": "c5-longer", "patch": {"ppo": {"num_timesteps": 60_000_000}}, "notes": "1.5x budget on the best"},
 ]
