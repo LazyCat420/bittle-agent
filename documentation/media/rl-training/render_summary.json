@@ -1,0 +1,26 @@
+{
+  "opencat_trF": {
+    "distance_m": 0.433,
+    "fell": false,
+    "frames": 63,
+    "gif": "baseline_opencat_trot.gif"
+  },
+  "smoke_3M_steps": {
+    "distance_m": -0.013,
+    "fell": true,
+    "frames": 10,
+    "gif": "policy_smoke_3M_steps.gif"
+  },
+  "20260907-135830-42943f": {
+    "distance_m": 0.514,
+    "fell": false,
+    "frames": 63,
+    "gif": "policy_r1-defaults-40M.gif"
+  },
+  "20260907-142153-d17a72": {
+    "distance_m": 0.597,
+    "fell": false,
+    "frames": 63,
+    "gif": "policy_r2-energy-fix-15M.gif"
+  }
+}
