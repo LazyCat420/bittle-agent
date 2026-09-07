@@ -11,8 +11,8 @@ updated: 2026-09-07
 Yes — the walking training has run. Two policies exist, both walk, and the GLM agent drove the second one
 itself. This page is the reference for how the loop works, what the numbers mean, and how to run it.
 
-| | Petoi trot (firmware gait, replayed) | Policy r1, 40M steps (defaults) | Policy r2, GLM's own cycle |
-|---|---|---|---|
+| Petoi trot (firmware gait, replayed) | Policy r1, 40M steps (defaults) | Policy r2, GLM's own cycle |
+|---|---|---|
 | ![](media/rl-training/baseline_opencat_trot.gif) | ![](media/rl-training/policy_r1-defaults-40M.gif) | ![](media/rl-training/policy_r2-energy-fix-15M.gif) |
 
 All three clips: same simulator, same seed, same command (walk forward at 0.12 m/s), 5 s. The caption on each
