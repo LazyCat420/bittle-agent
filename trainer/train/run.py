@@ -40,10 +40,16 @@ def main(argv: list[str] | None = None) -> int:
                                                "reward": point["reward"], "steps_per_s": point.get("steps_per_s")})
 
     try:
-        from .ppo import train_policy
+        from .ppo import load_restore_params, train_policy
 
-        store.update_state(a.run_id, status="training")
-        metrics = train_policy(cfg, run_dir, progress=progress, impl=a.impl or cfg.sim_impl, sim_dt=a.sim_dt)
+        restore, why = None, None
+        parent = store.state(a.run_id).get("parent")
+        if parent and cfg.init_from_parent and store.exists(parent):
+            restore, why = load_restore_params(store.run_dir(parent), cfg)
+        store.update_state(a.run_id, status="training",
+                           warm_start={"parent": parent, "used": restore is not None, "reason": why})
+        metrics = train_policy(cfg, run_dir, progress=progress, impl=a.impl or cfg.sim_impl, sim_dt=a.sim_dt,
+                               restore_params=restore)
         store.write_metrics(a.run_id, {k: v for k, v in metrics.items() if k != "curve"})
         store.update_state(a.run_id, status="trained")
         return 0

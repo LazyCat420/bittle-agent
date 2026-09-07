@@ -4,7 +4,7 @@
 # that share a version. Thresholds below were seeded from the plan and are
 # calibrated once against the OpenCat trot baseline before being frozen.
 suite: flat_v1
-version: 1.0.0
+version: 1.1.0
 protocol:
   n_episodes: 20
   seed_start: 0
@@ -67,12 +67,21 @@ gates:
     threshold: 0.05
     unit: m/s
     hint: "raise lin_vel_z penalty"
+  # Calibrated 2026-09-07: the firmware trot (opencat_trF) measures 3.79 W on this proxy and the
+  # first learned policies 1.08-1.39 W. The original 1.0 W was an uncalibrated guess.
   - name: energy_proxy
     metric: energy_proxy_w
     op: "<="
-    threshold: 1.0
+    threshold: 2.0
     unit: W
-    hint: "raise energy penalty"
+    hint: "raise the energy penalty by 10-100x (its reward share is usually <1%) or lower action_scale_deg"
+  - name: energy_vs_baseline
+    metric: baseline_energy_ratio
+    op: "<="
+    threshold: 0.5
+    unit: ratio
+    group: baseline
+    hint: "a learned gait must use at most half the firmware trot's power on the same protocol"
   - name: stand_still_drift
     metric: stand_still_drift_m
     op: "<="

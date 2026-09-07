@@ -210,6 +210,9 @@ class TrainConfig(_Strict):
     obs: ObsConfig = Field(default_factory=ObsConfig)
     seed: int = Field(0, ge=0, le=2**31 - 1)
     sim_impl: Literal["warp", "jax"] = "warp"
+    #: Start from the parent run's policy + normaliser when base_run_id is given (same network
+    #: shape). A reward tweak then needs ~10M steps, not 40M from scratch.
+    init_from_parent: bool = True
     notes: str = Field("", max_length=2000)
 
     # ── derived helpers ────────────────────────────────────────────────

@@ -49,15 +49,33 @@ def _check(op: str, value: float, threshold: Any) -> bool:
     return bool(_OPS[op](value, float(threshold)))
 
 
+#: Which reward term most directly moves each gate (for the reflection's weight-share advice).
+GATE_TO_TERM = {
+    "energy_proxy": "energy", "energy_vs_baseline": "energy", "action_smoothness": "action_rate",
+    "body_stability_tilt": "orientation", "body_stability_vz": "lin_vel_z", "fall_rate": "orientation",
+    "joint_saturation_pct": "joint_saturation", "stand_still_drift": "stand_still", "stand_still_falls": "stand_still",
+    "heading_drift_yaw": "tracking_ang_vel", "heading_drift_lateral": "tracking_lin_vel",
+    "vel_tracking_rmse": "tracking_lin_vel", "forward_distance_p50": "tracking_lin_vel",
+    "beats_baseline_trot_distance": "tracking_lin_vel", "multi_command": "tracking_lin_vel",
+}
+
+
 def evaluate_gates(
     metrics: dict[str, Any],
     suite: dict[str, Any],
     *,
     curriculum_stage: int = 0,
     groups_enabled: set[str] | None = None,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Return the gate report body (without run_id / seeds; caller adds those)."""
+    """Return the gate report body (without run_id / seeds; caller adds those).
+
+    ``context`` (optional) carries what the reflection needs to be actionable:
+    ``baseline_metrics``, ``parent_metrics`` (same metric names) and
+    ``reward_breakdown`` ({term: episode contribution} from the last training eval).
+    """
     groups_enabled = groups_enabled or set()
+    context = context or {}
     rows: list[dict[str, Any]] = []
     for g in suite.get("gates", []):
         row: dict[str, Any] = {
@@ -103,12 +121,38 @@ def evaluate_gates(
         "score": round(score, 4),
         "metrics": {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in metrics.items()},
     }
-    report["reflection"] = build_reflection(report, metrics)
+    if context:
+        report["context"] = _context_view(context, report)
+    report["reflection"] = build_reflection(report, metrics, context)
     return report
 
 
-def build_reflection(report: dict[str, Any], metrics: dict[str, Any]) -> str:
+def _context_view(context: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """Per-gate baseline/parent values and the reward-term shares, for tools and the reflection."""
+    base = context.get("baseline_metrics") or {}
+    parent = context.get("parent_metrics") or {}
+    rb = context.get("reward_breakdown") or {}
+    total = sum(abs(float(v)) for v in rb.values()) or 1.0
+    shares = {k: round(100.0 * abs(float(v)) / total, 3) for k, v in rb.items()}
+    per_gate = {}
+    for g in report["gates"]:
+        if g["value"] is None:
+            continue
+        per_gate[g["gate"]] = {
+            "value": g["value"],
+            "baseline_trot": base.get(g["metric"]),
+            "parent": parent.get(g["metric"]),
+            "term": GATE_TO_TERM.get(g["gate"]),
+            "term_share_pct": shares.get(GATE_TO_TERM.get(g["gate"], ""), None),
+        }
+    return {"per_gate": per_gate, "reward_breakdown": rb, "reward_shares_pct": shares,
+            "parent_run_id": context.get("parent_run_id"), "baseline": context.get("baseline_name")}
+
+
+def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: dict[str, Any] | None = None) -> str:
     """Prose feedback for the LLM, same pattern as simulate_stair_climb_episode."""
+    ctx = report.get("context") or {}
+    per_gate = ctx.get("per_gate", {})
     failed = [r for r in report["gates"] if r["pass"] is False]
     head = "BENCHMARK PASSED" if report["passed"] else "BENCHMARK FAILED"
     parts = [f"{head} {report['gates_passed']}/{report['gates_total']} gates (score {report['score']:.2f})."]
@@ -125,7 +169,23 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any]) -> str:
     for r in failed[:4]:
         thr = r["threshold"]
         thr_s = f"[{thr[0]}, {thr[1]}]" if isinstance(thr, (list, tuple)) else f"{thr}"
-        parts.append(f"FAIL {r['gate']}: {r['value']:.3f} {r['op']} {thr_s} {r['unit']}".rstrip() + (f" -> {r['note']}" if r["note"] else ""))
+        line = f"FAIL {r['gate']}: {r['value']:.3f} {r['op']} {thr_s} {r['unit']}".rstrip()
+        pg = per_gate.get(r["gate"], {})
+        cmp = []
+        if pg.get("parent") is not None:
+            cmp.append(f"parent {pg['parent']:.3f}")
+        if pg.get("baseline_trot") is not None:
+            cmp.append(f"firmware trot {pg['baseline_trot']:.3f}")
+        if cmp:
+            line += " (" + ", ".join(cmp) + ")"
+        if r["note"]:
+            line += f" -> {r['note']}"
+        share = pg.get("term_share_pct")
+        if share is not None and pg.get("term") and share < 1.0:
+            factor = max(2, int(round(2.0 / max(share, 1e-6))))
+            line += (f". The '{pg['term']}' term is only {share:.2f}% of the total reward, so the optimiser barely sees it: "
+                     f"multiply its weight by ~{min(factor, 1000)}x (to ~2% share), not by 2-10x.")
+        parts.append(line)
     if len(failed) > 4:
         parts.append(f"(+{len(failed) - 4} more failing gates in the table)")
     skipped = [r for r in report["gates"] if r["pass"] is None]

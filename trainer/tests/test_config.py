@@ -56,3 +56,8 @@ def test_stage_bump_on_a_base_keeps_explicit_and_moves_defaults():
     # a stored (fully explicit) config round-trips through validate without drift
     again = apply_patch(s2.model_dump(mode="json"), {})
     assert again.config_hash() == s2.config_hash()
+
+
+def test_warm_start_flag_default_and_patchable():
+    assert TrainConfig().init_from_parent is True
+    assert apply_patch(None, {"init_from_parent": False}).init_from_parent is False

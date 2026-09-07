@@ -22,8 +22,26 @@ from ..env.gpu_env import BittleGpuEnv, make_domain_randomizer
 from ..policy.export import export_policy
 
 
+def load_restore_params(parent_dir: Path, cfg: TrainConfig) -> tuple[Any, str | None]:
+    """Parent params for a warm start, or (None, reason) when the shapes cannot match."""
+    path = parent_dir / "policy" / "params.pkl"
+    if not path.is_file():
+        return None, "parent has no params.pkl"
+    try:
+        pcfg = TrainConfig.model_validate(json.loads((parent_dir / "config.json").read_text()))
+    except Exception as exc:  # pragma: no cover
+        return None, f"parent config unreadable: {exc}"
+    same = (tuple(pcfg.ppo.policy_hidden) == tuple(cfg.ppo.policy_hidden)
+            and tuple(pcfg.ppo.value_hidden) == tuple(cfg.ppo.value_hidden)
+            and pcfg.obs.history_n == cfg.obs.history_n and pcfg.obs.phase_clock == cfg.obs.phase_clock)
+    if not same:
+        return None, "network/observation shape differs from the parent"
+    with open(path, "rb") as fh:
+        return pickle.load(fh), None
+
+
 def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[str, Any]], None] | None = None,
-                 impl: str | None = None, sim_dt: float = 0.002) -> dict[str, Any]:
+                 impl: str | None = None, sim_dt: float = 0.002, restore_params: Any = None) -> dict[str, Any]:
     """Train and export. Returns training metrics (also written to run_dir/metrics.json)."""
     cfg = cfg.resolved()
     p = cfg.ppo
@@ -84,6 +102,7 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         wrap_env_fn=wrapper.wrap_for_brax_training,
         progress_fn=progress_fn,
         num_eval_envs=128,
+        restore_params=restore_params,
     )
     make_inference_fn, params, metrics = train_fn(environment=env, eval_env=eval_env)
     elapsed = time.time() - t0
@@ -107,6 +126,7 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         "episode_length_final": final.get("episode_length"),
         "impl": env.mjx_model.impl.value,
         "sim_dt": sim_dt,
+        "warm_start": restore_params is not None,
         "curve": curve,
     }
     (run_dir / "metrics.json").write_text(json.dumps(out, indent=2))

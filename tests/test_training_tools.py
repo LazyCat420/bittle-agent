@@ -51,7 +51,9 @@ class FakeTrainer:
         return {"run_id": run_id, "suite": suite, "suite_version": "1.0.0", "gates_passed": 11, "gates_total": 12,
                 "passed": False, "score": 11.3, "reflection": "BENCHMARK FAILED 11/12 gates.",
                 "gates": [{"gate": "fall_rate", "value": 0.2, "op": "<=", "threshold": 0.1, "pass": False, "note": "hint", "unit": "x"}],
-                "metrics": {"fall_rate": 0.2, "forward_distance_p50": 0.7}, "episodes": [{"seed": 0}]}
+                "metrics": {"fall_rate": 0.2, "forward_distance_p50": 0.7}, "episodes": [{"seed": 0}],
+                "context": {"per_gate": {"fall_rate": {"value": 0.2, "parent": 0.1, "baseline_trot": 0.0, "term": "orientation", "term_share_pct": 0.5}},
+                            "reward_shares_pct": {"tracking_lin_vel": 95.0, "orientation": 0.5}, "parent_run_id": "run-0"}}
 
     async def list_runs(self, sort="score", limit=20):
         return {"runs": [{"run_id": "run-1", "score": 11.3}], "baselines": {"opencat_trF": {"score": 5.0}}, "best": {"run_id": "run-1"}}
@@ -273,3 +275,10 @@ def test_read_url_rewrites_github_and_arxiv():
     assert _rewrite_url("https://github.com/ger01d/opencat-gym").endswith("/ger01d/opencat-gym/HEAD/README.md")
     assert _rewrite_url("https://github.com/a/b/blob/main/x.py") == "https://raw.githubusercontent.com/a/b/main/x.py"
     assert _rewrite_url("https://arxiv.org/pdf/2502.08844v1.pdf") == "https://arxiv.org/abs/2502.08844"
+
+
+def test_diagnose_run_reports_weak_terms(harness):
+    res = run(harness.execute_tool("bittle_diagnose_run", {"run_id": "run-1"}))
+    assert res["ok"] and res["gates"][0]["parent"] == 0.1 and res["gates"][0]["baseline_trot"] == 0.0
+    assert "orientation" in res["advice"] and res["reward_shares_pct"]["tracking_lin_vel"] == 95.0
+    assert "bittle_diagnose_run" in harness.get_system_prompt(mode="training")

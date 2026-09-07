@@ -122,7 +122,7 @@ class JobManager:
             if proc.returncode != 0 and st.get("status") not in ("cancelled", "done", "trained"):
                 self.store.update_state(run_id, status="failed",
                                         error=f"{st.get('status')} subprocess exited {proc.returncode}; see train.log")
-            if st.get("status") == "benchmarking" and proc.returncode == 0:
+            if getattr(proc, "kind", None) == "bench" and st.get("status") == "benchmarking" and proc.returncode == 0:
                 # the benchmark subprocess sets 'done' itself; guard for a silent exit
                 if self.store.state(run_id).get("status") == "benchmarking":
                     self.store.update_state(run_id, status="trained", error="benchmark exited without a report")
@@ -189,6 +189,7 @@ class JobManager:
             proc = subprocess.Popen(cmd, cwd=self.repo_root, env=env, stdout=log, stderr=subprocess.STDOUT,
                                     preexec_fn=preexec)
             self.store.update_state(run_id, pid=proc.pid)
+        proc.kind = kind  # type: ignore[attr-defined]
         with self._lock:
             self._procs[run_id] = proc  # type: ignore[assignment]
 

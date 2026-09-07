@@ -75,12 +75,31 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str = "flat_v1", 
         metrics["dr_distance_ratio_min"] = float(min(v["distance_p50"] for v in sweep.values()) / nominal_d)
 
     # 5. baseline comparison (cached trot)
+    context: dict = {}
     base = store.baselines().get("opencat_trF")
     if base and base.get("metrics"):
         groups.add("baseline")
         bd = max(float(base["metrics"].get("forward_distance_p50", 0.0)), 1e-6)
         metrics["baseline_distance_ratio"] = float(metrics["forward_distance_p50"] / bd)
         metrics["baseline_fall_delta"] = float(metrics["fall_rate"] - float(base["metrics"].get("fall_rate", 0.0)))
+        be = float(base["metrics"].get("energy_proxy_w", 0.0))
+        if be > 0:
+            metrics["baseline_energy_ratio"] = float(metrics["energy_proxy_w"] / be)
+        context["baseline_metrics"] = base["metrics"]
+        context["baseline_name"] = "opencat_trF"
+
+    # 5b. context for the reflection: parent run's gate metrics + reward-term breakdown of the last eval
+    parent = store.state(run_id).get("parent")
+    if parent and store.exists(parent):
+        prep = store.benchmark(parent, suite_name)
+        if prep and prep.get("metrics"):
+            context["parent_metrics"] = prep["metrics"]
+            context["parent_run_id"] = parent
+    curve = store.curve(run_id, limit=1000)
+    if curve:
+        last = curve[-1]
+        context["reward_breakdown"] = {k.replace("reward/", ""): float(v) for k, v in last.items()
+                                       if k.startswith("reward/") and not k.endswith("_std")}
 
     # 6. dual-sim consistency (GPU engine vs CPU, shared seeds)
     if dual_sim:
@@ -95,7 +114,7 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str = "flat_v1", 
         except Exception as exc:  # GPU unavailable in this process: report, don't fail the benchmark
             metrics["dual_sim_error"] = str(exc)[:300]
 
-    report = evaluate_gates(metrics, suite, curriculum_stage=cfg.curriculum_stage, groups_enabled=groups)
+    report = evaluate_gates(metrics, suite, curriculum_stage=cfg.curriculum_stage, groups_enabled=groups, context=context)
     report.update({"run_id": run_id, "n_episodes": n, "seeds": [s.seed for s in stats],
                    "sim": f"mujoco-cpu/{proto['model']}", "episodes": [s.to_dict() for s in stats],
                    "config_hash": cfg.config_hash()})

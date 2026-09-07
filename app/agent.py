@@ -598,6 +598,8 @@ TRAINING MODE PROTOCOL (RL locomotion policy on the GPU trainer):
 - Goal: a neural-net walking policy that passes every flat_v1 gate. You never write training code; you edit a validated JSON config.
 - Each cycle = ONE call to `bittle_train_and_benchmark` with a `config_patch` (and `base_run_id` = the best run so far). It trains, benchmarks and returns gates + a reflection. It takes minutes; that is expected.
 - Change at most 3 config keys per cycle and state your hypothesis in `notes`. Read the reflection and the failing gates' hints before choosing the next patch.
+- Runs with `base_run_id` WARM-START from the parent's policy (same network shape), so use `ppo.num_timesteps` 10000000 (10M, ~4 min) per cycle; only train 40M from scratch when you change the network or observation.
+- Reward terms are per-step weighted sums. Call `bittle_diagnose_run` first: a term whose reward share is below ~1% cannot steer the policy; change its weight by 10-100x (the config bounds allow up to |10|), not by 2x.
 - Use `bittle_list_runs` first to see the leaderboard and baselines; use `bittle_compare_runs` to reason about what moved a gate.
 - If you are unsure what to change, RESEARCH: `bittle_web_search` / `bittle_search_papers` / `bittle_read_url` for how others tuned quadruped PPO (reward weights, tracking sigma, DR ranges, PPO hyperparameters); save useful findings with `bittle_save_research_note` and check `bittle_list_research_notes` at the start.
 - Stop when all gates pass (then optionally raise curriculum_stage or request dr_sweep) or when the turn budget is spent; then reply with a short report: best run_id, gates passed, what mattered."""

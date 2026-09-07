@@ -8,7 +8,7 @@ GOOD = {"fall_rate": 0.0, "forward_distance_p50": 0.9, "vel_tracking_rmse": 0.02
 
 def test_suite_loads_and_is_versioned():
     s = load_suite("flat_v1")
-    assert s["version"] == "1.0.0" and len(s["gates"]) >= 12
+    assert s["version"] == "1.1.0" and len(s["gates"]) >= 13
     names = [g["name"] for g in s["gates"]]
     assert len(names) == len(set(names))
 
@@ -48,3 +48,15 @@ def test_within_op():
     rep = evaluate_gates(m, load_suite(), groups_enabled={"dual_sim"})
     assert {g["gate"]: g for g in rep["gates"]}["dual_sim_consistency"]["pass"] is False
     assert build_reflection(rep, m)
+
+
+def test_reflection_uses_context_for_weak_terms():
+    bad = dict(GOOD, energy_proxy_w=2.5)
+    ctx = {"baseline_metrics": {"energy_proxy_w": 3.79}, "parent_metrics": {"energy_proxy_w": 1.08},
+           "parent_run_id": "p1", "reward_breakdown": {"tracking_lin_vel": 580.0, "energy": -0.4, "orientation": -6.5}}
+    rep = evaluate_gates(bad, load_suite(), context=ctx)
+    refl = rep["reflection"]
+    assert "firmware trot 3.790" in refl and "parent 1.080" in refl
+    assert "'energy' term is only 0.07% of the total reward" in refl and "multiply its weight" in refl
+    assert rep["context"]["per_gate"]["energy_proxy"]["term"] == "energy"
+    assert rep["context"]["reward_shares_pct"]["tracking_lin_vel"] > 90

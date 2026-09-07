@@ -23,6 +23,7 @@ TRAINING_TOOL_NAMES = (
     "bittle_compare_runs",
     "bittle_replay_rollout",
     "bittle_trainer_health",
+    "bittle_diagnose_run",
 )
 
 _PATCH = {
@@ -80,6 +81,10 @@ TRAINING_TOOLS: list[dict[str, Any]] = [
             "dr_sweep": {"type": "boolean"}},
             "required": []}}},
     {"type": "function", "function": {
+        "name": "bittle_diagnose_run",
+        "description": "Why did a run's gates fail? Returns each gate with the run's value, the parent run's value and the firmware-trot baseline, plus the reward-term breakdown (share of total reward per term). A term below ~1% share cannot steer training: multiply its weight by 10-100x, not 2x.",
+        "parameters": {"type": "object", "properties": {"run_id": {"type": "string"}}, "required": []}}},
+    {"type": "function", "function": {
         "name": "bittle_list_runs",
         "description": "Leaderboard of runs (score, gates passed, distance, fall rate) plus the OpenCat baseline gaits.",
         "parameters": {"type": "object", "properties": {
@@ -115,6 +120,10 @@ def _compact_report(rep: dict[str, Any]) -> dict[str, Any]:
     out["metrics"] = {k: m[k] for k in ("fall_rate", "forward_distance_p50", "vel_tracking_rmse", "heading_yaw_deg",
                                         "lateral_drift_m", "joint_saturation_pct", "action_smoothness_deg",
                                         "mean_tilt_deg", "energy_proxy_w", "first_fall_time_mean") if k in m}
+    ctx = rep.get("context") or {}
+    if ctx:
+        out["reward_shares_pct"] = ctx.get("reward_shares_pct")
+        out["parent_run_id"] = ctx.get("parent_run_id")
     return out
 
 
@@ -213,6 +222,29 @@ class TrainingTools:
             if until == "done" and status == "trained" and st.get("error"):
                 return st
             await asyncio.sleep(0)
+
+    async def _diagnose_run(self, args):
+        run_id = args.get("run_id") or self.last_run_id
+        if not run_id:
+            return _err("missing_run_id", "give a run_id or train first")
+        rep = await self.client.get_benchmark(run_id)
+        ctx = rep.get("context") or {}
+        rows = []
+        for g in rep.get("gates", []):
+            if g["value"] is None:
+                continue
+            pg = ctx.get("per_gate", {}).get(g["gate"], {})
+            rows.append({"gate": g["gate"], "pass": g["pass"], "value": g["value"], "threshold": g["threshold"], "op": g["op"],
+                         "parent": pg.get("parent"), "baseline_trot": pg.get("baseline_trot"),
+                         "reward_term": pg.get("term"), "term_share_pct": pg.get("term_share_pct")})
+        shares = ctx.get("reward_shares_pct") or {}
+        weak = [k for k, v in shares.items() if v is not None and v < 1.0]
+        return {"ok": True, "run_id": run_id, "suite_version": rep.get("suite_version"), "gates": rows,
+                "reward_shares_pct": shares, "parent_run_id": ctx.get("parent_run_id"),
+                "advice": (f"Terms with <1% reward share ({', '.join(weak)}) cannot steer the policy; a gate tied to one of them "
+                           "needs a 10-100x weight change. Runs with base_run_id warm-start from the parent, so ~10M steps is enough per cycle."
+                           if weak else "All reward terms carry weight; adjust thresholds' neighbours by 2-5x."),
+                "reflection": rep.get("reflection")}
 
     async def _list_runs(self, args):
         res = await self.client.list_runs(sort=args.get("sort", "score"), limit=int(args.get("limit", 10) or 10))

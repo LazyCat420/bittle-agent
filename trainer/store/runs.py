@@ -24,6 +24,7 @@ import json
 import os
 import secrets
 import shutil
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,9 @@ def _write_json(path: Path, data: Any) -> None:
 
 class RunStore:
     def __init__(self, root: str | Path):
+        #: update_state is a read-modify-write on state.json; the job loop, the fake job
+        #: threads and request handlers all call it, so serialise it in-process.
+        self._lock = threading.RLock()
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "baselines").mkdir(exist_ok=True)
@@ -108,15 +112,16 @@ class RunStore:
         return st
 
     def update_state(self, run_id: str, **fields: Any) -> dict[str, Any]:
-        st = self.state(run_id)
-        st.update(fields)
-        st["updated"] = _now()
-        if fields.get("status") == "training" and not st.get("started"):
-            st["started"] = _now()
-        if fields.get("status") in ("done", "failed", "cancelled", "trained"):
-            st["finished"] = _now()
-        _write_json(self.run_dir(run_id) / "state.json", st)
-        return st
+        with self._lock:
+            st = self.state(run_id)
+            st.update(fields)
+            st["updated"] = _now()
+            if fields.get("status") == "training" and not st.get("started"):
+                st["started"] = _now()
+            if fields.get("status") in ("done", "failed", "cancelled", "trained"):
+                st["finished"] = _now()
+            _write_json(self.run_dir(run_id) / "state.json", st)
+            return st
 
     def config(self, run_id: str) -> dict[str, Any]:
         return _read_json(self.run_dir(run_id) / "config.json", {})
