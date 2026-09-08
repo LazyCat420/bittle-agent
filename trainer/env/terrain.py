@@ -102,9 +102,13 @@ def terrain_height(xp, x, y, box_pos, box_half, box_yaw):
     c, s = xp.cos(box_yaw), xp.sin(box_yaw)
     u = c * dx + s * dy
     v = -s * dx + c * dy
-    inside = (xp.abs(u) <= box_half[:, 0]) & (xp.abs(v) <= box_half[:, 1])
+    # a PARKED box (1 m below the floor, 0.15 m half-extents around the origin) must never count as
+    # "under" the point: with every box parked, max() over the parked tops returned -0.97 m for any
+    # point within 0.15 m of the spawn and the height-relative reward, clearance and critic scan all
+    # read the robot as a metre in the air (found 2026-09-08 on the first box_share < 1 run)
+    inside = (xp.abs(u) <= box_half[:, 0]) & (xp.abs(v) <= box_half[:, 1]) & (box_pos[:, 2] > PARKED_POS[2] + 0.5)
     top = box_pos[:, 2] + box_half[:, 2] - PLANE_Z
-    return xp.max(xp.where(inside, top, 0.0))
+    return xp.maximum(xp.max(xp.where(inside, top, 0.0)), 0.0)
 
 
 def height_scan(xp, x, y, yaw, box_pos, box_half, box_yaw):
