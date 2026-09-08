@@ -214,7 +214,7 @@ export class TrainingDashboard {
     this.renderRuns();
     this.root.querySelector('#tdUpdated').textContent = `updated ${new Date().toLocaleTimeString()}`;
     if (this.selected) await this.loadDetail(this.selected, true);
-    else if (this.runs.length) await this.loadDetail(this.runs[0].run_id, true);
+    else if (this.runs.length) await this.loadDetail((this.runs.find(r => r.gates_total) || this.runs[0]).run_id, true);
     if (this.compare.size >= 2) await this.renderCompare();
     if (!this.sessions.length) await this.loadSessions();
   }
