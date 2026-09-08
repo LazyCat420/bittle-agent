@@ -112,7 +112,78 @@ saw it. Fix: a parked box never counts as ground, and the height is clamped at 0
 affected (a flat protocol loads the box-free XML), so the run's gate numbers were honest; only its
 training signal was.
 
-RESULTS_PLACEHOLDER
+## Runs (2026-09-08, 2048 envs, MuJoCo Warp on the 3090 Ti, 15M-step warm starts of ≈ 9.5 min each)
+
+Every run is judged on `house_v1@0.1.0-uncalibrated`: 9 scenes × 12 episodes plus 9 stand-still
+sub-protocols, 30 gates. Score = gates passed + 0.5·min(pooled distance, 1) − pooled fall rate.
+
+| run | start | gates | falls (all 9 scenes) | pooled forward | energy (worst scene) | peak joint speed | stall | result |
+|---|---|---|---|---|---|---|---|---|
+| h0-house-warm-15M | warm from r9 (rocks) | 24/30 | 0/84 | 0.75 m | 0.97 W | 2.92 rad/s | 0.003 | the run that exposed the parked-box leak (`base_height` 99 % of reward); superseded |
+| h0b-house-warm-15M | warm from r9, after the fix | 24/30 | 0/84 | 0.70 m | 0.96 W | 3.32 rad/s | 0.003 | healthy reward shares (tracking 61 %); stands still on every floor; slow on rocks, backward and turning |
+| **h1-house-track-15M** | warm from h0b; tracking 4.0 / 2.5, clearance −2.0 | **25/30** | **0/84** | 0.77 m | 1.45 W | 3.21 rad/s | 0.003 | **the champion**: backward over cables −0.55 m (passes), flat 1.10 m, pushed 1.07 m, turn rmse 0.30 |
+| h2-house-clearance-15M | warm from h1; clearance −10 (the bound), air time 0.5, yaw tracking 4.0 | 25/30 | 1/84 | 0.76 m | 1.09 W | 3.26 rad/s | 0.005 | turn rate passes (0.24) but it forgets to walk while turning (0.19 m); one fall standing on rocks under a shove; rocks unchanged |
+| h3-house-clearance-rescaled-15M | warm from h1; `foot_clearance` term **rescaled ×1000** in `spec.py`, weight −1.0, air time 0.3 | 24/30 | 0/84 | 0.78 m | 1.28 W | 3.58 rad/s | 0.004 | clearance now 4.6 % of the reward; rocks-on-slope 0.11 → 0.17 m, slope down 0.83 m; rocks still 0.35 m, and one episode pins 3 servos at once (a new servo-safety fail) |
+
+**The champion, scene by scene** (h1, 12 episodes each; the firmware trot on the same ground in brackets):
+
+| scene | distance p50 | falls | tracking rmse | note |
+|---|---|---|---|---|
+| flat | 1.10 m (0.96) | 0 | 0.035 m/s | faster than the trot at a third of its power |
+| slope_up 8° | 0.77 m (0.50) | 0 | 0.035 | |
+| slope_down 8° | 0.80 m (1.14, open loop runs away) | 0 | 0.041 | walks down at the commanded speed instead of sliding |
+| rough 12 mm | 0.34 m (0.41) | 0 | 0.118 | **stuck on edges**, swing clearance 0.6 mm: the open problem |
+| rough_slope 10 mm on 6° | 0.11 m (0.11) | 0 | 0.105 | same |
+| pushed 0.4 m/s | 1.07 m (0.91) | 0 | 0.041 | keeps walking through the shoves |
+| turn 0.08 m/s + 0.4 rad/s | 0.46 m, yaw rmse 0.30 (trot 0.53) | 0 | 0.032 | turns, 0.05 rad/s over the bar |
+| backward_rough 8 mm | **−0.55 m** (trot +0.96: cannot reverse) | 0 | 0.084 | backs over the cables |
+| statue_rough + shoves | drift 0.024 m (trot 0.33: cannot stand) | 0 | — | stand-still drift ≤ 0.018 m on all nine floors |
+
+| the champion on every floor | | |
+|---|---|---|
+| ![](media/rl-training/policy_h1-house-track-15M_flat.gif) | ![](media/rl-training/policy_h1-house-track-15M_slope_up.gif) | ![](media/rl-training/policy_h1-house-track-15M_slope_down.gif) |
+| ![](media/rl-training/policy_h1-house-track-15M_rough.gif) | ![](media/rl-training/policy_h1-house-track-15M_rough_slope.gif) | ![](media/rl-training/policy_h1-house-track-15M_pushed.gif) |
+| ![](media/rl-training/policy_h1-house-track-15M_turn.gif) | ![](media/rl-training/policy_h1-house-track-15M_backward_rough.gif) | ![](media/rl-training/policy_h1-house-track-15M_statue_rough.gif) |
+
+| the firmware trot on the same floors | | |
+|---|---|---|
+| ![](media/rl-training/baseline_opencat_trot_house_v1_flat.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_slope_up.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_slope_down.gif) |
+| ![](media/rl-training/baseline_opencat_trot_house_v1_rough.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_rough_slope.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_pushed.gif) |
+| ![](media/rl-training/baseline_opencat_trot_house_v1_turn.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_backward_rough.gif) | ![](media/rl-training/baseline_opencat_trot_house_v1_statue_rough.gif) |
+
+![per-scene falls and progress, every house run against the trot](media/rl-training/scenes_house_v1.png)
+
+![house_v1 gates](media/rl-training/gates_house_v1.png)
+
+![training curves](media/rl-training/training_curves.png)
+
+**Reading it.** The policy *is* dynamic across the floors: one network, zero falls in 84 episodes over
+nine grounds, standing still on command on all of them, walking down a slope at the commanded speed
+where the open-loop trot runs away, backing over cables the firmware cannot reverse over at all, and
+carrying on through 0.4 m/s shoves. The five failing gates are two problems, not five:
+
+1. **Rocks.** On the 12 mm field it walks 0.34 m and then stalls at an edge, with 0 stumbles and 0
+   falls — the same shuffle chapter 04 saw, and the mixture did not cure it. The reflection is
+   right that `foot_clearance` is invisible (< 0.2 % of the reward), and h2 shows why no patch could
+   help: at the weight **bound** (−10) its share is still < 0.2 %. The term was a squared height error
+   in metres (12 mm → 1.4 × 10⁻⁴), a thousand times smaller than the base-height term, which is scaled
+   by 1000 in `spec.py`. That is a scale defect in the environment, not a weight GLM can fix from the
+   config, so it was fixed (one line in `reward_terms`, test-pinned: a shuffling swing now costs
+   0.144 per foot) and h3 retrained on it. The term became visible (4.6 % share), rocks-on-slope
+   improved 0.11 → 0.17 m, but the median swing clearance stayed under 1 mm and the 12 mm field still
+   stops it at 0.35 m; the lifting attempts it does make pinned three servos at once in one episode.
+   Fifteen million steps on the mixture is not enough to change the gait's shape; the rocks need
+   their own rung (level 2 with the rescaled term, then back to the house) or a longer budget. Until
+   then the pooled "beats the trot" ratio (0.85 vs 1.1) is dragged down by the rough scenes.
+2. **Turning while walking.** h1 turns at rmse 0.30 rad/s against a 0.25 bar; h2 pushed the yaw weight
+   to 4.0 and turned at 0.24 but walked only 0.19 m doing it. The two tracking terms trade against
+   each other at the same sigma; a walk-and-turn command needs its own share of the training
+   commands (today ⅓ of the box has both non-zero) or a separate sigma.
+
+Everything else — friction 0.3–1.2, the 100 g payload, the weak-servo band, 0–4 steps of IMU latency,
+pushes from any direction — is inside the training distribution and shows up as "nothing happened" in
+the numbers: the nominal-DR benchmark is the easy case for a policy trained that wide. The DR sweep
+(`dr_sweep=true`) is the check that it stays that way and was not run in this wave.
 
 ## How to reproduce
 
@@ -129,8 +200,14 @@ Or ask the agent in training mode for "the house policy": `bittle_list_tasks` re
 
 ## What is still open
 
+- **Rocks.** The rescaled `foot_clearance` term is now visible but 15M steps did not change the shuffle;
+  train the rocks rung again under the new scale (r9/r10's clearance weights were on the old, invisible
+  scale) and warm the house from that. The `peak_concurrent_stalls` fail on h3 says the lifting motion
+  must also stay inside the servo budget.
 - `house_v1` is uncalibrated by design on the scenes no firmware gait can do; freeze it once a policy
   passes and the numbers say what is achievable.
+- Walk-and-turn: give combined commands their own share of the command box, or their own sigma.
+- `dr_sweep` on the house champion (payload, friction, latency presets) has not been run.
 - Self-righting (the real behaviour switch) still needs the `tested` joint tier and its own reset
   distribution and termination; the supervisor sketch above is not built.
 - The DR sweep and the multi-command sub-protocol run on the primary (flat) scene only.
