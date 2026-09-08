@@ -13,6 +13,10 @@ services:
       - BITTLE_ALLOW_LOCOMOTION=${BITTLE_ALLOW_LOCOMOTION:-true}
       - BITTLE_SERIAL_PORT=${BITTLE_SERIAL_PORT:-/dev/ttyUSB0}
     restart: unless-stopped
+    # Persist what the app writes: research notes and recorded GLM training sessions live in
+    # storage/; without this mount every deploy (container recreate) wiped them.
+    volumes:
+      - ./storage:/app/storage
 
     # ── Real hardware (disabled by default) ──────────────────────────────
     # A sim-only deployment must NOT have a serial device mapped in: absence of
