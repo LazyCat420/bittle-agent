@@ -20,6 +20,7 @@ import numpy as np
 from ..config import TrainConfig
 from ..policy.mlp import NumpyPolicy
 from ..store.runs import RunStore
+from ..tasks import TASKS
 from .evaluator import DR_PRESETS, PolicyController, aggregate, evaluate_protocol, preset_params, protocol_kwargs
 from .gates import evaluate_gates, load_suite, suite_protocol
 
@@ -118,8 +119,9 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
         nominal_d = max(metrics["forward_distance_p50"], 1e-6)
         metrics["dr_distance_ratio_min"] = float(min(v["distance_p50"] for v in sweep.values()) / nominal_d)
 
-    # 5. baseline comparison: the firmware trot replayed on THIS suite's protocol
-    context, enabled = baseline_context(store, suite_name, metrics)
+    # 5. baseline comparison: the task's reference gait replayed on THIS suite's protocol
+    gait = (TASKS[cfg.task].baseline if cfg.task in TASKS else None) or "opencat_trF"
+    context, enabled = baseline_context(store, suite_name, metrics, gait=gait)
     if enabled:
         groups.add("baseline")
 

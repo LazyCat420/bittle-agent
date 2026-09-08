@@ -1,0 +1,64 @@
+# Retreat: walk BACKWARDS at a commanded -0.12 m/s in a straight line. Flat ground.
+# UNCALIBRATED: the firmware `bkF` table is the intended baseline once its replay direction is settled.
+suite: backward_v1
+version: 0.1.0-uncalibrated
+include: [_servo_safety]
+protocol:
+  n_episodes: 20
+  seed_start: 0
+  episode_seconds: 10.0
+  command: [-0.12, 0.0, 0.0]
+  model: bittle_cpu.xml
+  dr: nominal
+  terrain:
+    kind: flat
+gates:
+  - name: fall_rate
+    metric: fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "raise orientation / base_height penalties"
+  - name: backward_distance_p50
+    metric: forward_distance_p50
+    op: "<="
+    threshold: -0.6
+    unit: m
+    term: tracking_lin_vel
+    hint: "raise tracking_lin_vel; ideal is -1.2 m at -0.12 m/s for 10 s"
+  - name: vel_tracking_rmse
+    metric: vel_tracking_rmse
+    op: "<="
+    threshold: 0.05
+    unit: m/s
+    term: tracking_lin_vel
+    hint: "tighten tracking_sigma or raise tracking_lin_vel"
+  - name: heading_drift_yaw
+    metric: heading_yaw_deg
+    op: "<="
+    threshold: 20.0
+    unit: deg
+    term: tracking_ang_vel
+    hint: "raise tracking_ang_vel (wz command is 0)"
+  - name: heading_drift_lateral
+    metric: lateral_drift_m
+    op: "<="
+    threshold: 0.15
+    unit: m
+    term: tracking_lin_vel
+    hint: "penalise lateral velocity via tracking_lin_vel (vy=0)"
+  - name: body_stability_tilt
+    metric: mean_tilt_deg
+    op: "<="
+    threshold: 10.0
+    unit: deg
+    term: orientation
+    hint: "raise orientation penalty"
+  - name: stand_still_falls
+    metric: stand_still_falls
+    op: "<="
+    threshold: 0
+    unit: count
+    term: stand_still
+    hint: "zero command must hold still"

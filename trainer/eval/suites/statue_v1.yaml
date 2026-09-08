@@ -1,0 +1,54 @@
+# Statue: zero command, shoved every ~2 s at 0.5 m/s; must not fall, must not wander, must re-level.
+# The push is applied as a base velocity kick (the same mechanism as dr.push_enabled in training).
+# UNCALIBRATED: calibrate against the `stand` controller under the same push schedule.
+suite: statue_v1
+version: 0.1.0-uncalibrated
+include: [_servo_safety]
+protocol:
+  n_episodes: 20
+  seed_start: 0
+  episode_seconds: 10.0
+  command: [0.0, 0.0, 0.0]
+  model: bittle_cpu.xml
+  dr: nominal
+  push:
+    vel: 0.5
+    interval_s: 2.0
+  terrain:
+    kind: flat
+gates:
+  - name: push_recovery_falls
+    metric: fall_rate
+    op: "<="
+    threshold: 0.0
+    unit: fraction
+    term: orientation
+    hint: "a shove must never topple the robot: raise orientation / base_height, let it re-step (feet_air_time 0)"
+  - name: total_drift
+    metric: centre_drift_m
+    op: "<="
+    threshold: 0.10
+    unit: m
+    term: stand_still
+    hint: "the robot may re-step but must come back: raise stand_still"
+  - name: body_stability_tilt
+    metric: mean_tilt_deg
+    op: "<="
+    threshold: 6.0
+    unit: deg
+    term: orientation
+    hint: "raise orientation penalty (the unpushed stand settles at 0 deg)"
+  - name: body_stability_vz
+    metric: rms_vz
+    op: "<="
+    threshold: 0.05
+    unit: m/s
+    term: lin_vel_z
+    hint: "raise lin_vel_z penalty"
+  - name: stand_still_falls
+    metric: stand_still_falls
+    op: "<="
+    threshold: 0
+    unit: count
+    term: stand_still
+    hint: "the unpushed stand must hold"

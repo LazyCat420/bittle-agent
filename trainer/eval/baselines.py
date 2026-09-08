@@ -17,7 +17,11 @@ from .gates import evaluate_gates, load_suite, suite_protocol
 
 REPO = Path(__file__).resolve().parent.parent.parent
 
-OPENCAT_GAITS = ("trF", "wkF", "crF")
+OPENCAT_GAITS = ("trF", "wkF", "crF", "trL", "wkL", "bkF")
+#: Replay cadence per gait. 2 rows/step (~100 Hz firmware) is right for the trot, but the open-loop
+#: backward walk ALIASES under the sim servo's speed cap: at 2 rows/step it walks FORWARD (+0.39 m),
+#: at 1 row/step backward (-0.33 m). Measured 2026-09-07; bkF is replayed at the cadence that goes backward.
+ROWS_PER_STEP = {"bkF": 1.0}
 BUILTIN_GAITS = ("trF", "wkF")
 
 
@@ -32,7 +36,7 @@ def _builtin_frames(name: str) -> list[dict[str, Any]]:
 def baseline_controllers(control_hz: int) -> dict[str, Any]:
     out: dict[str, Any] = {"stand": StandController()}
     for g in OPENCAT_GAITS:
-        out[f"opencat_{g}"] = GaitController.from_opencat(g)
+        out[f"opencat_{g}"] = GaitController.from_opencat(g, rows_per_step=ROWS_PER_STEP.get(g))
     for g in BUILTIN_GAITS:
         try:
             out[f"builtin_{g}"] = GaitController.from_keyframes(_builtin_frames(g), control_hz=control_hz)
