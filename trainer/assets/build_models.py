@@ -1,4 +1,4 @@
-"""Generate the two trainer MJCF variants from static/assets/bittle.xml.
+"""Generate the trainer MJCF variants from static/assets/bittle.xml.
 
     python -m trainer.assets.build_models
 
@@ -6,12 +6,21 @@ Outputs (committed; ``test_models.py`` asserts regeneration is byte-identical):
 
 * ``generated/bittle_cpu.xml`` — full-fidelity mesh collisions (evaluation).
 * ``generated/bittle_gpu.xml`` — primitive collisions only (Warp / MJX training).
+* ``generated/bittle_{cpu,gpu}_terrain.xml`` — the same plus a static ``terrain``
+  body holding the floor and 32 parked boxes (rocks / edges, placed per env).
 * ``generated/model_report.json`` — masses, settle height, geom counts.
 
-Common patches (both variants): fix ``meshdir``; weld the unactuated neck at
+Common patches (all variants): fix ``meshdir``; weld the unactuated neck at
 its keyframe angle; actuator ``forcerange``; drop the (always-zero) touch
 sensors; add foot spheres + contact/velocity/position sensors; settle the
 keyframe height. Measured masses are untouched (``inertiafromgeom=false``).
+
+The mesh (cpu) variants also EXCLUDE contacts between the chassis meshes and
+the knee-servo / shank bodies: MuJoCo collides the convex hull of each mesh,
+and the chassis hull fills the concave underside where the legs tuck, so the
+firmware ``wkF`` / ``crF`` gaits — which the real robot walks — penetrate the
+chassis in 64/116 and 103/103 frames (up to 20 mm). A leg pushed into that
+phantom wall pins its shoulder servo at the torque cap: a stalled servo.
 """
 
 from __future__ import annotations
@@ -50,6 +59,12 @@ SHANK_RADIUS = 0.005
 SHANK_FRACTION = 0.75  # capsule stops short of the foot sphere so the sphere touches down first
 TORSO_MESHES = ("base_link", "front__1", "rear__1", "cover_1", "battery_1",
                 "servo_rfs_1", "servo_rrs__1", "servo_lfs_1", "servo_lrs__1")
+#: chassis bodies whose hulls over-collide with the tucked legs (cpu variants)
+CHASSIS_BODIES = ("torso", "front__1", "rear__1", "cover_1", "battery_1")
+LEG_TUCK_BODIES = tuple(LEG_KNEE_BODY[leg] for leg in LEGS) + tuple(f"shank_{leg}_1" for leg in LEGS)
+TERRAIN_MAX_BOXES = 32
+TERRAIN_PARKED_POS = "0 0 -1"
+TERRAIN_PARKED_SIZE = "0.001 0.001 0.001"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -245,11 +260,53 @@ def _add_primitives(root: ET.Element) -> dict:
     return info
 
 
-def _sensors(root: ET.Element, gpu: bool) -> None:
+def _exclude_chassis_leg_contacts(root: ET.Element) -> int:
+    """Mesh variants: the chassis hulls must not collide with the tucked knee/shank bodies."""
+    contact = root.find("contact")
+    if contact is None:
+        contact = ET.SubElement(root, "contact")
+    n = 0
+    for chassis in CHASSIS_BODIES:
+        for leg_body in LEG_TUCK_BODIES:
+            ET.SubElement(contact, "exclude", {"body1": chassis, "body2": leg_body})
+            n += 1
+    return n
+
+
+def _add_terrain_class(root: ET.Element) -> None:
+    default = root.find("default")
+    cls = ET.SubElement(default, "default", {"class": "terrain"})
+    # conaffinity=1 so the robot's prim class (contype 1, conaffinity 0) collides with it; margin 0
+    ET.SubElement(cls, "geom", {
+        "type": "box", "contype": "1", "conaffinity": "1", "condim": "3",
+        "friction": "0.9 0.02 0.01", "group": "3", "rgba": "0.45 0.4 0.35 1",
+    })
+
+
+def _add_terrain_body(root: ET.Element) -> None:
+    """Move ``floor`` into a static body ``terrain`` and add the parked boxes.
+
+    One body for all ground geoms: contact sensors key on ``body2="terrain"`` whatever
+    the box count, and same-body geoms never collide so overlapping boxes are free.
+    """
+    world = root.find("worldbody")
+    floor = next(g for g in world.findall("geom") if g.get("name") == "floor")
+    world.remove(floor)
+    body = ET.Element("body", {"name": "terrain"})
+    body.append(floor)
+    for i in range(TERRAIN_MAX_BOXES):
+        ET.SubElement(body, "geom", {"name": f"terrain_box_{i:02d}", "class": "terrain",
+                                     "size": TERRAIN_PARKED_SIZE, "pos": TERRAIN_PARKED_POS})
+    world.insert(0, body)
+
+
+def _sensors(root: ET.Element, gpu: bool, terrain: bool = False) -> None:
     sensor = root.find("sensor")
     for s in list(sensor):
         if s.tag == "touch":
             sensor.remove(s)
+    # ground reference: the floor geom on the flat variants, the whole terrain body otherwise
+    ground = {"body2": "terrain"} if terrain else {"geom2": "floor"}
     ET.SubElement(sensor, "framezaxis", {"name": "torso_upvector", "objtype": "site", "objname": "imu_site"})
     ET.SubElement(sensor, "framelinvel", {"name": "torso_global_linvel", "objtype": "body", "objname": "torso"})
     ET.SubElement(sensor, "frameangvel", {"name": "torso_global_angvel", "objtype": "body", "objname": "torso"})
@@ -257,17 +314,25 @@ def _sensors(root: ET.Element, gpu: bool) -> None:
         ET.SubElement(sensor, "framelinvel", {"name": f"{leg}_foot_global_linvel", "objtype": "site", "objname": LEG_FOOT_SITE[leg]})
         ET.SubElement(sensor, "framepos", {"name": f"{leg}_foot_pos", "objtype": "site", "objname": LEG_FOOT_SITE[leg]})
     for leg in LEGS:
-        ET.SubElement(sensor, "contact", {"name": f"{leg}_foot_floor_found", "geom1": f"{leg}_foot", "geom2": "floor",
+        ET.SubElement(sensor, "contact", {"name": f"{leg}_foot_floor_found", "geom1": f"{leg}_foot", **ground,
                                           "reduce": "mindist", "num": "1", "data": "found"})
     if gpu:
         for g in ("torso_col", "head__1_col", "jaw_1_col"):
-            ET.SubElement(sensor, "contact", {"name": f"{g}_floor_found", "geom1": g, "geom2": "floor",
+            ET.SubElement(sensor, "contact", {"name": f"{g}_floor_found", "geom1": g, **ground,
                                               "reduce": "mindist", "num": "1", "data": "found"})
     else:
         # mesh variant: any torso/head mesh vs floor, addressed by body
         for b in ("torso", "head__1"):
-            ET.SubElement(sensor, "contact", {"name": f"{b}_floor_found", "body1": b, "geom2": "floor",
+            ET.SubElement(sensor, "contact", {"name": f"{b}_floor_found", "body1": b, **ground,
                                               "reduce": "mindist", "num": "1", "data": "found"})
+    if terrain:
+        # stumble sensors: shank / thigh on the ground (reward term, NOT fall termination)
+        for leg in LEGS:
+            for part, gpu_geom, cpu_body in (("shank", f"{leg}_shank_col", LEG_KNEE_BODY[leg]),
+                                             ("thigh", f"{leg}_thigh_col", LEG_THIGH_BODY[leg])):
+                ref = {"geom1": gpu_geom} if gpu else {"body1": cpu_body}
+                ET.SubElement(sensor, "contact", {"name": f"{leg}_{part}_floor_found", **ref, **ground,
+                                                  "reduce": "mindist", "num": "1", "data": "found"})
 
 
 def _keyframe(root: ET.Element, qpos: list[float], ctrl: np.ndarray, z: float) -> None:
@@ -304,7 +369,14 @@ def _assets() -> dict[str, bytes]:
     return {p.name: p.read_bytes() for p in MESH_DIR.glob("*.obj")}
 
 
+VARIANTS = ("cpu", "gpu", "cpu_terrain", "gpu_terrain")
+
+
 def build(variant: str) -> tuple[str, dict]:
+    if variant not in VARIANTS:
+        raise ValueError(f"unknown variant {variant!r}; expected one of {VARIANTS}")
+    gpu = variant.startswith("gpu")
+    terrain = variant.endswith("_terrain")
     # MuJoCo tolerates '--' inside XML comments; ElementTree does not, so strip comments first.
     raw = re.sub(r"<!--.*?-->", "", SOURCE_XML.read_text(), flags=re.S)
     root = ET.fromstring(raw)
@@ -320,16 +392,24 @@ def build(variant: str) -> tuple[str, dict]:
     _add_feet(root, centres)
     info_feet = {leg: [round(float(x), 6) for x in c] for leg, c in centres.items()}
     info: dict = {"variant": variant, "foot_sphere_centres": info_feet}
-    if variant == "gpu":
+    if gpu:
         info["mesh_collision_geoms_removed"] = _remove_mesh_collisions(root)
         info["primitives"] = _add_primitives(root)
-    _sensors(root, gpu=(variant == "gpu"))
+    else:
+        info["chassis_leg_contact_excludes"] = _exclude_chassis_leg_contacts(root)
+    if terrain:
+        _add_terrain_class(root)
+        _add_terrain_body(root)
+        info["terrain_boxes"] = TERRAIN_MAX_BOXES
+    _sensors(root, gpu=gpu, terrain=terrain)
     ctrl = stand_ctrl()
     _keyframe(root, qpos, ctrl, qpos[2])
 
     header = (f"GENERATED by trainer/assets/build_models.py ({variant}) from static/assets/bittle.xml. DO NOT EDIT. "
               "Neck welded at keyframe; touch sensors dropped; foot spheres + contact sensors added; "
-              f"servo model kp={KP} forcerange +-{FORCERANGE} N.m damping={JOINT_DAMPING}.")
+              f"servo model kp={KP} forcerange +-{FORCERANGE} N.m damping={JOINT_DAMPING}"
+              + ("; chassis-vs-tucked-leg contacts excluded" if not gpu else "")
+              + (f"; terrain body with {TERRAIN_MAX_BOXES} parked boxes" if terrain else "") + ".")
     text = _serialize(root, header)
     z, stats = _settle_height(text, OUT_DIR)
     _keyframe(root, qpos, ctrl, round(z, 5))
@@ -346,7 +426,7 @@ def build(variant: str) -> tuple[str, dict]:
 def main(argv: list[str] | None = None) -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     report = {"source": str(SOURCE_XML.relative_to(REPO)), "variants": {}}
-    for variant in ("cpu", "gpu"):
+    for variant in VARIANTS:
         text, info = build(variant)
         (OUT_DIR / f"bittle_{variant}.xml").write_text(text)
         report["variants"][variant] = info

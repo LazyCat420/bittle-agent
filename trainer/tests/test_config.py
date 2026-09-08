@@ -48,9 +48,9 @@ def test_curriculum_stage_defaults_do_not_override_explicit_values():
 
 
 def test_stage_bump_on_a_base_keeps_explicit_and_moves_defaults():
-    s1 = apply_patch(None, {"curriculum_stage": 1, "commands": {"vx": [0.1, 0.3]}})
+    s1 = apply_patch(None, {"curriculum_stage": 1, "commands": {"vx": [0.1, 0.22]}})
     s2 = apply_patch(s1, {"curriculum_stage": 2})
-    assert tuple(s2.commands.vx) == (0.1, 0.3)       # explicit earlier, kept
+    assert tuple(s2.commands.vx) == (0.1, 0.22)      # explicit earlier, kept
     assert tuple(s2.commands.wz) == (-0.5, 0.5)      # stage-1 default carried
     assert tuple(s2.commands.vy) == (-0.05, 0.05) and s2.dr.push_enabled is True
     # a stored (fully explicit) config round-trips through validate without drift
@@ -61,3 +61,37 @@ def test_stage_bump_on_a_base_keeps_explicit_and_moves_defaults():
 def test_warm_start_flag_default_and_patchable():
     assert TrainConfig().init_from_parent is True
     assert apply_patch(None, {"init_from_parent": False}).init_from_parent is False
+
+
+def test_terrain_bounds_and_unknown_keys_rejected():
+    for bad in ({"terrain": {"slope_deg": [0.0, 25.0]}}, {"terrain": {"box_height_m": [0.0, 0.05]}},
+                {"terrain": {"n_boxes": 40}}, {"terrain": {"kind": "hfield"}}, {"terrain": {"rocks": 3}},
+                {"reward": {"weights": {"stumble": 0.5}}}, {"reward": {"weights": {"slope_progress": -1.0}}},
+                {"commands": {"vx": [0.0, 0.4]}}, {"task": "Slope Up"}):
+        with pytest.raises(ValidationError):
+            apply_patch(None, bad)
+
+
+def test_terrain_level_defaults_are_a_second_curriculum_axis():
+    c1 = apply_patch(None, {"terrain": {"level": 1}})
+    assert c1.terrain.kind == "slope" and tuple(c1.terrain.slope_deg) == (0.0, 8.0) and c1.terrain.n_boxes == 0
+    assert c1.curriculum_stage == 0 and tuple(c1.commands.vx) == (0.05, 0.20)  # the command axis is untouched
+    c2 = apply_patch(c1, {"terrain": {"level": 2}})
+    assert c2.terrain.kind == "rough" and c2.terrain.n_boxes == 20 and tuple(c2.terrain.slope_deg) == (0.0, 0.0)
+    # explicit wins over the level default, and survives the next level bump
+    c3 = apply_patch(None, {"terrain": {"level": 2, "n_boxes": 8}})
+    assert c3.terrain.n_boxes == 8
+    c4 = apply_patch(c3, {"terrain": {"level": 3}})
+    assert c4.terrain.n_boxes == 8 and c4.terrain.kind == "rough_slope"
+    # both axes in one patch
+    c5 = apply_patch(None, {"curriculum_stage": 1, "terrain": {"level": 1}})
+    assert tuple(c5.commands.wz) == (-0.5, 0.5) and c5.terrain.kind == "slope"
+
+
+def test_pre_terrain_configs_resolve_unchanged():
+    """A stored config with no terrain/task keys (the three shipped runs) still resolves to flat_walk."""
+    old = {"curriculum_stage": 0, "reward": {"weights": {"energy": -0.05}}, "ppo": {"num_timesteps": 10000000}}
+    cfg = apply_patch(old, {})
+    assert cfg.task == "flat_walk" and cfg.terrain.kind == "flat" and cfg.terrain.level == 0
+    assert cfg.reward.weights.stumble == 0.0 and cfg.reward.weights.foot_clearance == 0.0
+    assert cfg.reward.weights.stall == 0.0 and cfg.reward.weights.slope_progress == 0.0

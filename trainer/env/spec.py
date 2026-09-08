@@ -37,6 +37,26 @@ FALL_Z_MIN = 0.02
 BODY_CONTACT_MAX_STEPS = 10  # 0.2 s at 50 Hz
 ZERO_CMD_PROB = 0.1
 ZERO_CMD_EPS = 0.02
+#: Swing-foot height target above the local terrain (m); gaits clear 15-25 mm on flat ground.
+FOOT_CLEARANCE_TARGET = 0.012
+SWING_VEL_MIN = 0.02
+#: A joint counts as stalled at >= 90% of its torque cap while barely moving.
+STALL_TORQUE_FRACTION = 0.9
+STALL_VEL_RAD_S = 0.1
+
+
+#: Contact sensors whose firing means a non-foot body part is on the ground (fall termination).
+#: Explicit, not a name filter: the shank/thigh "stumble" sensors also end in _floor_found and
+#: must never join this set.
+BODY_CONTACT_SENSORS = ("torso_floor_found", "head__1_floor_found",
+                        "torso_col_floor_found", "head__1_col_floor_found", "jaw_1_col_floor_found")
+
+
+def limb_contact_sensor_names() -> list[str]:
+    """Shank + thigh ground-contact sensors (terrain XML variants only), policy-leg order."""
+    from ..assets.joint_map import LEGS
+
+    return [f"{leg}_{part}_floor_found" for leg in LEGS for part in ("shank", "thigh")]
 
 
 def load_envelope(tier: str = "agent", path: Path = PROFILE_PATH) -> tuple[np.ndarray, np.ndarray]:
@@ -104,28 +124,46 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
     """Raw (unweighted) reward terms. Keys match ``RewardWeights`` fields.
 
     ``q`` keys: cmd(3), local_linvel(3), gyro(3), global_linvel(3), global_angvel(3),
-    gravity(3), torso_z, action(8), last_action(8), torques(8), joint_vel(8),
-    target_norm(8) [0..1 saturation], target_deg(8), feet_air_time(4), first_contact(4),
-    contact(4), feet_vel_xy(4,2).
+    gravity(3), up_world(3), torso_z, terrain_h, action(8), last_action(8), torques(8),
+    joint_vel(8), torque_cap(8), target_norm(8) [0..1 saturation], target_deg(8),
+    feet_air_time(4), first_contact(4), contact(4), feet_vel_xy(4,2), foot_clearance(4),
+    limb_contact(8), uphill_xy(2).
+
+    Terrain-aware terms are exact no-ops on flat ground: ``terrain_h`` is 0,
+    ``uphill_xy`` is 0 and ``limb_contact`` never fires, so a flat run's reward is
+    bit-identical to the pre-terrain trainer. ``orientation`` reads the torso
+    up-vector in the WORLD frame (the terrain-normal frame under the tilted-world
+    incline), which equals ``sum(gravity_body[:2]**2)`` on flat ground.
     """
     cmd = q["cmd"]
     cmd_norm = xp.linalg.norm(cmd)
     moving = cmd_norm > ZERO_CMD_EPS
     lin_err = xp.sum(xp.square(cmd[:2] - q["local_linvel"][:2]))
     ang_err = xp.square(cmd[2] - q["gyro"][2])
+    swing = (1.0 - q["contact"]) * (xp.linalg.norm(q["feet_vel_xy"], axis=-1) > SWING_VEL_MIN)
     return {
         "tracking_lin_vel": xp.exp(-lin_err / tracking_sigma),
         "tracking_ang_vel": xp.exp(-ang_err / ang_tracking_sigma),
         "lin_vel_z": xp.square(q["global_linvel"][2]),
         "ang_vel_xy": xp.sum(xp.square(q["global_angvel"][:2])),
-        "orientation": xp.sum(xp.square(q["gravity"][:2])),
-        "base_height": xp.square(q["torso_z"] - base_height_target) * 1000.0,  # mm^2/1000 -> ~O(1)
+        "orientation": xp.sum(xp.square(q["up_world"][:2])),
+        "base_height": xp.square((q["torso_z"] - q["terrain_h"]) - base_height_target) * 1000.0,  # mm^2/1000 -> ~O(1)
         "action_rate": xp.sum(xp.square(q["action"] - q["last_action"])),
         "energy": xp.sum(xp.abs(q["torques"] * q["joint_vel"])),
         "joint_saturation": xp.sum(q["target_norm"]),
         "feet_air_time": xp.sum((q["feet_air_time"] - 0.1) * q["first_contact"]) * moving,
         "feet_slip": xp.sum(xp.sum(xp.square(q["feet_vel_xy"]), axis=-1) * q["contact"]) * moving,
         "stand_still": xp.sum(xp.abs(q["target_deg"] - xp.asarray(STAND_DEG))) / TARGET_NORM_DEG * (~moving),
+        # ── terrain / servo-safety terms (default weight 0.0; see TerrainConfig) ──
+        # swing-foot height error vs FOOT_CLEARANCE_TARGET, only while airborne AND moving,
+        # so a permanently high stance earns nothing
+        "foot_clearance": xp.sum(xp.square(q["foot_clearance"] - FOOT_CLEARANCE_TARGET) * swing),
+        # shank / thigh touching the ground: the edge-collision ("stumble") penalty
+        "stumble": xp.sum(q["limb_contact"]),
+        # height gained per second up the slope; exactly 0 on flat ground
+        "slope_progress": xp.maximum(xp.sum(q["global_linvel"][:2] * q["uphill_xy"]), 0.0) * moving,
+        # joints pinned at the torque cap while not moving: a stalled servo (1.5 A each on the P1S)
+        "stall": xp.sum(((q["torques"] >= STALL_TORQUE_FRACTION * q["torque_cap"]) & (xp.abs(q["joint_vel"]) < STALL_VEL_RAD_S)).astype(q["torques"].dtype)),
     }
 
 
@@ -134,8 +172,10 @@ def weighted_reward(xp, terms: dict[str, Any], weights: dict[str, float], dt: fl
     return xp.clip(total * dt / 0.02, 0.0, 1e4)  # normalised so weights mean the same at 25 and 50 Hz
 
 
-def termination(xp, up_z, torso_z, body_contact_steps):
-    return (up_z < FALL_UP_MIN) | (torso_z < FALL_Z_MIN) | (body_contact_steps >= BODY_CONTACT_MAX_STEPS)
+def termination(xp, up_z, torso_z, body_contact_steps, terrain_h=0.0):
+    """Fallen: tilted past 1 rad, torso below FALL_Z_MIN above the local terrain, or a
+    non-foot body part on the ground for BODY_CONTACT_MAX_STEPS."""
+    return (up_z < FALL_UP_MIN) | ((torso_z - terrain_h) < FALL_Z_MIN) | (body_contact_steps >= BODY_CONTACT_MAX_STEPS)
 
 
 def sample_command(rng_uniform, ranges: dict[str, tuple[float, float]]):

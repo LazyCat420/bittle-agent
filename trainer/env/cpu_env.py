@@ -18,6 +18,7 @@ from ..assets import joint_map as jm
 from ..config import TrainConfig
 from . import dr as dr_mod
 from . import spec
+from . import terrain as tr
 
 GENERATED = Path(__file__).resolve().parent.parent / "assets" / "generated"
 
@@ -29,18 +30,33 @@ class StepInfo:
     target_deg: np.ndarray = field(default_factory=lambda: np.zeros(8))
     applied_deg: np.ndarray = field(default_factory=lambda: np.zeros(8))
     fell: bool = False
+    #: per-joint max |qvel| over the substeps (rad/s) — impact spikes a 50 Hz sample misses
+    peak_qvel: np.ndarray = field(default_factory=lambda: np.zeros(8))
+    #: (substep, joint) samples at >= 90% torque cap with |qvel| < 0.1 rad/s
+    stall_samples: int = 0
+    #: max number of joints stalled in the same substep
+    stall_concurrent: int = 0
+    limb_contact: np.ndarray = field(default_factory=lambda: np.zeros(8))
+    foot_clearance: np.ndarray = field(default_factory=lambda: np.zeros(4))
+    terrain_h: float = 0.0
 
 
 class BittleCpuEnv:
     """Single-instance MuJoCo env. Deterministic for a given seed."""
 
-    def __init__(self, config: TrainConfig, *, variant: str = "cpu", seed: int = 0,
+    def __init__(self, config: TrainConfig, *, variant: str | None = None, seed: int = 0,
                  dr_override: dr_mod.ModelParams | None = None,
                  episode_override: dr_mod.EpisodeParams | None = None,
-                 envelope_tier: str = "agent"):
+                 envelope_tier: str = "agent", terrain_override: tr.TerrainField | None = None,
+                 spawn_jitter_m: float | None = None):
+        """``variant`` defaults from the config's terrain kind (flat/slope share the flat XML).
+        ``terrain_override`` pins the terrain field (a benchmark protocol); ``spawn_jitter_m``
+        overrides the config's per-episode spawn offset."""
         self.cfg = config.resolved()
-        self.variant = variant
-        self.xml_path = GENERATED / f"bittle_{variant}.xml"
+        self.variant = variant or tr.variant_for(self.cfg.terrain.kind, "cpu")
+        self.terrain_override = terrain_override
+        self.spawn_jitter_m = self.cfg.terrain.spawn_jitter_m if spawn_jitter_m is None else float(spawn_jitter_m)
+        self.xml_path = GENERATED / f"bittle_{self.variant}.xml"
         self.model = mujoco.MjModel.from_xml_path(str(self.xml_path))
         self.model.opt.timestep = 0.002
         self.data = mujoco.MjData(self.model)
@@ -54,11 +70,15 @@ class BittleCpuEnv:
         self.dof_idx = jm.dof_indices(m)
         self.torso_id = m.body("torso").id
         self.floor_id = m.geom("floor").id
+        self.ground_ids = tr.ground_geom_ids(m)
+        self.box_ids = tr.box_geom_ids(m)
         self.imu_site = m.site("imu_site").id
         self.lo, self.hi = spec.load_envelope(envelope_tier)
         self._sensor = {m.sensor(i).name: (m.sensor_adr[i], m.sensor_dim[i]) for i in range(m.nsensor)}
         self.foot_found = [f"{leg}_foot_floor_found" for leg in jm.LEGS]
-        self.body_found = [n for n in self._sensor if n.endswith("_floor_found") and "foot" not in n]
+        # explicit: a shank/thigh contact sensor must never join the fall-termination set
+        self.body_found = [n for n in spec.BODY_CONTACT_SENSORS if n in self._sensor]
+        self.limb_found = [n for n in spec.limb_contact_sensor_names() if n in self._sensor]
         self.foot_vel = [f"{leg}_foot_global_linvel" for leg in jm.LEGS]
         self.foot_pos = [f"{leg}_foot_pos" for leg in jm.LEGS]
         # nominal arrays for DR
@@ -89,12 +109,20 @@ class BittleCpuEnv:
     # ── API ────────────────────────────────────────────────────────────
     def reset(self, *, command: np.ndarray | None = None) -> np.ndarray:
         m, d = self.model, self.data
-        self.model_params = self.dr_override or dr_mod.sample_model_params(self.rng, self.cfg.dr)
+        self.model_params = self.dr_override or dr_mod.sample_model_params(self.rng, self.cfg.dr, self.cfg.terrain)
+        if self.terrain_override is not None:
+            self.model_params.terrain = self.terrain_override
         self.ep = self.episode_override or dr_mod.sample_episode_params(self.rng, self.cfg.dr)
-        dr_mod.apply_model_params_mujoco(m, None, self.model_params, self.floor_id, self.torso_id,
-                                         self._base_mass, self._base_ipos, self._base_damping, self._base_frictionloss)
+        dr_mod.apply_model_params_mujoco(m, self.model_params, self.ground_ids, self.torso_id,
+                                         self._base_mass, self._base_ipos, self._base_damping, self._base_frictionloss,
+                                         box_geom_ids=self.box_ids)
         mujoco.mj_setConst(m, d)
         mujoco.mj_resetDataKeyframe(m, d, 0)
+        # per-episode spawn offset so different episodes meet different boxes; never inside a box
+        if self.spawn_jitter_m > 0:
+            jit = self.rng.uniform(-self.spawn_jitter_m, self.spawn_jitter_m, 2)
+            if self._terrain_h(d.qpos[0] + jit[0], d.qpos[1] + jit[1]) == 0.0:
+                d.qpos[0:2] += jit
         # initial pose noise
         self.target_deg = self.stand_deg + self.ep.init_joint_noise_deg
         self.target_deg = np.clip(np.round(self.target_deg), self.lo, self.hi)
@@ -141,9 +169,20 @@ class BittleCpuEnv:
             d.qvel[1] += self.ep.push_vel * np.sin(ang)
             self.next_push_step = self.t + int(round(self.ep.push_interval_s / self.cfg.control_dt))
         torques = np.zeros(8)
+        peak_qvel = np.zeros(8)
+        stall_samples = 0
+        stall_concurrent = 0
+        cap = spec.STALL_TORQUE_FRACTION * m.actuator_forcerange[:, 1]
         for _ in range(self.n_substeps):
             mujoco.mj_step(m, d)
-            torques += np.abs(d.actuator_force)
+            f = np.abs(d.actuator_force)
+            v = np.abs(d.qvel[self.dof_idx])
+            torques += f
+            peak_qvel = np.maximum(peak_qvel, v)
+            stalled = (f >= cap) & (v < spec.STALL_VEL_RAD_S)
+            n_st = int(stalled.sum())
+            stall_samples += n_st
+            stall_concurrent = max(stall_concurrent, n_st)
         torques /= self.n_substeps
         self.t += 1
 
@@ -159,7 +198,7 @@ class BittleCpuEnv:
                                   self.cfg.reward.base_height_target)
         weights = self.cfg.reward.weights.model_dump()
         reward = float(spec.weighted_reward(np, terms, weights, self.cfg.control_dt))
-        done = bool(spec.termination(np, q["up_z"], q["torso_z"], self.body_contact_steps))
+        done = bool(spec.termination(np, q["up_z"], q["torso_z"], self.body_contact_steps, q["terrain_h"]))
 
         self.feet_air_time *= ~contact
         self.last_contact = contact
@@ -169,7 +208,10 @@ class BittleCpuEnv:
                 self.cmd = self._sample_command()
                 self.steps_until_cmd = int(round(self.cfg.commands.resample_s / self.cfg.control_dt))
         info = StepInfo(terms={k: float(v) for k, v in terms.items()}, contact=contact,
-                        target_deg=self.target_deg.copy(), applied_deg=applied.copy(), fell=done)
+                        target_deg=self.target_deg.copy(), applied_deg=applied.copy(), fell=done,
+                        peak_qvel=peak_qvel, stall_samples=stall_samples, stall_concurrent=stall_concurrent,
+                        limb_contact=q["limb_contact"], foot_clearance=q["foot_clearance"],
+                        terrain_h=float(q["terrain_h"]))
         return self._obs(), reward, done, info
 
     # ── observations / quantities ──────────────────────────────────────
@@ -191,10 +233,26 @@ class BittleCpuEnv:
             phase = np.array([np.sin(ph), np.cos(ph)])
         return spec.build_obs(np, gravity, gyro, self.cmd, self.hist[: self.history_n], self.action, phase)
 
+    def _boxes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        m = self.model
+        return (m.geom_pos[self.box_ids], m.geom_size[self.box_ids], tr.yaw_from_quat(np, m.geom_quat[self.box_ids]))
+
+    def _terrain_h(self, x: float, y: float) -> float:
+        return float(tr.terrain_height(np, x, y, *self._boxes()))
+
     def _quantities(self, torques, contact, first_contact) -> dict[str, Any]:
-        d = self.data
+        d, m = self.data, self.model
         feet_vel = np.stack([self.sensor(n) for n in self.foot_vel])
+        feet_pos = np.stack([self.sensor(n) for n in self.foot_pos])
+        boxes = self._boxes()
+        limb = np.array([float(self.sensor(n)[0] > 0) for n in self.limb_found]) if self.limb_found else np.zeros(8)
         return {
+            "up_world": self.sensor("torso_upvector"),
+            "terrain_h": tr.terrain_height(np, d.qpos[0], d.qpos[1], *boxes),
+            "torque_cap": m.actuator_forcerange[:, 1],
+            "foot_clearance": tr.foot_clearance(np, feet_pos, *boxes),
+            "limb_contact": limb,
+            "uphill_xy": tr.uphill_xy(np, m.opt.gravity),
             "cmd": self.cmd,
             "local_linvel": self.sensor("torso_vel"),
             "gyro": self.sensor("imu_gyro"),

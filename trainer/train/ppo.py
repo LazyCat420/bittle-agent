@@ -18,12 +18,29 @@ from brax.training.agents.ppo import train as ppo
 from mujoco_playground import wrapper
 
 from ..config import TrainConfig
-from ..env.gpu_env import BittleGpuEnv, make_domain_randomizer
+from ..env.gpu_env import PRIVILEGED_VERSION, BittleGpuEnv, make_domain_randomizer
 from ..policy.export import export_policy
 
 
+def parent_privileged_version(parent_dir: Path) -> int:
+    """The critic-input layout version the parent's policy.npz was exported with (1 = pre-terrain)."""
+    npz = parent_dir / "policy" / "policy.npz"
+    if not npz.is_file():
+        return 1
+    try:
+        z = np.load(npz, allow_pickle=False)
+        return int(json.loads(str(z["meta_json"])).get("privileged_version", 1))
+    except Exception:  # pragma: no cover
+        return 1
+
+
 def load_restore_params(parent_dir: Path, cfg: TrainConfig) -> tuple[Any, str | None]:
-    """Parent params for a warm start, or (None, reason) when the shapes cannot match."""
+    """Parent params for a warm start, or (None, reason) when the shapes cannot match.
+
+    The value network's input (``privileged_state``) is versioned separately from the actor
+    obs: a parent exported under an older layout would crash deep inside brax with a shape
+    error, so it degrades to a clean cold start with the reason recorded instead.
+    """
     path = parent_dir / "policy" / "params.pkl"
     if not path.is_file():
         return None, "parent has no params.pkl"
@@ -36,6 +53,9 @@ def load_restore_params(parent_dir: Path, cfg: TrainConfig) -> tuple[Any, str | 
             and pcfg.obs.history_n == cfg.obs.history_n and pcfg.obs.phase_clock == cfg.obs.phase_clock)
     if not same:
         return None, "network/observation shape differs from the parent"
+    pv = parent_privileged_version(parent_dir)
+    if pv != PRIVILEGED_VERSION:
+        return None, f"critic input layout differs (parent privileged_version {pv}, this trainer {PRIVILEGED_VERSION}); cold start"
     with open(path, "rb") as fh:
         return pickle.load(fh), None
 
@@ -112,7 +132,9 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
     with open(run_dir / "policy" / "params.pkl", "wb") as fh:
         pickle.dump(jax.device_get(params), fh)
     export_policy(str(run_dir / "policy" / "policy.npz"), params, obs_layout=env.obs_layout, action_size=8,
-                  config_hash=cfg.config_hash(), extra={"impl": env.mjx_model.impl.value, "sim_dt": sim_dt})
+                  config_hash=cfg.config_hash(), extra={"impl": env.mjx_model.impl.value, "sim_dt": sim_dt,
+                                                       "privileged_version": PRIVILEGED_VERSION,
+                                                       "task": cfg.task, "terrain_kind": cfg.terrain.kind})
 
     final = curve[-1] if curve else {}
     out = {

@@ -47,6 +47,15 @@ class RewardWeights(_Strict):
     feet_air_time: float = Field(0.1, ge=0.0, le=10.0)
     feet_slip: float = Field(-0.05, ge=-10.0, le=0.0)
     stand_still: float = Field(-0.2, ge=-10.0, le=0.0)
+    # ── terrain / servo-safety terms: OFF by default so flat runs are unchanged ──
+    #: swing-foot height error vs 12 mm above the local terrain (penalty)
+    foot_clearance: float = Field(0.0, ge=-10.0, le=0.0)
+    #: shank / thigh touching the ground — the edge-collision penalty
+    stumble: float = Field(0.0, ge=-10.0, le=0.0)
+    #: height gained per second up the slope (reward); exactly 0 on flat ground
+    slope_progress: float = Field(0.0, ge=0.0, le=10.0)
+    #: joints pinned at the torque cap while not moving (a stalled servo draws 1.5 A)
+    stall: float = Field(0.0, ge=-10.0, le=0.0)
 
 
 class RewardConfig(_Strict):
@@ -69,7 +78,9 @@ class CommandConfig(_Strict):
     @field_validator("vx")
     @classmethod
     def _vx(cls, v: Range) -> Range:
-        return _check_range(v, -0.3, 0.4, "commands.vx")
+        # The swing-limb speed limit (~60 deg of knee travel at the 5 rad/s servo cap) bounds the
+        # gait at ~0.19 m/s; commands above 0.25 m/s only teach the policy to thrash.
+        return _check_range(v, -0.25, 0.25, "commands.vx")
 
     @field_validator("vy")
     @classmethod
@@ -163,6 +174,61 @@ class DRConfig(_Strict):
         return _check_range(v, 0.5, 30.0, "dr.push_interval_s")
 
 
+class TerrainConfig(_Strict):
+    """Terrain curriculum axis (see trainer/env/terrain.py). Every field bounded.
+
+    ``kind``: flat | slope (tilted world, same XML as flat) | rough (half-buried
+    yaw-only boxes, ``*_terrain.xml``) | rough_slope. ``level`` is the curriculum
+    knob: terrain-managed fields follow ``TERRAIN_DEFAULTS[level]`` until a patch
+    names them explicitly, exactly like ``curriculum_stage``.
+    """
+
+    kind: Literal["flat", "slope", "rough", "rough_slope"] = "flat"
+    #: 0 = flat, 1 = gentle slope, 2 = rocks/edges, 3 = rocks on a slope.
+    level: int = Field(0, ge=0, le=3)
+    slope_deg: Range = (0.0, 0.0)
+    slope_yaw_deg: Range = (0.0, 0.0)
+    #: boxes enabled per env (the rest stay parked); the XML carries 32
+    n_boxes: int = Field(0, ge=0, le=32)
+    #: box protrusion above the plane (m); 18 mm = the app's mini-stairs riser, 48 mm = standing height
+    box_height_m: Range = (0.0, 0.0)
+    #: box xy half-extent (m); the foot sphere radius is 6 mm
+    box_size_m: Range = (0.02, 0.06)
+    box_spacing_m: float = Field(0.12, ge=0.04, le=0.50)
+    box_yaw_deg: Range = (-45.0, 45.0)
+    #: clear runway in front of the spawn before the first box
+    field_start_m: float = Field(0.15, ge=0.0, le=1.0)
+    field_width_m: float = Field(0.40, ge=0.10, le=2.0)
+    #: per-episode xy spawn offset so different episodes meet different boxes
+    spawn_jitter_m: float = Field(0.0, ge=0.0, le=0.20)
+
+    @field_validator("slope_deg")
+    @classmethod
+    def _slope(cls, v: Range) -> Range:
+        # tan 20 deg = 0.36, inside the friction cone at the DR friction floor of 0.5
+        return _check_range(v, 0.0, 20.0, "terrain.slope_deg")
+
+    @field_validator("slope_yaw_deg")
+    @classmethod
+    def _slope_yaw(cls, v: Range) -> Range:
+        return _check_range(v, -180.0, 180.0, "terrain.slope_yaw_deg")
+
+    @field_validator("box_height_m")
+    @classmethod
+    def _bh(cls, v: Range) -> Range:
+        return _check_range(v, 0.0, 0.030, "terrain.box_height_m")
+
+    @field_validator("box_size_m")
+    @classmethod
+    def _bs(cls, v: Range) -> Range:
+        return _check_range(v, 0.010, 0.150, "terrain.box_size_m")
+
+    @field_validator("box_yaw_deg")
+    @classmethod
+    def _by(cls, v: Range) -> Range:
+        return _check_range(v, -90.0, 90.0, "terrain.box_yaw_deg")
+
+
 class PPOConfig(_Strict):
     num_envs: int = Field(2048, ge=1, le=8192)
     num_timesteps: int = Field(40_000_000, ge=1_000, le=200_000_000)
@@ -201,6 +267,10 @@ class TrainConfig(_Strict):
     #: 0 = forward only; 1 = + turning; 2 = + lateral + pushes.
     curriculum_stage: int = Field(0, ge=0, le=2)
     commands: CommandConfig = Field(default_factory=CommandConfig)
+    #: terrain axis, independent of curriculum_stage (commands) — see TERRAIN_DEFAULTS
+    terrain: TerrainConfig = Field(default_factory=TerrainConfig)
+    #: which task this run trains; the task decides the gate suite (trainer/tasks.py)
+    task: str = Field("flat_walk", min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_]*$")
     dr: DRConfig = Field(default_factory=DRConfig)
     ppo: PPOConfig = Field(default_factory=PPOConfig)
     episode_seconds: float = Field(10.0, ge=2.0, le=60.0)
@@ -244,6 +314,25 @@ STAGE_DEFAULTS: dict[int, dict[str, Any]] = {
     2: {"commands.vx": (0.0, 0.25), "commands.vy": (-0.05, 0.05), "commands.wz": (-0.5, 0.5), "dr.push_enabled": True},
 }
 
+#: Terrain-managed fields per ``terrain.level``. Level 1 keeps the slope's lower bound at 0 so a
+#: share of envs stays flat (anti-forgetting for the warm-started gait).
+TERRAIN_DEFAULTS: dict[int, dict[str, Any]] = {
+    0: {"terrain.kind": "flat", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 0,
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0},
+    1: {"terrain.kind": "slope", "terrain.slope_deg": (0.0, 8.0), "terrain.n_boxes": 0,
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0},
+    2: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 20,
+        "terrain.box_height_m": (0.003, 0.012), "terrain.spawn_jitter_m": 0.05},
+    3: {"terrain.kind": "rough_slope", "terrain.slope_deg": (0.0, 14.0), "terrain.n_boxes": 28,
+        "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08},
+}
+
+#: The curriculum axes: (field path of the level, its defaults table).
+CURRICULUM_AXES: tuple[tuple[str, dict[int, dict[str, Any]]], ...] = (
+    ("curriculum_stage", STAGE_DEFAULTS),
+    ("terrain.level", TERRAIN_DEFAULTS),
+)
+
 
 def _get_path(d: dict[str, Any], path: str) -> Any:
     cur: Any = d
@@ -277,16 +366,21 @@ def _patch_paths(patch: dict[str, Any], prefix: str = "") -> set[str]:
     return out
 
 
-def apply_stage_defaults(merged: dict[str, Any], *, base_stage: int, explicit: set[str]) -> dict[str, Any]:
-    """Move stage-managed fields from the base stage's defaults to the new stage's."""
-    new_stage = int(merged.get("curriculum_stage", 0))
-    for path, new_default in STAGE_DEFAULTS[new_stage].items():
-        if path in explicit:
-            continue
-        cur = _norm(_get_path(merged, path))
-        was_default = cur is None or cur == _norm(STAGE_DEFAULTS[base_stage][path]) or cur == _norm(STAGE_DEFAULTS[0][path])
-        if was_default:
-            _set_path(merged, path, new_default)
+def apply_stage_defaults(merged: dict[str, Any], *, base_stage: int, explicit: set[str],
+                         base_terrain_level: int = 0) -> dict[str, Any]:
+    """Move axis-managed fields from the base level's defaults to the new level's, on every
+    curriculum axis (``curriculum_stage`` and ``terrain.level``)."""
+    base_levels = {"curriculum_stage": int(base_stage), "terrain.level": int(base_terrain_level)}
+    for axis, table in CURRICULUM_AXES:
+        new_level = int(_get_path(merged, axis) or 0)
+        base_level = base_levels[axis]
+        for path, new_default in table[new_level].items():
+            if path in explicit:
+                continue
+            cur = _norm(_get_path(merged, path))
+            was_default = cur is None or cur == _norm(table[base_level][path]) or cur == _norm(table[0][path])
+            if was_default:
+                _set_path(merged, path, new_default)
     return merged
 
 
@@ -311,9 +405,11 @@ def apply_patch(base: TrainConfig | dict[str, Any] | None, patch: dict[str, Any]
     """
     base_d = base.model_dump(mode="json") if isinstance(base, TrainConfig) else dict(base or {})
     base_stage = int(base_d.get("curriculum_stage", 0))
+    base_terrain = int((base_d.get("terrain") or {}).get("level", 0))
     patch = patch or {}
     merged = deep_merge(base_d, patch)
-    merged = apply_stage_defaults(merged, base_stage=base_stage, explicit=_patch_paths(patch))
+    merged = apply_stage_defaults(merged, base_stage=base_stage, base_terrain_level=base_terrain,
+                                  explicit=_patch_paths(patch))
     return TrainConfig.model_validate(merged)
 
 

@@ -23,27 +23,35 @@ from mujoco_playground._src import mjx_env
 from ..assets import joint_map as jm
 from ..config import TrainConfig
 from . import spec
+from . import terrain as tr
 
 GENERATED = Path(__file__).resolve().parent.parent / "assets" / "generated"
+#: Layout version of the critic-only ``privileged_state`` vector. 1 = the pre-terrain layout;
+#: 2 = + the terrain block (height scan, foot clearance, gravity direction). A parent exported
+#: under a different version cannot warm-start (train/ppo.py refuses cleanly).
+PRIVILEGED_VERSION = 2
 
 
 def playground_config(cfg: TrainConfig, *, impl: str | None = None, num_envs: int = 1,
                       sim_dt: float = 0.002) -> config_dict.ConfigDict:
+    # contact budgets follow the terrain kind (rocks add box contacts); not LLM-editable
+    rough = tr.has_boxes(cfg.terrain.kind)
     return config_dict.create(
         ctrl_dt=cfg.control_dt,
         sim_dt=sim_dt,
         episode_length=cfg.episode_steps,
         action_repeat=cfg.ppo.action_repeat,
         impl=impl or cfg.sim_impl,
-        naconmax=int(16 * max(num_envs, 1)),
-        njmax=96,
+        naconmax=int((48 if rough else 16) * max(num_envs, 1)),
+        njmax=192 if rough else 96,
     )
 
 
 class BittleGpuEnv(mjx_env.MjxEnv):
     def __init__(self, config: TrainConfig, *, impl: str | None = None, num_envs: int = 1,
-                 variant: str = "gpu", sim_dt: float = 0.002):
+                 variant: str | None = None, sim_dt: float = 0.002):
         self.cfg = config.resolved()
+        variant = variant or tr.variant_for(self.cfg.terrain.kind, "gpu")
         pg = playground_config(self.cfg, impl=impl, num_envs=num_envs, sim_dt=sim_dt)
         super().__init__(pg)
         self._xml_path = str(GENERATED / f"bittle_{variant}.xml")
@@ -73,11 +81,17 @@ class BittleGpuEnv(mjx_env.MjxEnv):
 
         self._s = {n: sadr(n) for n in ["imu_gyro", "torso_vel", "torso_global_linvel", "torso_global_angvel",
                                         "torso_upvector"]}
+        names = {m.sensor(i).name for i in range(m.nsensor)}
         self._foot_found = [sadr(f"{leg}_foot_floor_found")[0] for leg in jm.LEGS]
-        self._body_found = [int(m.sensor_adr[i]) for i in range(m.nsensor)
-                            if m.sensor(i).name.endswith("_floor_found") and "foot" not in m.sensor(i).name]
+        # explicit: a shank/thigh contact sensor must never join the fall-termination set
+        self._body_found = [sadr(n)[0] for n in spec.BODY_CONTACT_SENSORS if n in names]
+        self._limb_found = [sadr(n)[0] for n in spec.limb_contact_sensor_names() if n in names]
         self._foot_vel = jp.array([list(range(sadr(f"{leg}_foot_global_linvel")[0], sadr(f"{leg}_foot_global_linvel")[0] + 3))
                                    for leg in jm.LEGS])
+        self._foot_pos = jp.array([list(range(sadr(f"{leg}_foot_pos")[0], sadr(f"{leg}_foot_pos")[0] + 3))
+                                   for leg in jm.LEGS])
+        self._box_gids = jp.array(tr.box_geom_ids(m), dtype=jp.int32)
+        self._spawn_jitter = float(self.cfg.terrain.spawn_jitter_m)
         self._cmd_lo = jp.array([self.cfg.commands.vx[0], self.cfg.commands.vy[0], self.cfg.commands.wz[0]])
         self._cmd_hi = jp.array([self.cfg.commands.vx[1], self.cfg.commands.vy[1], self.cfg.commands.wz[1]])
         self._resample_steps = int(round(self.cfg.commands.resample_s / self.dt))
@@ -94,6 +108,14 @@ class BittleGpuEnv(mjx_env.MjxEnv):
 
     def _gravity(self, data: mjx.Data) -> jax.Array:
         return spec.gravity_from_xmat(jp, data.site_xmat[self._imu_site])
+
+    # ── terrain (reads the PER-ENV model: the DR wrapper swaps it inside the vmap) ──
+    def _boxes(self):
+        m = self.mjx_model
+        return (m.geom_pos[self._box_gids], m.geom_size[self._box_gids], tr.yaw_from_quat(jp, m.geom_quat[self._box_gids]))
+
+    def _terrain_h(self, x, y):
+        return tr.terrain_height(jp, x, y, *self._boxes())
 
     # ── episode sampling ───────────────────────────────────────────────
     def _sample_episode(self, rng: jax.Array) -> dict[str, Any]:
@@ -126,6 +148,11 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         qpos = self._init_q.at[self._qpos_idx].set(rad)
         roll, pitch = ep["init_tilt"][0], ep["init_tilt"][1]
         qpos = qpos.at[3:7].set(_rpy_to_quat(roll, pitch, 0.0))
+        if self._spawn_jitter > 0:  # never spawn inside a box
+            rng, k_jit = jax.random.split(rng)
+            jit = jax.random.uniform(k_jit, (2,), minval=-self._spawn_jitter, maxval=self._spawn_jitter)
+            clear = self._terrain_h(qpos[0] + jit[0], qpos[1] + jit[1]) == 0.0
+            qpos = qpos.at[0:2].add(jp.where(clear, jit, 0.0))
         ctrl = self._deg_to_ctrl(target)
         data = mjx_env.make_data(self.mj_model, qpos=qpos, qvel=jp.zeros(self.mjx_model.nv), ctrl=ctrl,
                                  impl=self.mjx_model.impl.value, naconmax=self._config.naconmax, njmax=self._config.njmax)
@@ -182,7 +209,17 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         body_steps = jp.where(body_contact, info["body_contact_steps"] + 1, 0)
 
         torques = jp.abs(data.actuator_force)
+        boxes = self._boxes()
+        feet_pos = data.sensordata[self._foot_pos]
+        limb = (jp.array([data.sensordata[a] > 0 for a in self._limb_found]).astype(jp.float32)
+                if self._limb_found else jp.zeros(8))
         q = {
+            "up_world": self._sensor(data, "torso_upvector"),
+            "terrain_h": tr.terrain_height(jp, data.qpos[0], data.qpos[1], *boxes),
+            "torque_cap": self.mjx_model.actuator_forcerange[:, 1],
+            "foot_clearance": tr.foot_clearance(jp, feet_pos, *boxes),
+            "limb_contact": limb,
+            "uphill_xy": tr.uphill_xy(jp, self.mjx_model.opt.gravity),
             "cmd": info["command"],
             "local_linvel": self._sensor(data, "torso_vel"),
             "gyro": self._sensor(data, "imu_gyro"),
@@ -205,7 +242,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         terms = spec.reward_terms(jp, q, self.cfg.reward.tracking_sigma, self.cfg.reward.ang_tracking_sigma,
                                   self.cfg.reward.base_height_target)
         reward = spec.weighted_reward(jp, terms, self._weights, self.dt)
-        done = spec.termination(jp, q["up_z"], q["torso_z"], body_steps)
+        done = spec.termination(jp, q["up_z"], q["torso_z"], body_steps, q["terrain_h"])
 
         # bookkeeping
         info["rng"], k_cmd = jax.random.split(info["rng"])
@@ -240,6 +277,13 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             ph = 2 * jp.pi * (info["step"] * self.dt) / 0.5
             phase = jp.array([jp.sin(ph), jp.cos(ph)])
         state = spec.build_obs(jp, gravity, gyro, info["command"], info["hist"][: self._history_n], info["act"], phase)
+        # critic-only terrain block (PRIVILEGED_VERSION 2): 3x3 height scan relative to the
+        # terrain under the torso, per-foot clearance, world gravity direction. Constants on flat.
+        boxes = self._boxes()
+        th = tr.terrain_height(jp, data.qpos[0], data.qpos[1], *boxes)
+        yaw = tr.yaw_from_quat(jp, data.qpos[3:7])
+        scan = tr.height_scan(jp, data.qpos[0], data.qpos[1], yaw, *boxes) - th
+        clearance = tr.foot_clearance(jp, data.sensordata[self._foot_pos], *boxes)
         privileged = jp.concatenate([
             state,
             self._sensor(data, "torso_vel"),
@@ -248,7 +292,10 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             data.qvel[self._dof_idx],
             info["last_contact"].astype(jp.float32),
             info["feet_air_time"],
-            jp.array([data.qpos[2]]),
+            jp.array([data.qpos[2] - th]),
+            scan,
+            clearance,
+            self.mjx_model.opt.gravity / tr.G,
         ]).astype(jp.float32)
         return {"state": state, "privileged_state": privileged}
 
@@ -283,16 +330,40 @@ def _rpy_to_quat(roll, pitch, yaw):
 
 
 def make_domain_randomizer(cfg: TrainConfig, mj_model: mujoco.MjModel):
-    """Playground-style ``randomization_fn``: per-env model params, fixed for the run."""
-    dr = cfg.resolved().dr
-    floor_id = mj_model.geom("floor").id
+    """Playground-style ``randomization_fn``: per-env model params, fixed for the run.
+
+    The terrain field (gravity direction = incline, box placement = rocks) is sampled
+    whenever the terrain kind is not flat, independently of ``dr.enabled``.
+    """
+    cfg = cfg.resolved()
+    dr = cfg.dr
+    tcfg = cfg.terrain
+    terrain_active = tcfg.kind != "flat"
+    if not (dr.enabled or terrain_active):
+        return None
+    ground_ids = jp.array(tr.ground_geom_ids(mj_model), dtype=jp.int32)
+    box_ids = jp.array(tr.box_geom_ids(mj_model), dtype=jp.int32)
     torso_id = mj_model.body("torso").id
 
     def domain_randomize(model: mjx.Model, rng: jax.Array):
         @jax.vmap
+        def rand_terrain(rng):
+            keys = iter(jax.random.split(rng, 16))
+
+            def u(lo, hi, shape):
+                return jax.random.uniform(next(keys), shape, minval=lo, maxval=hi)
+
+            gravity, pos, half, yaw = tr.sample_field(jp, u, tcfg)
+            k = box_ids.shape[0]
+            geom_pos = model.geom_pos.at[box_ids].set(pos[:k]) if k else model.geom_pos
+            geom_size = model.geom_size.at[box_ids].set(half[:k]) if k else model.geom_size
+            geom_quat = model.geom_quat.at[box_ids].set(tr.quat_from_yaw(jp, yaw[:k])) if k else model.geom_quat
+            return gravity, geom_pos, geom_size, geom_quat
+
+        @jax.vmap
         def rand(rng):
             k = jax.random.split(rng, 8)
-            friction = model.geom_friction.at[floor_id, 0].set(jax.random.uniform(k[0], minval=dr.friction[0], maxval=dr.friction[1]))
+            friction = model.geom_friction.at[ground_ids, 0].set(jax.random.uniform(k[0], minval=dr.friction[0], maxval=dr.friction[1]))
             mass = model.body_mass * jax.random.uniform(k[1], minval=dr.mass_scale[0], maxval=dr.mass_scale[1])
             mass = mass.at[torso_id].add(jax.random.uniform(k[2], minval=dr.payload_g[0], maxval=dr.payload_g[1]) / 1000.0)
             shift = jp.array([jax.random.uniform(k[3], minval=dr.com_shift_mm[0], maxval=dr.com_shift_mm[1]) / 1000.0, 0.0, 0.0])
@@ -306,15 +377,23 @@ def make_domain_randomizer(cfg: TrainConfig, mj_model: mujoco.MjModel):
             frictionloss = model.dof_frictionloss.at[6:].set(jax.random.uniform(k[7], minval=dr.frictionloss[0], maxval=dr.frictionloss[1]))
             return friction, mass, ipos, gainprm, biasprm, forcerange, damping, frictionloss
 
-        friction, mass, ipos, gainprm, biasprm, forcerange, damping, frictionloss = rand(rng)
-        fields = {
-            "geom_friction": friction, "body_mass": mass, "body_ipos": ipos,
-            "actuator_gainprm": gainprm, "actuator_biasprm": biasprm, "actuator_forcerange": forcerange,
-            "dof_damping": damping, "dof_frictionloss": frictionloss,
-        }
+        fields: dict[str, Any] = {}
+        if dr.enabled:
+            friction, mass, ipos, gainprm, biasprm, forcerange, damping, frictionloss = rand(rng)
+            fields.update({
+                "geom_friction": friction, "body_mass": mass, "body_ipos": ipos,
+                "actuator_gainprm": gainprm, "actuator_biasprm": biasprm, "actuator_forcerange": forcerange,
+                "dof_damping": damping, "dof_frictionloss": frictionloss,
+            })
+        if terrain_active:
+            rng_t = jax.vmap(lambda r: jax.random.fold_in(r, 7))(rng)
+            gravity, geom_pos, geom_size, geom_quat = rand_terrain(rng_t)
+            fields["opt.gravity"] = gravity
+            if box_ids.shape[0]:
+                fields.update({"geom_pos": geom_pos, "geom_size": geom_size, "geom_quat": geom_quat})
         in_axes = jax.tree_util.tree_map(lambda x: None, model)
         in_axes = in_axes.tree_replace({k: 0 for k in fields})
         model = model.tree_replace(fields)
         return model, in_axes
 
-    return domain_randomize if dr.enabled else None
+    return domain_randomize

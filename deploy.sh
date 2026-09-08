@@ -23,6 +23,17 @@ EXTRA_VALIDATE() {
   else
     warn "no .venv found; skipping safety tests (run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)"
   fi
+  # The RL trainer's CPU tests (config, gates, models, envs, terrain, service contract) run here
+  # when the trainer venv exists — this is the only place they run automatically. GPU tests stay manual.
+  if [ -d "${SCRIPT_DIR}/.venv-trainer" ]; then
+    step "Running trainer tests (CPU)"
+    if "${SCRIPT_DIR}/.venv-trainer/bin/python" -m pytest "${SCRIPT_DIR}/trainer/tests" -q -p no:cacheprovider > /tmp/bittle-trainer-tests.log 2>&1; then
+      ok "trainer tests passed"
+    else
+      tail -20 /tmp/bittle-trainer-tests.log
+      fail "trainer tests FAILED — refusing to ship"
+    fi
+  fi
 }
 
 EXTRA_SSH_SYNC() {
