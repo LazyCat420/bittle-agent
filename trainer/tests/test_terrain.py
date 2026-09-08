@@ -40,6 +40,12 @@ def test_gravity_roundtrip_and_norm():
 def test_terrain_height_zero_when_parked_or_no_boxes():
     f = tr.flat_field()
     assert tr.terrain_height(np, 0.3, 0.1, f.box_pos, f.box_half, f.box_yaw) == 0.0
+    # the spawn sits inside every parked box's xy footprint: their sentinel depth must not leak out
+    for x, y in ((0.0, 0.0), (0.05, -0.05), (0.14, 0.14)):
+        assert tr.terrain_height(np, x, y, f.box_pos, f.box_half, f.box_yaw) == 0.0
+        assert np.all(tr.height_scan(np, x, y, 0.3, f.box_pos, f.box_half, f.box_yaw) == 0.0)
+    feet = np.array([[0.05, 0.03, tr.PLANE_Z + tr.FOOT_RADIUS]] * 4)
+    assert np.allclose(tr.foot_clearance(np, feet, f.box_pos, f.box_half, f.box_yaw), 0.0)
     empty = np.zeros((0, 3))
     assert tr.terrain_height(np, 0.3, 0.1, empty, empty, np.zeros(0)) == 0.0
 
@@ -150,3 +156,16 @@ def test_house_level_is_a_mixture_over_every_kind():
     assert kinds == {(False, False), (True, False), (False, True), (True, True)}
     # downhill happens: some sampled gravities pull FORWARD (+x)
     assert any(tr.sample_field_numpy(np.random.default_rng(s), t).gravity[0] > 0.5 for s in range(200))
+
+
+def test_box_share_zero_env_reads_flat_ground_at_the_spawn():
+    """The GPU-side symptom of the parked-box leak: a level-4 env that drew no boxes must see
+    terrain_h == 0 under the torso and a zero base_height error at the stand, exactly like flat ground."""
+    cfg = apply_patch(None, {"terrain": {"level": 4, "box_share": 0.0, "slope_share": 0.0}, "dr": {"enabled": False}})
+    env = BittleCpuEnv(cfg, seed=0)
+    env.reset(command=np.array([0.0, 0.0, 0.0]))
+    assert env.model_params.terrain.n_boxes == 0
+    for _ in range(25):
+        obs, r, done, info = env.step(np.zeros(8))
+    assert info.terrain_h == 0.0 and abs(info.terms["base_height"]) < 0.05, info.terms["base_height"]
+    assert np.all(np.abs(info.foot_clearance) < 0.005)
