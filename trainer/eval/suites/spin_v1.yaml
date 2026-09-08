@@ -1,6 +1,8 @@
 # Pirouette: turn in place at a commanded 0.5 rad/s without drifting. Flat ground, same XML as flat_v1.
 # The Bittle has no abduction joint, so spinning is foot scrub by construction — the task config lowers
-# feet_slip. UNCALIBRATED: calibrate against `opencat_trL` (firmware turn: 0.15 rad/s, drifts 0.44 m).
+# feet_slip. UNCALIBRATED: no firmware skill spins in place. `opencat_trL` (the firmware TURN) replayed on this
+# protocol, 20 episodes: yaws 87 deg in 10 s (0.15 rad/s, rmse 0.64 vs the 0.5 command) while drifting 0.44 m,
+# 0 falls, 3.0 W — a curve, not a spin. Thresholds are design targets until a learned policy shows what is achievable.
 suite: spin_v1
 version: 0.1.0-uncalibrated
 include: [_servo_safety]

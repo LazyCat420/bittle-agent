@@ -40,7 +40,7 @@ def test_all_suites_load_include_servo_safety_and_name_real_terms():
         proto = suite_protocol(s)
         assert len(proto["command"]) == 3 and proto["terrain"]["kind"] in ("flat", "slope", "rough", "rough_slope")
         if not s["version"].endswith("-uncalibrated"):
-            assert name in ("flat_v1", "slope_v1"), name  # only baseline-calibrated suites carry a release version
+            assert name in ("flat_v1", "slope_v1", "statue_v1", "backward_v1"), name  # only baseline-calibrated suites carry a release version
 
 
 def test_suite_local_gate_overrides_the_fragment(tmp_path, monkeypatch):

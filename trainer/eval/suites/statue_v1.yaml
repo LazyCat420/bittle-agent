@@ -1,8 +1,10 @@
 # Statue: zero command, shoved every ~2 s at 0.5 m/s; must not fall, must not wander, must re-level.
 # The push is applied as a base velocity kick (the same mechanism as dr.push_enabled in training).
-# UNCALIBRATED: calibrate against the `stand` controller under the same push schedule.
+# CALIBRATED 2026-09-07 (1.0.0) against the open-loop `stand` controller under this exact push schedule,
+# 20 episodes: drift 0.021 m, 0 falls, tilt 0.27 deg, rms vz 0.010, energy 0.001 W (10/10 gates). Every
+# threshold below sits at >= 2x the stand's number; the firmware trot under the same shoves drifts 0.89 m.
 suite: statue_v1
-version: 0.1.0-uncalibrated
+version: 1.0.0
 include: [_servo_safety]
 protocol:
   n_episodes: 20

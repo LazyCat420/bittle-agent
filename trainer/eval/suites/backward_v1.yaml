@@ -1,7 +1,10 @@
 # Retreat: walk BACKWARDS at a commanded -0.12 m/s in a straight line. Flat ground.
-# UNCALIBRATED: the firmware `bkF` table is the intended baseline once its replay direction is settled.
+# CALIBRATED 2026-09-07 (1.0.0) against the firmware `bkF` replayed at 1 row/step (the cadence at which
+# it goes backward), 20 episodes: -0.556 m, 0 falls, yaw drift 38 deg, lateral 0.57 m, 2.11 W, peak joint
+# speed 4.1 rad/s. Distance = 1.08x bkF; falls = bkF + 0.10; yaw/lateral are the flat_v1 bars (the
+# firmware backward walk drifts far more than the trot, and a learned gait has no excuse to).
 suite: backward_v1
-version: 0.1.0-uncalibrated
+version: 1.0.0
 include: [_servo_safety]
 protocol:
   n_episodes: 20
