@@ -64,7 +64,9 @@ async def run_campaign(agent, *, strategy: str, out: Path, max_cycles: int | Non
                            "best": None, "best_by_suite": {}}
     best_by_suite: dict[str, tuple[float, str]] = {}
 
-    def resolve_base(step: dict[str, Any]) -> str | None:
+    async def resolve_base(step: dict[str, Any]) -> str | None:
+        """``best`` / ``best_of:<task>`` = the best run on that suite from THIS campaign, else the store's
+        leaderboard (a ladder may start from a champion an earlier campaign or GLM trained)."""
         base = step.get("base", "best")
         if base is None:
             return None
@@ -74,12 +76,16 @@ async def run_campaign(agent, *, strategy: str, out: Path, max_cycles: int | Non
             suite = default_suite_for(base.split(":", 1)[1])
         else:
             raise ValueError(f"step {step['name']!r}: unknown base {base!r}")
-        return best_by_suite[suite][1] if suite in best_by_suite else None
+        if suite in best_by_suite:
+            return best_by_suite[suite][1]
+        board = await agent.call("bittle_list_runs", {"suite": suite, "sort": "score", "limit": 1})
+        rows = board.get("runs") or []
+        return rows[0]["run_id"] if rows and rows[0].get("score") is not None else None
 
     for i, step in enumerate(steps):
         args = {"name": step["name"], "task": step["task"], "config_patch": step["patch"], "notes": step["notes"],
                 "dr_sweep": dr_sweep}
-        base_run = resolve_base(step)
+        base_run = await resolve_base(step)
         if base_run:
             args["base_run_id"] = base_run
         t0 = time.time()

@@ -23,7 +23,7 @@ from PIL import Image  # noqa: E402
 
 from trainer.config import TrainConfig  # noqa: E402
 from trainer.eval.evaluator import GaitController, PolicyController, StandController, nominal_env, protocol_kwargs  # noqa: E402
-from trainer.eval.gates import load_suite, suite_protocol  # noqa: E402
+from trainer.eval.gates import load_suite, suite_protocol, suite_scenes  # noqa: E402
 from trainer.policy.mlp import NumpyPolicy  # noqa: E402
 
 W, H, FPS, SECONDS = 300, 225, 12, 5.0
@@ -42,11 +42,20 @@ def _scan_runs(runs_dir: Path) -> list[dict]:
     return out
 
 
-def _suite_env(cfg: TrainConfig, suite: str, **kw):
+def _suite_env(cfg: TrainConfig, suite: str, scene: str | None = None, **kw):
     """The env a run is JUDGED in: the suite's fixed terrain, not whatever the run trained on —
-    so a GIF and its gate report always show the same ground."""
-    proto = suite_protocol(load_suite(suite))
+    so a GIF and its gate report always show the same ground. ``scene`` picks one scene of a
+    scenes suite (default: the primary one)."""
+    s = load_suite(suite)
+    proto = suite_protocol(s)
+    if scene:
+        proto = dict(suite_scenes(s))[scene]
     return nominal_env(cfg, **protocol_kwargs(proto), **kw), [float(x) for x in proto["command"]]
+
+
+def _scene_names(suite: str) -> list[str]:
+    """Named scenes of a scenes suite; [] for a classic one."""
+    return [n for n, _ in suite_scenes(load_suite(suite)) if n]
 
 
 def _camera(d: mujoco.MjData, m: mujoco.MjModel) -> mujoco.MjvCamera:
@@ -182,6 +191,47 @@ def plot_gates(runs_dir: Path, run_ids: list[str], out: Path, suite: str = "flat
     fig.savefig(out / ("gates.png" if suite == "flat_v1" else f"gates_{suite}.png"), dpi=110)
 
 
+def plot_scenes(runs_dir: Path, run_ids: list[str], out: Path, suite: str) -> None:
+    """Scenes suite: per-scene fall rate and progress along the commanded direction for every run on
+    the suite, next to the firmware trot replayed on the same scenes (runs/baselines)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from trainer.eval.gates import suite_scenes
+
+    s = load_suite(suite)
+    scenes = suite_scenes(s)
+    names = [n for n, _ in scenes]
+    sign = {n: (1.0 if float(p["command"][0]) > 0 else -1.0 if float(p["command"][0]) < 0 else 0.0) for n, p in scenes}
+    series: list[tuple[str, dict]] = []
+    base = runs_dir / "baselines" / "opencat_trF" / suite / "report.json"
+    if base.is_file():
+        series.append(("firmware trot", json.loads(base.read_text())["metrics"]))
+    for rid in run_ids:
+        rep = _report(runs_dir, rid, suite)
+        if rep:
+            series.append((json.loads((runs_dir / rid / "state.json").read_text()).get("name", rid), rep["metrics"]))
+    if not series:
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.0))
+    width = 0.8 / len(series)
+    xs = np.arange(len(names))
+    for i, (label, m) in enumerate(series):
+        off = (i - (len(series) - 1) / 2) * width
+        falls = [float(m.get(f"{n}/fall_rate", float("nan"))) for n in names]
+        prog = [float(m.get(f"{n}/progress_ratio", float("nan"))) * sign[n] if sign[n] else float(m.get(f"{n}/centre_drift_m", float("nan"))) for n in names]
+        axes[0].bar(xs + off, falls, width=width, label=label, alpha=0.85)
+        axes[1].bar(xs + off, prog, width=width, label=label, alpha=0.85)
+    for ax, title in zip(axes, ("fall rate per scene (lower is better)", "progress along the command (ratio; statue = drift m)")):
+        ax.set_xticks(xs); ax.set_xticklabels(names, rotation=35, ha="right", fontsize=8); ax.grid(axis="y", alpha=0.3); ax.set_title(title)
+    axes[0].legend(fontsize=8)
+    fig.suptitle(f"{suite}: every run on the suite, scene by scene")
+    fig.tight_layout()
+    fig.savefig(out / f"scenes_{suite}.png", dpi=110)
+
+
 def plot_gait(runs_dir: Path, rid: str, out: Path, suite: str = "flat_v1") -> None:
     import matplotlib
 
@@ -284,6 +334,12 @@ def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -
     for suite, rows in rows_by_suite.items():
         s = load_suite(suite)
         proto = suite_protocol(s)
+        if proto.get("scenes"):
+            protocol = (f"Protocol `{suite}@{s.get('version')}`: {len(proto['scenes'])} scenes ({', '.join(proto['scenes'])}), "
+                        f"{proto['n_episodes']} seeded episodes each, {proto['episode_seconds']:.0f} s, CPU MuJoCo on the mesh model; "
+                        f"{len(s['gates'])} gates incl. the servo-safety fragment (read on the worst scene).")
+            sections.append(LEDGER_SECTION.format(suite=suite, n=len(rows), protocol=protocol, rows="\n".join(rows)))
+            continue
         t = proto["terrain"]
         ground = {"flat": "flat ground", "slope": f"a {t.get('slope_deg', 0)} deg incline (tilted world)",
                   "rough": f"{t.get('n_boxes', 0)} x {1000 * float(t.get('box_height_m', 0)):.0f} mm boxes (seed {t.get('field_seed', 0)}, spawn jitter {t.get('spawn_jitter_m', 0)} m)",
@@ -345,10 +401,24 @@ def main() -> int:
         pol = PolicyController(NumpyPolicy.load(runs_dir / rid / "policy" / "policy.npz"))
         summary[rid] = render_episode(env, pol, seed=0, command=cmd, out_gif=out / f"policy_{r['name']}.gif",
                                       label=f"{r['name']} ({r['suite']})")
+        # a scenes suite: one clip per scene, on that scene's ground, with its command and pushes
+        for scene in _scene_names(r["suite"]):
+            env, cmd = _suite_env(run_cfg, r["suite"], scene=scene)
+            summary[f"{rid}@{scene}"] = render_episode(env, pol, seed=0, command=cmd,
+                                                       out_gif=out / f"policy_{r['name']}_{scene}.gif",
+                                                       label=f"{r['name']} / {scene}")
+    for suite in suites:
+        for scene in _scene_names(suite):
+            env, cmd = _suite_env(cfg, suite, scene=scene, envelope_tier="tested")
+            summary[f"opencat_trF@{suite}/{scene}"] = render_episode(env, GaitController.from_opencat("trF"), seed=0, command=cmd,
+                                                                     out_gif=out / f"baseline_opencat_trot_{suite}_{scene}.gif",
+                                                                     label=f"OpenCat trF / {scene}")
     render_model_stills(out)
     plot_curves(runs_dir, run_ids, out)
     for suite in suites:
         plot_gates(runs_dir, [r for r in run_ids if scanned[r]["suite"] == suite], out, suite=suite)
+        if _scene_names(suite):
+            plot_scenes(runs_dir, [r for r in run_ids if scanned[r]["suite"] == suite], out, suite=suite)
     flat_runs = [r for r in run_ids if scanned[r]["suite"] == "flat_v1"]
     if flat_runs:
         plot_gait(runs_dir, flat_runs[0], out)
