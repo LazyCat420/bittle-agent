@@ -125,7 +125,35 @@ reachable static posture envelope peaks at 17 %. Torque never binds; joint speed
 
 ## Runs
 
-RUNS_SECTION
+All wave-1 runs on 2026-09-07, 2048 envs, MuJoCo Warp on the 3090 Ti; every child is a 10M-step
+warm start (≈ 6 min) from the new flat parent unless noted. Gate counts are on each run's own suite.
+
+| run | task / suite | start | gates | distance p50 | falls | energy | peak joint speed | stall | result |
+|---|---|---|---|---|---|---|---|---|---|
+| r4-flat-parent-critic-v2-40M | flat_walk / flat_v1@1.2.0 | cold, 40M, 18 min | **18/18** | 1.07 m | 0/20 | 0.89 W | 3.13 rad/s | 0.002 | the new parent; passes the five servo-safety gates |
+| r5-slope-warm-10M | slope_up / slope_v1@1.0.0 | warm from r4 | **16/16** | 0.87 m up 8° (climb 0.122 m) | 0/20 | 0.65 W | 2.79 rad/s | 0.002 | the firmware trot manages 0.50 m on the same slope |
+| r9-rough-warm-10M | rough_walk / rough_v1@0.2.0 | warm from r5, clearance + stumble on | 10/15 | 0.33 m | 0/20 | 1.22 W | 3.43 rad/s | 0.004 | gets stuck on the edges (trot: 0.38 m); needs the GLM loop |
+| r6-spin-warm-10M | spin / spin_v1@0.1.0 | warm from r4 | 9/11 | drift 0.081 m | 0/20 | 0.29 W | 1.71 rad/s | 0.005 | barely turns (rate rmse 0.43 vs 0.10 bar); 1 mm over the drift bar |
+| r7-statue-warm-10M | statue / statue_v1@1.0.0 | warm from r4 | **11/11** | drift 0.022 m under 0.5 m/s shoves | 0/20 | 0.03 W | 1.18 rad/s | 0.001 | stands through every push |
+| r8-backward-warm-10M | backward_walk / backward_v1@1.0.0 | warm from r4 | 12/13 | **−0.94 m** (firmware bkF −0.56 m) | 0/20 | 1.84 W | 2.98 rad/s | 0.002 | one near miss: tracking rmse 0.056 vs 0.05 |
+
+Three of the six new tasks pass outright on the first warm start (slope, statue, and the flat parent
+itself), one is a near miss (backward), and two are the ones GLM has to work on: **rough terrain** and
+**spin**. Every run stays inside the servo-safety fragment: no run exceeded 3.5 rad/s p99.5 joint speed,
+0.005 stall fraction or 2 concurrent stalls. Each run's GIF, rendered in its own suite's terrain, is in
+the run ledger (chapter 02).
+
+**Reading the rough result.** The rough policy walks 0.33 m before the boxes stop it, with zero falls
+and a stumble rate of 0 — it does not trip, it stalls at edges (velocity-tracking RMSE 0.125 m/s) and
+its median swing clearance is 1.2 mm, i.e. it still shuffles like the flat parent. That is exactly the
+gap the `foot_clearance` and `stumble` terms exist for; the reflection tells GLM which reward shares are
+too small to move. Ten minutes of warm-start training at level 2 is not the end of that curriculum.
+
+**Live dashboard.** The bittle-agent UI gained a **📈 Training** tab: the leaderboard per suite with
+live progress bars, per-run reward curves and gate bars, config diffs, the reflection, a one-click
+rollout replay in the 3D viewer, side-by-side comparison of any runs (curves, gates, diffs), and the
+GLM session panel that shows every training cycle GLM runs — hypothesis, patch, progress, result — live
+for every viewer (sessions are recorded server-side and replayable).
 
 ## What is still open
 

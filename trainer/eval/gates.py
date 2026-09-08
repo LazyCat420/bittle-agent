@@ -180,6 +180,7 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
     ctx = report.get("context") or {}
     per_gate = ctx.get("per_gate", {})
     failed = [r for r in report["gates"] if r["pass"] is False]
+    base_label = str(ctx.get("baseline") or "opencat_trF").replace("opencat_trF", "firmware trot").replace("opencat_", "firmware ").replace("stand", "stand controller")
     head = "BENCHMARK PASSED" if report["passed"] else "BENCHMARK FAILED"
     parts = [f"{head} {report['gates_passed']}/{report['gates_total']} gates (score {report['score']:.2f})."]
     n_ep = metrics.get("n_episodes")
@@ -201,7 +202,7 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
         if pg.get("parent") is not None:
             cmp.append(f"parent {pg['parent']:.3f}")
         if pg.get("baseline_trot") is not None:
-            cmp.append(f"firmware trot {pg['baseline_trot']:.3f}")
+            cmp.append(f"{base_label} {pg['baseline_trot']:.3f}")
         if cmp:
             line += " (" + ", ".join(cmp) + ")"
         if r["note"]:
