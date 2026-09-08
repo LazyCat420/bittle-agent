@@ -29,7 +29,7 @@ GLM-5.3-Flash (Gold Spark vLLM)
 bittle-agent  (NAS :8008, 512 MB, no GPU)  ──HTTP──▶  bittle-trainer  (WSL2 PC :8009, RTX 3090 Ti)
       ▲                                                  ├─ train/  MuJoCo Warp + Brax PPO, 2048 envs on the GPU
       │ gate table + reflection                          ├─ eval/   CPU MuJoCo, full-mesh model, 20 seeded episodes
-      │                                                  └─ gates.yaml = the policy test suite
+      │                                                  └─ suites/<suite>.yaml = the policy test suites
       └── viewer_url ──▶ 3D viewer rollout playback
 ```
 
@@ -48,7 +48,7 @@ Code map (all under `bittle-agent/`):
 | `trainer/env/spec.py` | observation / action / reward / termination, shared by CPU and GPU envs |
 | `trainer/env/gpu_env.py`, `cpu_env.py` | MuJoCo Warp (or MJX) batched env; CPU evaluator env |
 | `trainer/train/ppo.py` | Brax PPO wrapper, policy export to `policy.npz` |
-| `trainer/eval/gates.yaml`, `gates.py` | the gate suite `flat_v1@1.0.0` and its reflection text |
+| `trainer/eval/suites/*.yaml`, `gates.py` | the gate suites (`flat_v1`, `slope_v1`, `rough_v1`; this chapter's numbers are `flat_v1@1.0.0`) and the reflection text |
 | `trainer/eval/evaluator.py`, `baselines.py` | seeded episodes, OpenCat gait replay, rollout recorder |
 | `trainer/service.py` | FastAPI on :8009, async jobs with long-poll |
 | `trainer/campaign/` | scripted search through the same tools, no LLM (`campaign.json` is the reproduction log) |

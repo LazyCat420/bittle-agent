@@ -9,7 +9,7 @@ validated JSON config, launches a run, reads a gate report, and iterates.
 GLM (Gold Spark) ──tools──▶ bittle-agent (NAS :8008) ──HTTP──▶ trainer (GPU box :8009)
                                                                ├─ train:  MuJoCo Warp + Brax PPO (GPU)
                                                                ├─ eval:   CPU MuJoCo, full-mesh model, seeded
-                                                               ├─ gates:  eval/gates.yaml = the policy test suite
+                                                               ├─ gates:  eval/suites/<suite>.yaml = the policy test suites (per task)
                                                                └─ runs/:  configs, policies, reports, rollouts
 ```
 
@@ -34,14 +34,16 @@ Docker (secondary): `docker compose -f trainer/docker-compose.yml up --build`
 | tool | does |
 |---|---|
 | `bittle_propose_config` | validate a config patch, see the diff and warnings |
-| `bittle_train_and_benchmark` | ONE cycle: train → wait → flat_v1 gates → report + reflection |
+| `bittle_list_tasks` | the task catalogue (flat_walk, slope_up, rough_walk): goal, suite, prerequisite met?, warm-start run |
+| `bittle_train_and_benchmark` | ONE cycle: train a task → wait → that task's gate suite → report + reflection |
 | `bittle_train_policy` / `bittle_train_status` / `bittle_benchmark_policy` | the same, step by step |
 | `bittle_list_runs` / `bittle_compare_runs` | leaderboard, baselines, gate tables, config diffs |
 | `bittle_replay_rollout` | play a benchmark rollout (or `baseline:opencat_trF`) in the 3D viewer |
 | `bittle_web_search` / `bittle_search_papers` / `bittle_read_url` / research notes | look things up, remember findings |
 
 The config the agent edits is `trainer/config.py::TrainConfig` — bounded,
-`extra="forbid"`, hashed. The gates are `trainer/eval/gates.yaml`; changing a
+`extra="forbid"`, hashed. The gates are `trainer/eval/suites/<suite>.yaml` (every suite includes the
+`_servo_safety` fragment; a run's task decides its suite, see `trainer/tasks.py`); changing a
 threshold bumps the suite version and the leaderboard only ranks same-version reports.
 
 ## Model

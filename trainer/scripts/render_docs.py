@@ -22,26 +22,37 @@ import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from trainer.config import TrainConfig  # noqa: E402
-from trainer.eval.evaluator import GaitController, PolicyController, StandController, nominal_env  # noqa: E402
+from trainer.eval.evaluator import GaitController, PolicyController, StandController, nominal_env, protocol_kwargs  # noqa: E402
+from trainer.eval.gates import load_suite, suite_protocol  # noqa: E402
 from trainer.policy.mlp import NumpyPolicy  # noqa: E402
 
 W, H, FPS, SECONDS = 300, 225, 12, 5.0
 
 
 def _scan_runs(runs_dir: Path) -> list[dict]:
-    """Read every run's state.json directly; index.json is only refreshed by the service."""
+    """Read every run's state.json directly; index.json is only refreshed by the service.
+    Runs recorded before suites existed have no suite key and are flat_v1 / flat_walk."""
     out = []
     for d in runs_dir.iterdir():
         if d.is_dir() and (d / "state.json").is_file():
             st = json.loads((d / "state.json").read_text())
-            out.append({"run_id": d.name, "status": st.get("status"), "created": st.get("created")})
+            out.append({"run_id": d.name, "status": st.get("status"), "created": st.get("created"),
+                        "suite": st.get("suite") or "flat_v1", "task": st.get("task") or "flat_walk",
+                        "name": st.get("name", d.name)})
     return out
+
+
+def _suite_env(cfg: TrainConfig, suite: str, **kw):
+    """The env a run is JUDGED in: the suite's fixed terrain, not whatever the run trained on —
+    so a GIF and its gate report always show the same ground."""
+    proto = suite_protocol(load_suite(suite))
+    return nominal_env(cfg, **protocol_kwargs(proto), **kw), [float(x) for x in proto["command"]]
 
 
 def _camera(d: mujoco.MjData, m: mujoco.MjModel) -> mujoco.MjvCamera:
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-    cam.distance = 0.42
+    cam.distance = 0.42 if m.nbody < 40 else 0.55  # the terrain variants carry 32 box bodies: frame wider
     cam.azimuth = 150
     cam.elevation = -18
     cam.lookat[:] = d.xpos[m.body("torso").id] + np.array([0.0, 0.0, -0.01])
@@ -125,7 +136,13 @@ def plot_curves(runs_dir: Path, run_ids: list[str], out: Path) -> None:
     fig.savefig(out / "training_curves.png", dpi=110)
 
 
-def plot_gates(runs_dir: Path, run_ids: list[str], out: Path) -> None:
+def _report(runs_dir: Path, rid: str, suite: str) -> dict | None:
+    reps = sorted((runs_dir / rid / "benchmark").glob(f"{suite}@*/report.json")) if (runs_dir / rid / "benchmark").is_dir() else []
+    return json.loads(reps[-1].read_text()) if reps else None
+
+
+def plot_gates(runs_dir: Path, run_ids: list[str], out: Path, suite: str = "flat_v1") -> None:
+    """One figure per suite: bars from different suites are not comparable."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -133,8 +150,12 @@ def plot_gates(runs_dir: Path, run_ids: list[str], out: Path) -> None:
 
     reports = {}
     for rid in run_ids:
-        p = sorted((runs_dir / rid / "benchmark").glob("flat_v1@*/report.json"))[-1]
-        reports[rid] = json.loads(p.read_text())
+        rep = _report(runs_dir, rid, suite)
+        if rep:
+            reports[rid] = rep
+    run_ids = list(reports)
+    if not run_ids:
+        return
     gates = [g for g in reports[run_ids[0]]["gates"] if g["pass"] is not None]
     names = [g["gate"] for g in gates]
     fig, ax = plt.subplots(figsize=(10, 4.2))
@@ -156,18 +177,18 @@ def plot_gates(runs_dir: Path, run_ids: list[str], out: Path) -> None:
     ax.axhline(1.0, color="k", lw=1, ls="--")
     ax.set_xticks(np.arange(len(names))); ax.set_xticklabels(names, rotation=40, ha="right", fontsize=8)
     ax.set_ylabel("value / threshold  (below 1 = pass)"); ax.set_ylim(0, 2.1); ax.grid(axis="y", alpha=0.3)
-    ax.set_title("flat_v1 gates: green pass, red fail (dashed line = threshold)")
+    ax.set_title(f"{suite} gates: green pass, red fail (dashed line = threshold)")
     fig.tight_layout()
-    fig.savefig(out / "gates.png", dpi=110)
+    fig.savefig(out / ("gates.png" if suite == "flat_v1" else f"gates_{suite}.png"), dpi=110)
 
 
-def plot_gait(runs_dir: Path, rid: str, out: Path) -> None:
+def plot_gait(runs_dir: Path, rid: str, out: Path, suite: str = "flat_v1") -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    p = sorted((runs_dir / rid / "benchmark").glob("flat_v1@*/rollouts/seed_0.json"))[-1]
+    p = sorted((runs_dir / rid / "benchmark").glob(f"{suite}@*/rollouts/seed_0.json"))[-1]
     ro = json.loads(p.read_text())
     t = np.array([f["t"] for f in ro["frames"]])
     c = np.array([f["contacts"] for f in ro["frames"]])
@@ -195,15 +216,20 @@ updated: {date}
 
 # Training run ledger
 
-Every policy training run recorded by the trainer, newest last. Generated from `runs/` by
-`trainer/scripts/render_docs.py --ledger`; rerun it after training and commit the result.
-Distances are the flat_v1 protocol (20 seeded episodes, 10 s, 0.12 m/s command, CPU MuJoCo on the
-mesh model). Score = gates passed + 0.5·min(distance, 1) − fall rate.
+Every policy training run recorded by the trainer, grouped by the gate suite it is judged on and
+newest last within a suite. Generated from `runs/` by `trainer/scripts/render_docs.py --ledger`;
+rerun it after training and commit the result. Score = gates passed + 0.5·min(distance, 1) − fall
+rate, and it is only comparable WITHIN a suite. Each suite's protocol line comes from its yaml.
 
-## Runs in the store ({n} runs)
+{sections}
+"""
 
-| # | run | started | parent | steps | envs | wall-clock | gates | distance p50 | falls | score | clip |
-|---|---|---|---|---|---|---|---|---|---|---|---|
+LEDGER_SECTION = """## {suite} — {n} runs
+
+{protocol}
+
+| # | run | task | started | parent | steps | envs | wall-clock | gates | distance p50 | falls | score | clip |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
 {rows}
 
 """
@@ -216,31 +242,36 @@ def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -
 
     runs = sorted(_scan_runs(runs_dir), key=lambda r: r["created"] or "")
     defaults = TrainConfig().model_dump(mode="json")
-    rows, details = [], []
+    rows_by_suite: dict[str, list[str]] = {}
+    details = []
     for i, r in enumerate(runs, 1):
         rid = r["run_id"]
+        suite = r["suite"]
         st = json.loads((runs_dir / rid / "state.json").read_text())
         cfg = json.loads((runs_dir / rid / "config.json").read_text())
         met = {}
         if (runs_dir / rid / "metrics.json").is_file():
             met = json.loads((runs_dir / rid / "metrics.json").read_text())
-        reps = sorted((runs_dir / rid / "benchmark").glob("flat_v1@*/report.json")) if (runs_dir / rid / "benchmark").is_dir() else []
-        rep = json.loads(reps[-1].read_text()) if reps else {}
+        rep = _report(runs_dir, rid, suite) or {}
         gif = f"policy_{st.get('name', rid)}.gif"
         clip = f"[gif]({media_rel}/{gif})" if (out_md.parent.parent / "media" / "rl-training" / gif).is_file() else "—"
         wall = f"{met.get('elapsed_s', 0) / 60:.1f} min" if met.get("elapsed_s") else "—"
-        rows.append(f"| {i} | `{rid}`<br>{st.get('name', '')} | {st.get('created', '')[:16]} | {st.get('parent') or '—'} | "
-                    f"{cfg.get('ppo', {}).get('num_timesteps', 0) / 1e6:.0f}M | {cfg.get('ppo', {}).get('num_envs', '')} | {wall} | "
-                    f"{rep.get('gates_passed', '—')}/{rep.get('gates_total', '—')} | "
-                    f"{rep.get('metrics', {}).get('forward_distance_p50', float('nan')):.2f} m | "
-                    f"{rep.get('metrics', {}).get('fall_rate', float('nan')):.2f} | {rep.get('score', '—')} | {clip} |")
+        rows_by_suite.setdefault(suite, []).append(
+            f"| {i} | `{rid}`<br>{st.get('name', '')} | {r['task']} | {st.get('created', '')[:16]} | {st.get('parent') or '—'} | "
+            f"{cfg.get('ppo', {}).get('num_timesteps', 0) / 1e6:.0f}M | {cfg.get('ppo', {}).get('num_envs', '')} | {wall} | "
+            f"{rep.get('gates_passed', '—')}/{rep.get('gates_total', '—')} | "
+            f"{rep.get('metrics', {}).get('forward_distance_p50', float('nan')):.2f} m | "
+            f"{rep.get('metrics', {}).get('fall_rate', float('nan')):.2f} | {rep.get('score', '—')} | {clip} |")
         base = json.loads((runs_dir / st["parent"] / "config.json").read_text()) if st.get("parent") and (runs_dir / st["parent"] / "config.json").is_file() else defaults
         diff = config_diff(base, cfg)
         diff_s = "\n".join(f"- `{d['path']}`: {d['from']} → {d['to']}" for d in diff) or "- (defaults)"
         failing = [g for g in rep.get("gates", []) if g["pass"] is False]
         fail_s = ", ".join(f"{g['gate']} ({g['value']:.3f} {g['op']} {g['threshold']})" for g in failing) or "none"
+        warm = st.get("warm_start") or {}
+        warm_s = ("warm start from " + warm["parent"]) if warm.get("used") else (f"cold start ({warm.get('reason')})" if warm.get("parent") else "from scratch")
         details.append(f"""### Run {i}: {st.get('name', rid)} (`{rid}`)
 
+- **Task / suite:** {r['task']} / {suite}@{rep.get('suite_version', '—')}; {warm_s}
 - **Status:** {st.get('status')}{(' — ' + st['error']) if st.get('error') else ''}
 - **Hypothesis / notes:** {st.get('notes') or '—'}
 - **Config vs {'parent ' + st['parent'] if st.get('parent') else 'defaults'}:**
@@ -249,7 +280,19 @@ def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -
 - **Gates:** {rep.get('gates_passed', '—')}/{rep.get('gates_total', '—')}; failing: {fail_s}
 - **Reflection:** {rep.get('reflection', '—')}
 """)
-    text = LEDGER_HEAD.format(date=time.strftime("%Y-%m-%d"), n=len(runs), rows="\n".join(rows)) + "\n".join(details)
+    sections = []
+    for suite, rows in rows_by_suite.items():
+        s = load_suite(suite)
+        proto = suite_protocol(s)
+        t = proto["terrain"]
+        ground = {"flat": "flat ground", "slope": f"a {t.get('slope_deg', 0)} deg incline (tilted world)",
+                  "rough": f"{t.get('n_boxes', 0)} x {1000 * float(t.get('box_height_m', 0)):.0f} mm boxes (seed {t.get('field_seed', 0)}, spawn jitter {t.get('spawn_jitter_m', 0)} m)",
+                  "rough_slope": "boxes on an incline"}[t.get("kind", "flat")]
+        protocol = (f"Protocol `{suite}@{s.get('version')}`: {proto['n_episodes']} seeded episodes, {proto['episode_seconds']:.0f} s, "
+                    f"command {proto['command']}, {ground}, CPU MuJoCo on the mesh model; "
+                    f"{len(s['gates'])} gates incl. the servo-safety fragment.")
+        sections.append(LEDGER_SECTION.format(suite=suite, n=len(rows), protocol=protocol, rows="\n".join(rows)))
+    text = LEDGER_HEAD.format(date=time.strftime("%Y-%m-%d"), sections="".join(sections)) + "\n".join(details)
     text += """
 ## Runs outside the store (development smoke tests, 2026-09-07)
 
@@ -279,24 +322,36 @@ def main() -> int:
     if a.ledger:
         ledger(runs_dir, Path(a.ledger))
         return 0
-    run_ids = a.runs or [r["run_id"] for r in sorted(_scan_runs(runs_dir), key=lambda r: r["created"] or "") if r["status"] == "done"]
+    scanned = {r["run_id"]: r for r in _scan_runs(runs_dir)}
+    run_ids = a.runs or [r["run_id"] for r in sorted(scanned.values(), key=lambda r: r["created"] or "") if r["status"] == "done"]
     cfg = TrainConfig()
     summary = {}
-    cmd = [0.12, 0.0, 0.0]
-    summary["opencat_trF"] = render_episode(nominal_env(cfg, envelope_tier="tested"), GaitController.from_opencat("trF"),
-                                            seed=0, command=cmd, out_gif=out / "baseline_opencat_trot.gif", label="OpenCat trF baseline")
+    suites = sorted({scanned[r]["suite"] for r in run_ids if r in scanned} | {"flat_v1"})
+    for suite in suites:
+        env, cmd = _suite_env(cfg, suite, envelope_tier="tested")
+        gif = "baseline_opencat_trot.gif" if suite == "flat_v1" else f"baseline_opencat_trot_{suite}.gif"
+        summary[f"opencat_trF@{suite}"] = render_episode(env, GaitController.from_opencat("trF"), seed=0, command=cmd,
+                                                         out_gif=out / gif, label=f"OpenCat trF on {suite}")
     for spec in a.extra_policy:
         label, path = spec.split("=", 1)
-        pol = PolicyController(NumpyPolicy.load(path))
-        summary[label] = render_episode(nominal_env(cfg), pol, seed=0, command=cmd, out_gif=out / f"policy_{label}.gif", label=label)
+        env, cmd = _suite_env(cfg, "flat_v1")
+        summary[label] = render_episode(env, PolicyController(NumpyPolicy.load(path)), seed=0, command=cmd,
+                                        out_gif=out / f"policy_{label}.gif", label=label)
     for rid in run_ids:
-        name = json.loads((runs_dir / rid / "state.json").read_text()).get("name", rid)
+        r = scanned[rid]
+        # the run's OWN config (control rate, action scale) in its OWN suite's terrain
+        run_cfg = TrainConfig.model_validate(json.loads((runs_dir / rid / "config.json").read_text()))
+        env, cmd = _suite_env(run_cfg, r["suite"])
         pol = PolicyController(NumpyPolicy.load(runs_dir / rid / "policy" / "policy.npz"))
-        summary[rid] = render_episode(nominal_env(cfg), pol, seed=0, command=cmd, out_gif=out / f"policy_{name}.gif", label=name)
+        summary[rid] = render_episode(env, pol, seed=0, command=cmd, out_gif=out / f"policy_{r['name']}.gif",
+                                      label=f"{r['name']} ({r['suite']})")
     render_model_stills(out)
     plot_curves(runs_dir, run_ids, out)
-    plot_gates(runs_dir, run_ids, out)
-    plot_gait(runs_dir, run_ids[0], out)
+    for suite in suites:
+        plot_gates(runs_dir, [r for r in run_ids if scanned[r]["suite"] == suite], out, suite=suite)
+    flat_runs = [r for r in run_ids if scanned[r]["suite"] == "flat_v1"]
+    if flat_runs:
+        plot_gait(runs_dir, flat_runs[0], out)
     (out / "render_summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
     return 0
