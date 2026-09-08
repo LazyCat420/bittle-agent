@@ -108,16 +108,19 @@ pushes from curriculum stage 2.
 | run | steps | wall-clock | throughput | gates | distance / 10 s | falls |
 |---|---|---|---|---|---|---|
 | smoke (1024 envs) | 3M | 137 s | 43k steps/s | — | stands, then falls under the walk command | — |
-| **r1-defaults-40M** | 40M | **15 min** | ~50k steps/s | **13 / 14** | **1.13 m** | 0 / 20 |
-| **r2-energy-fix-15M** (GLM's patch) | 15M | 7.3 min | 34k steps/s | 13 / 14 | 1.19 m | 0 / 20 |
+| **r1-defaults-40M** | 40M | **15 min** | ~50k steps/s | **15 / 15** (13/14 under gates 1.0.0) | **1.13 m** | 0 / 20 |
+| **r2-energy-fix-15M** (GLM's patch) | 15M | 7.3 min | 34k steps/s | 15 / 15 (13/14 under 1.0.0) | 1.19 m | 0 / 20 |
 | OpenCat `trF` baseline | — | — | — | 8 / 14 | 0.997 m | 0 / 20 |
 
 ![gates](media/rl-training/gates.png)
 
-Both policies fail exactly one gate, `energy_proxy` (1.08 W and 1.39 W against a 1.0 W limit). That is the
-signal the loop is designed to hand back to the agent. The GLM cycle raised the energy penalty ×10 **and**
+Under the original gate suite (1.0.0) both policies failed exactly one gate, `energy_proxy` (1.08 W and
+1.39 W against a 1.0 W limit). The [audit](#the-gate-that-failed-was-the-gate-not-the-robot-audit-loop-fixes)
+found the limit was an uncalibrated guess: the firmware trot itself measures 3.79 W on the same proxy. Under
+the calibrated suite (1.1.0) both runs pass every evaluated gate. The gate chart below is the 1.0.0 report,
+kept as the record of what the agent was reacting to. The GLM cycle raised the energy penalty ×10 **and**
 raised the foot-air-time reward; the second change won, the gait got longer and faster, and energy went up.
-GLM's own report says so and proposes reverting foot-air-time and raising the energy penalty ×4 next.
+GLM's own report says so and proposes reverting foot-air-time and raising the energy penalty next.
 
 The learned gait is a trot — diagonal pairs land together:
 

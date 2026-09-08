@@ -22,5 +22,11 @@
     "fell": false,
     "frames": 63,
     "gif": "policy_r2-energy-fix-15M.gif"
+  },
+  "20260907-165840-e406b4": {
+    "distance_m": 0.556,
+    "fell": false,
+    "frames": 63,
+    "gif": "policy_r3-energy-x100-warm-10M.gif"
   }
 }

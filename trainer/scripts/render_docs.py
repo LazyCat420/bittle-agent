@@ -28,6 +28,16 @@ from trainer.policy.mlp import NumpyPolicy  # noqa: E402
 W, H, FPS, SECONDS = 300, 225, 12, 5.0
 
 
+def _scan_runs(runs_dir: Path) -> list[dict]:
+    """Read every run's state.json directly; index.json is only refreshed by the service."""
+    out = []
+    for d in runs_dir.iterdir():
+        if d.is_dir() and (d / "state.json").is_file():
+            st = json.loads((d / "state.json").read_text())
+            out.append({"run_id": d.name, "status": st.get("status"), "created": st.get("created")})
+    return out
+
+
 def _camera(d: mujoco.MjData, m: mujoco.MjModel) -> mujoco.MjvCamera:
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -204,8 +214,7 @@ def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -
 
     from trainer.config import TrainConfig, config_diff
 
-    idx = json.loads((runs_dir / "index.json").read_text())["runs"]
-    runs = sorted(idx, key=lambda r: r["created"] or "")
+    runs = sorted(_scan_runs(runs_dir), key=lambda r: r["created"] or "")
     defaults = TrainConfig().model_dump(mode="json")
     rows, details = [], []
     for i, r in enumerate(runs, 1):
@@ -270,8 +279,7 @@ def main() -> int:
     if a.ledger:
         ledger(runs_dir, Path(a.ledger))
         return 0
-    idx = json.loads((runs_dir / "index.json").read_text())["runs"]
-    run_ids = a.runs or sorted(r["run_id"] for r in idx if r["status"] == "done")
+    run_ids = a.runs or [r["run_id"] for r in sorted(_scan_runs(runs_dir), key=lambda r: r["created"] or "") if r["status"] == "done"]
     cfg = TrainConfig()
     summary = {}
     cmd = [0.12, 0.0, 0.0]
