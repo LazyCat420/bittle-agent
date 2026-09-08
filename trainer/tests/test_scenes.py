@@ -42,6 +42,8 @@ def test_house_scenes_publish_per_scene_and_pooled_metrics():
     assert "progress_ratio_min" in metrics and "stand_still_drift_m" in metrics
     # the stand controller on a 0.6 s episode moves nowhere and falls nowhere
     assert metrics["fall_rate_max"] == 0.0
+    # a zero-command scene has no progress ratio (it used to divide by 1e-6 and report 300000)
+    assert metrics["statue_rough/progress_ratio"] is None and metrics["statue_rough/fall_rate"] == 0.0
 
 
 def test_classic_suite_keeps_bare_metric_names():

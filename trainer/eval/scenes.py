@@ -95,7 +95,7 @@ def run_suite_scenes(cfg: TrainConfig, controller, suite: dict[str, Any], *, n_e
         top["fall_rate_max"] = float(max(a["fall_rate"] for a in per_scene.values()))
         # progress along the COMMANDED direction (a backward scene's ratio is negative in aggregate)
         moving = [a["progress_ratio"] * np.sign(per_scene_cmd(scenes, n_)[0]) for n_, a in per_scene.items()
-                  if abs(per_scene_cmd(scenes, n_)[0]) > 0]
+                  if a.get("progress_ratio") is not None]
         top["progress_ratio_min"] = float(min(moving)) if moving else 0.0
         top["n_scenes"] = len(per_scene)
         top["scenes"] = list(per_scene)

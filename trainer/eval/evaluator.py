@@ -246,7 +246,9 @@ def aggregate(stats: list[EpisodeStats], episode_seconds: float) -> dict[str, An
         "ang_vel_rmse": float(np.mean([s.ang_vel_rmse for s in stats])),
         "centre_drift_m": float(np.mean([s.centre_drift_m for s in stats])),
         "climb_height_p50": float(np.median([s.climb_height for s in stats])),
-        "progress_ratio": float(np.median(d) / max(abs(stats[0].cmd[0]) * episode_seconds, 1e-6)),
+        # distance / (|commanded vx| x seconds); undefined (None = "not evaluated") for a zero command
+        "progress_ratio": (float(np.median(d) / (abs(stats[0].cmd[0]) * episode_seconds))
+                           if abs(stats[0].cmd[0]) >= spec.ZERO_CMD_EPS else None),
         "stumble_rate": float(np.mean([s.stumble_rate for s in stats])),
         "foot_clearance_p50_mm": float(np.median([s.foot_clearance_p50_mm for s in stats])),
         "body_clearance_min_mm": float(np.min([s.body_clearance_min_mm for s in stats])),

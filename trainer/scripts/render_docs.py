@@ -221,7 +221,11 @@ def plot_scenes(runs_dir: Path, run_ids: list[str], out: Path, suite: str) -> No
     for i, (label, m) in enumerate(series):
         off = (i - (len(series) - 1) / 2) * width
         falls = [float(m.get(f"{n}/fall_rate", float("nan"))) for n in names]
-        prog = [float(m.get(f"{n}/progress_ratio", float("nan"))) * sign[n] if sign[n] else float(m.get(f"{n}/centre_drift_m", float("nan"))) for n in names]
+        def _f(key: str) -> float:
+            v = m.get(key)
+            return float(v) if v is not None else float("nan")
+
+        prog = [_f(f"{n}/progress_ratio") * sign[n] if sign[n] else _f(f"{n}/centre_drift_m") for n in names]
         axes[0].bar(xs + off, falls, width=width, label=label, alpha=0.85)
         axes[1].bar(xs + off, prog, width=width, label=label, alpha=0.85)
     for ax, title in zip(axes, ("fall rate per scene (lower is better)", "progress along the command (ratio; statue = drift m)")):

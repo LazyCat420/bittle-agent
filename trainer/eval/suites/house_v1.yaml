@@ -9,8 +9,12 @@
 # UNCALIBRATED (0.1.0): distance / fall bars per scene are the flat_v1 / slope_v1 / rough_v1 bars where a
 # scene repeats one of those protocols, and design targets elsewhere (nothing in the firmware walks down a
 # slope, turns while walking, or backs over rocks). Replay the firmware gaits with
-# `python -m trainer.eval.baselines --suite house_v1` and read runs/baselines/opencat_trF/house_v1/report.json;
-# the numbers measured on 2026-09-08 are in chapter 05 of the documentation.
+# `python -m trainer.eval.baselines --suite house_v1` and read runs/baselines/opencat_trF/house_v1/report.json.
+# Measured 2026-09-08 (12 episodes per scene, tested envelope), opencat_trF distance p50 / falls per scene:
+#   flat 0.964 m / 0 - slope_up 0.497 / 0 - slope_down 1.143 / 0 (open loop: gravity speeds it up) - rough 0.406 / 0 -
+#   rough_slope 0.111 / 0.08 - pushed 0.913 / 0 - turn 0.964 / 0 (it cannot turn) - backward_rough +0.964 / 0 (it cannot
+#   reverse) - statue_rough 0.329 / 0.08 (it cannot stand still). Pooled forward 0.913 m, 3.83 W, peak joint speed 4.35.
+#   opencat_wkF falls in 50 % of the rough and rough_slope episodes.
 suite: house_v1
 version: 0.1.0-uncalibrated
 include: [_servo_safety]
