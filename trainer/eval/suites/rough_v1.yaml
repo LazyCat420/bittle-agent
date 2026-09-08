@@ -1,8 +1,12 @@
 # Rocks / edges suite: a fixed field of 24 half-buried 12 mm boxes (seeded layout), flat gravity.
 # Seeds differ only in the spawn offset (spawn_jitter_m), so 20 episodes meet different rocks on
-# the SAME field. UNCALIBRATED until `baselines --suite rough_v1` has replayed the firmware trot.
+# the SAME field. Baseline replayed 2026-09-07 (20 episodes): opencat_trF 0.381 m, 0 falls, 3.68 W,
+# stumble 0.001, body clearance 31 mm, swing clearance 0.7 mm (the trot shuffles); opencat_wkF 0.386 m
+# but falls 12/20. Distance and falls are set from the trot (1.1x, +0.10). STILL UNCALIBRATED:
+# foot_clearance / stumble_rate have no firmware reference (the trot never lifts its feet), so they
+# stay design targets until a learned policy shows what is achievable; freeze at 1.0.0 then.
 suite: rough_v1
-version: 0.1.0-uncalibrated
+version: 0.2.0-uncalibrated
 include: [_servo_safety]
 protocol:
   n_episodes: 20
@@ -25,17 +29,17 @@ gates:
   - name: fall_rate
     metric: fall_rate
     op: "<="
-    threshold: 0.25
+    threshold: 0.10
     unit: fraction
     term: orientation
-    hint: "raise orientation / base_height penalties; lower box_height_m and warm-start again"
+    hint: "the trot never falls on these rocks (baseline + 0.10); raise orientation / base_height penalties; lower box_height_m and warm-start again"
   - name: forward_distance_p50
     metric: forward_distance_p50
     op: ">="
     threshold: 0.45
     unit: m
     term: tracking_lin_vel
-    hint: "raise tracking_lin_vel; ideal is 1.2 m at 0.12 m/s for 10 s"
+    hint: "1.1 x the firmware trot's 0.381 m across this field rounds to 0.42, kept at 0.45; ideal is 1.2 m at 0.12 m/s for 10 s"
   - name: progress_ratio
     metric: progress_ratio
     op: ">="

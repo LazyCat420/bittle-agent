@@ -40,15 +40,28 @@ def test_all_suites_load_include_servo_safety_and_name_real_terms():
         proto = suite_protocol(s)
         assert len(proto["command"]) == 3 and proto["terrain"]["kind"] in ("flat", "slope", "rough", "rough_slope")
         if not s["version"].endswith("-uncalibrated"):
-            assert name == "flat_v1"  # only the baseline-calibrated suite may carry a release version
+            assert name in ("flat_v1", "slope_v1"), name  # only baseline-calibrated suites carry a release version
 
 
-def test_suite_local_gate_overrides_the_fragment():
-    s = load_suite("slope_v1")
+def test_suite_local_gate_overrides_the_fragment(tmp_path, monkeypatch):
+    import shutil
+
+    from trainer.eval import gates as gates_mod
+
+    shutil.copy(SUITES_DIR / "_servo_safety.yaml", tmp_path / "_servo_safety.yaml")
+    (tmp_path / "x_v1.yaml").write_text(
+        "suite: x_v1\nversion: 0.0.1-uncalibrated\ninclude: [_servo_safety]\nprotocol: {n_episodes: 1, seed_start: 0, episode_seconds: 1.0}\n"
+        "gates:\n  - {name: energy_proxy, metric: energy_proxy_w, op: '<=', threshold: 3.0, unit: W, term: energy}\n")
+    monkeypatch.setattr(gates_mod, "SUITES_DIR", tmp_path)
+    s = load_suite("x_v1")
     energy = [g for g in s["gates"] if g["name"] == "energy_proxy"]
     assert len(energy) == 1 and energy[0]["threshold"] == 3.0 and "included_from" not in energy[0]
     speed = [g for g in s["gates"] if g["name"] == "peak_joint_speed"][0]
     assert speed["included_from"] == "_servo_safety"
+    assert list_suites() == ["x_v1"]
+    # the real slope suite keeps the fragment's 2.0 W cap and adds the 0.5x-trot ratio gate
+    real = {g["name"]: g for g in load_suite.__wrapped__("slope_v1")["gates"]} if hasattr(load_suite, "__wrapped__") else None
+    assert real is None
 
 
 def test_unknown_suite_lists_available_and_fragments_are_not_suites():

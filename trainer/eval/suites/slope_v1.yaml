@@ -1,9 +1,11 @@
 # Incline suite: walk UP a fixed 8-degree slope (tilted-world protocol; same XML as flat).
-# UNCALIBRATED: every threshold below is a guess until `python -m trainer.eval.baselines --suite slope_v1`
-# has replayed the firmware trot on this exact protocol (the energy-gate lesson: a bar written before
-# the baseline was measured fails the winner). Freeze at 1.0.0 only after that.
+# CALIBRATED 2026-09-07 (1.0.0) against the firmware gaits replayed on this exact protocol, 20 episodes
+# (`python -m trainer.eval.baselines --suite slope_v1`): opencat_trF 0.497 m, climb 0.069 m, 0 falls,
+# 3.68 W, lateral 0.007 m, tilt 5.3 deg, peak joint speed 4.07 rad/s; opencat_wkF 0.653 m, 2.97 W.
+# Rule: distance = 1.1 x trot; climb = distance x sin(8 deg); falls = trot + 0.10; energy = 0.5 x trot
+# (ratio gate) with the 2.0 W fragment cap; tilt/lateral/vz keep a 2x margin over the trot.
 suite: slope_v1
-version: 0.1.0-uncalibrated
+version: 1.0.0
 include: [_servo_safety]
 protocol:
   n_episodes: 20
@@ -21,24 +23,24 @@ gates:
   - name: fall_rate
     metric: fall_rate
     op: "<="
-    threshold: 0.20
+    threshold: 0.10
     unit: fraction
     term: orientation
-    hint: "raise orientation / base_height penalties; lower the slope_deg range and warm-start again"
+    hint: "the trot never falls here (baseline + 0.10); raise orientation / base_height penalties; lower the slope_deg range and warm-start again"
   - name: forward_distance_p50
     metric: forward_distance_p50
     op: ">="
-    threshold: 0.35
+    threshold: 0.55
     unit: m
     term: tracking_lin_vel
-    hint: "raise tracking_lin_vel; ideal is 1.0 m at 0.10 m/s for 10 s"
+    hint: "1.1 x the firmware trot's 0.497 m on this slope; ideal is 1.0 m at 0.10 m/s for 10 s"
   - name: climb_height
     metric: climb_height_p50
     op: ">="
-    threshold: 0.045
+    threshold: 0.076
     unit: m
     term: tracking_lin_vel
-    hint: "= 0.35 m x sin(8 deg); turn on slope_progress (reward) if tracking alone stalls"
+    hint: "= 0.55 m x sin(8 deg) (the trot climbs 0.069 m); turn on slope_progress (reward) if tracking alone stalls"
   - name: vel_tracking_rmse
     metric: vel_tracking_rmse
     op: "<="
@@ -67,13 +69,14 @@ gates:
     unit: m/s
     term: lin_vel_z
     hint: "raise lin_vel_z penalty"
-  - name: energy_proxy
-    metric: energy_proxy_w
+  - name: energy_vs_baseline
+    metric: baseline_energy_ratio
     op: "<="
-    threshold: 3.0
-    unit: W
+    threshold: 0.5
+    unit: ratio
+    group: baseline
     term: energy
-    hint: "climbing 8 deg at 0.10 m/s costs ~0.04 W of mechanical work; the rest is gait inefficiency"
+    hint: "at most half the firmware trot's 3.68 W on this slope (climbing 8 deg at 0.10 m/s is ~0.04 W of mechanical work)"
   - name: beats_baseline_trot_distance
     metric: baseline_distance_ratio
     op: ">="
