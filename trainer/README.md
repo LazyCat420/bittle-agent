@@ -79,4 +79,11 @@ TRAINER_GPU_TESTS=1 .venv-trainer/bin/python -m pytest trainer/tests -q -m gpu  
 .venv-trainer/bin/python -m trainer.train.smoke --num-envs 1024 --num-timesteps 3000000   # learning smoke
 ```
 
-`deploy.sh` runs only the root `tests/` (the NAS gate); `trainer/tests` never runs on the NAS.
+`deploy.sh` runs the root `tests/` (the NAS gate) and, when `.venv-trainer` exists, `trainer/tests` (CPU).
+
+## NAS -> trainer connectivity
+
+The Windows firewall blocks inbound 8009 to WSL2 until an admin adds the Hyper-V rule (see
+`trainer/scripts/nas_tunnel.sh`). Until then the NAS reaches the trainer through a reverse ssh tunnel
+plus a socat relay container on the NAS (`BITTLE_TRAINER_URL=http://10.0.0.16:8039`); start the tunnel
+with `setsid nohup trainer/scripts/nas_tunnel.sh > runs/nas_tunnel.log 2>&1 < /dev/null &` after the service.
