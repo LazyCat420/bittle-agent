@@ -59,4 +59,16 @@ HOUSE_V1: list[dict[str, Any]] = [
      "stop_on_pass": True},
 ]
 
-STRATEGIES = {"scripted_v1": SCRIPTED_V1, "terrain_ladder_v1": TERRAIN_LADDER_V1, "house_v1": HOUSE_V1}
+#: house_v1_rung2: the follow-up rung GLM would run after reading h1's diagnosis — foot_clearance was < 0.2 % of the
+#: reward at -2.0 (invisible; the policy still shuffles at 0.6 mm swing clearance and sticks on the 12 mm edges),
+#: so it goes to the bound with feet_air_time behind it, and yaw tracking gets one more push (turn rmse 0.30 vs 0.25).
+HOUSE_V1_RUNG2: list[dict[str, Any]] = [
+    {"name": "h2-house-clearance-15M", "task": "house_walk", "base": "best",
+     "patch": {"reward": {"weights": {"foot_clearance": -10.0, "feet_air_time": 0.5, "tracking_ang_vel": 4.0}},
+               "ppo": {"num_timesteps": 15_000_000}},
+     "notes": "H2: foot_clearance x5 to the bound (-10) + feet_air_time 0.5 so the swing actually lifts over 12 mm edges; "
+              "tracking_ang_vel 4.0 for the walk-and-turn scene", "stop_on_pass": True},
+]
+
+STRATEGIES = {"scripted_v1": SCRIPTED_V1, "terrain_ladder_v1": TERRAIN_LADDER_V1, "house_v1": HOUSE_V1,
+              "house_v1_rung2": HOUSE_V1_RUNG2}
