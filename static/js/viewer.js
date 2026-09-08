@@ -266,7 +266,7 @@ export class BittleViewer {
     this.rootMotionEnabled = false;
     this._groundSolverSuspended = true;
     this.resetRobotPosition();
-    const ok = this.playSequence(frames, { name: `rollout ${rollout.source?.run_id || rollout.source?.baseline || ''}`.trim(),
+    const ok = this.playSequence(frames, { name: options.name || `rollout ${rollout.source?.run_id || rollout.source?.baseline || ''}`.trim(),
                                           description: rollout.summary ? `${(rollout.summary.distance_m ?? 0).toFixed ? rollout.summary.distance_m.toFixed(2) : rollout.summary.distance_m} m` : '',
                                           loop: Boolean(options.loop) });
     if (!ok) { this.rootMotionEnabled = true; this._groundSolverSuspended = false; }

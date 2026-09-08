@@ -283,10 +283,21 @@
   }
 
   /* ── Floating Drive Pad (WASD / Locomotion) ── */
-  .drive-pad-overlay {
+  /* Bottom stack: drive pad sits ABOVE the timeline, never over it */
+  .viewport-bottom-stack {
     position: absolute;
-    bottom: 136px;
-    right: 18px;
+    bottom: 58px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 25;
+  }
+  .viewport-bottom-stack > * { pointer-events: auto; }
+  .drive-pad-overlay {
     background: rgba(15, 20, 30, 0.85);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-highlight);
@@ -304,6 +315,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
     width: 100%;
     font-size: 10.5px;
     font-weight: 700;
@@ -311,7 +323,23 @@
     letter-spacing: 0.5px;
     text-transform: uppercase;
     margin-bottom: 2px;
+    cursor: pointer;
   }
+  .drive-pad-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 4px;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+  }
+  .drive-pad-toggle:hover { color: var(--text); border-color: var(--border-highlight); }
+  .drive-pad-overlay.collapsed { padding: 6px 10px; gap: 0; }
+  .drive-pad-overlay.collapsed .drive-pad-header { margin-bottom: 0; }
+  .drive-pad-overlay.collapsed .drive-pad-grid,
+  .drive-pad-overlay.collapsed .drive-pad-hint { display: none; }
   .drive-pad-grid {
     display: grid;
     grid-template-columns: repeat(3, 36px);
@@ -581,6 +609,7 @@
   .td-table tr[data-run] { cursor: pointer; }
   .td-table tr[data-run]:hover { background: rgba(59, 130, 246, .08); }
   .td-table tr.td-row-sel { background: rgba(59, 130, 246, .16); }
+  .td-playing { color: #34d399; font-size: 10px; font-weight: 700; margin-left: 6px; }
   .td-runname { font-weight: 600; }
   .td-kv { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin: 4px 0; }
   .td-kv b { color: var(--muted); font-weight: 500; margin-right: 4px; }
@@ -786,10 +815,9 @@
 
   /* ── Floating Timeline Player & Scrubber ── */
   .timeline-bar {
-    position: absolute;
-    bottom: 58px;
-    left: 16px;
-    right: 16px;
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
     background: rgba(15, 20, 30, 0.90);
     backdrop-filter: blur(14px);
     border: 1px solid var(--border-highlight);
@@ -861,6 +889,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .timeline-controls-left {
     display: flex;
@@ -1353,6 +1383,28 @@
       </div>
     </div>
 
+    <div class="viewport-bottom-stack">
+    <!-- Floating Drive Pad (WASD / Locomotion) — collapsible, stacked above the timeline -->
+    <div class="drive-pad-overlay collapsed" id="drivePadOverlay">
+      <div class="drive-pad-header" id="drivePadHeader" title="Show / hide the manual drive pad">
+        <span>🎮 Manual Drive</span>
+        <span style="font-size: 10px; opacity: 0.7;">WASD / Keys</span>
+        <button class="drive-pad-toggle" id="drivePadToggle" aria-expanded="false">▸</button>
+      </div>
+      <div class="drive-pad-grid">
+        <div></div>
+        <button class="dpad-btn" id="dpadFwd" title="Walk Forward (W / ↑)">▲</button>
+        <div></div>
+        <button class="dpad-btn" id="dpadLeft" title="Turn Left (A / ←)">◀</button>
+        <button class="dpad-btn stop-btn" id="dpadStop" title="Stop / Stand (Space / Esc)">⏹</button>
+        <button class="dpad-btn" id="dpadRight" title="Turn Right (D / →)">▶</button>
+        <div></div>
+        <button class="dpad-btn" id="dpadBack" title="Back Up (S / ↓)">▼</button>
+        <div></div>
+      </div>
+      <div class="drive-pad-hint">Hold to Walk • Release to Stand</div>
+    </div>
+
     <!-- Floating Moveset Player & Timeline Scrubber -->
     <div class="timeline-bar" id="timelineBar">
       <div class="timeline-header">
@@ -1387,26 +1439,7 @@
         </div>
       </div>
     </div>
-
-    <!-- Floating Drive Pad (WASD / Locomotion) -->
-    <div class="drive-pad-overlay" id="drivePadOverlay">
-      <div class="drive-pad-header">
-        <span>🎮 Manual Drive</span>
-        <span style="font-size: 10px; opacity: 0.7;">WASD / Keys</span>
-      </div>
-      <div class="drive-pad-grid">
-        <div></div>
-        <button class="dpad-btn" id="dpadFwd" title="Walk Forward (W / ↑)">▲</button>
-        <div></div>
-        <button class="dpad-btn" id="dpadLeft" title="Turn Left (A / ←)">◀</button>
-        <button class="dpad-btn stop-btn" id="dpadStop" title="Stop / Stand (Space / Esc)">⏹</button>
-        <button class="dpad-btn" id="dpadRight" title="Turn Right (D / →)">▶</button>
-        <div></div>
-        <button class="dpad-btn" id="dpadBack" title="Back Up (S / ↓)">▼</button>
-        <div></div>
-      </div>
-      <div class="drive-pad-hint">Hold to Walk • Release to Stand</div>
-    </div>
+    </div><!-- /viewport-bottom-stack -->
 
     <div class="viewport-controls">
       <div class="btn-group">
@@ -1756,6 +1789,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupTabs();
   // Training dashboard: runs, gates, live GLM cycles, compare. The tab widens the panel column.
   trainingDash = new TrainingDashboard({ root: '#trainingDash', viewer });
+  window.viewer = viewer; window.trainingDash = trainingDash; // devtools handles
   document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
     document.body.classList.toggle('training-wide', btn.dataset.tab === 'tab-training');
     // the viewport column changed width: resize the 3D canvas after layout settles
@@ -2137,6 +2171,21 @@ function setupDriveControls() {
   const dpadLeft = document.getElementById('dpadLeft');
   const dpadRight = document.getElementById('dpadRight');
   const dpadStop = document.getElementById('dpadStop');
+
+  // Collapsible pad (state remembered per browser)
+  const pad = document.getElementById('drivePadOverlay');
+  const padToggle = document.getElementById('drivePadToggle');
+  const padHeader = document.getElementById('drivePadHeader');
+  const setPadCollapsed = (collapsed) => {
+    if (!pad) return;
+    pad.classList.toggle('collapsed', collapsed);
+    if (padToggle) { padToggle.textContent = collapsed ? '▸' : '▾'; padToggle.setAttribute('aria-expanded', String(!collapsed)); }
+    try { localStorage.setItem('bittle.drivePadCollapsed', collapsed ? '1' : '0'); } catch (e) { /* ignore */ }
+  };
+  let padCollapsed = true;
+  try { padCollapsed = localStorage.getItem('bittle.drivePadCollapsed') !== '0'; } catch (e) { /* ignore */ }
+  setPadCollapsed(padCollapsed);
+  if (padHeader) padHeader.onclick = () => setPadCollapsed(!pad.classList.contains('collapsed'));
 
   function bindHold(btn, startAction) {
     if (!btn) return;

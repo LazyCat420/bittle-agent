@@ -250,15 +250,23 @@ export class TrainingDashboard {
       const best = this.bestBySuite[r.suite]?.run_id === r.run_id ? ' 🥇' : '';
       const gates = r.gates_total ? `${r.gates_passed}/${r.gates_total}` : '—';
       const gcls = r.gates_total ? (r.gates_passed === r.gates_total ? 'td-ok' : 'td-warn') : '';
+      const playing = r.run_id === this.playingRun ? ' <span class="td-playing" title="replaying in the viewer">▶ in viewer</span>' : '';
       return `<tr data-run="${esc(r.run_id)}" class="${r.run_id === this.selected ? 'td-row-sel' : ''}">
         <td><input type="checkbox" data-cmp="${esc(r.run_id)}" ${this.compare.has(r.run_id) ? 'checked' : ''}></td>
-        <td><div class="td-runname">${esc(r.name)}${best}</div><code class="td-muted">${esc(r.run_id)}</code></td>
+        <td><div class="td-runname">${esc(r.name)}${best}${playing}</div><code class="td-muted">${esc(r.run_id)}</code></td>
         <td>${esc(r.task || 'flat_walk')}<br><span class="td-muted">${esc(r.suite || 'flat_v1')}${r.suite_version ? '@' + esc(r.suite_version) : ''}</span></td>
         <td class="${busy ? 'td-busy' : (r.status === 'failed' ? 'td-bad' : '')}">${esc(r.status)}${r.error ? `<div class="td-bad td-tiny">${esc(String(r.error).slice(0, 80))}</div>` : ''}</td>
         <td class="${gcls}">${gates}</td><td>${fmt(r.score, 2)}</td><td>${fmt(r.dist_p50, 2)} m</td><td>${fmt(r.fall_rate, 2)}</td>
         <td class="td-muted"><code>${esc((r.parent || '—').slice(-6))}</code></td></tr>`;
     }).join('');
-    t.querySelectorAll('tr[data-run]').forEach(tr => tr.onclick = (e) => { if (e.target.type !== 'checkbox') this.loadDetail(tr.dataset.run); });
+    // Clicking a run selects it AND replays its rollout (when it has a benchmark), so the viewer follows the selection.
+    t.querySelectorAll('tr[data-run]').forEach(tr => tr.onclick = (e) => {
+      if (e.target.type === 'checkbox') return;
+      const id = tr.dataset.run;
+      this.loadDetail(id);
+      const r = this.runs.find(x => x.run_id === id);
+      if (r && r.gates_total) this.replay(id, r.suite);
+    });
     t.querySelectorAll('input[data-cmp]').forEach(cb => cb.onchange = () => {
       cb.checked ? this.compare.add(cb.dataset.cmp) : this.compare.delete(cb.dataset.cmp);
       this.root.querySelector('#tdCompareCount').textContent = `${this.compare.size} selected`;
@@ -333,10 +341,25 @@ export class TrainingDashboard {
 
   async replay(runId, suite) {
     if (!this.viewer || typeof this.viewer.playRollout !== 'function') { alert('3D viewer not available'); return; }
+    const r = this.runs.find(x => x.run_id === runId);
+    const label = `${r?.name || runId} · ${suite || r?.suite || ''}`.replace(/ · $/, '');
+    const btn = this.root.querySelector('#tdReplay');
+    const seqName = document.getElementById('timelineSeqName');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ loading rollout…'; }
+    if (seqName) seqName.textContent = `loading ${label}…`;
+    const token = (this._replayToken = (this._replayToken || 0) + 1);
     try {
       const ro = await getJSON(`/api/training/rollout/${encodeURIComponent(runId)}?seed=0${suite ? '&suite=' + encodeURIComponent(suite) : ''}`);
-      this.viewer.playRollout(ro, { loop: false });
-    } catch (e) { alert('rollout: ' + e.message); }
+      if (token !== this._replayToken) return; // a newer replay request superseded this one
+      const ok = this.viewer.playRollout(ro, { loop: false, name: label });
+      if (ok) { this.playingRun = runId; this.renderRuns(); }
+    } catch (e) {
+      if (seqName) seqName.textContent = 'rollout failed: ' + e.message;
+      alert('rollout: ' + e.message);
+    } finally {
+      const b = this.root.querySelector('#tdReplay');
+      if (b) { b.disabled = false; b.textContent = '▶ replay rollout in viewer'; }
+    }
   }
 
   // ── compare ────────────────────────────────────────────────────────
