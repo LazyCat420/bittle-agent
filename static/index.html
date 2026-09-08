@@ -549,7 +549,7 @@
   }
   .agent-tool-status { color: var(--muted); font-size: 11px; }
   /* ── Training dashboard (static/js/training-dash.js) ── */
-  body.training-wide .main-deck { grid-template-columns: 340px 1fr; }
+  body.training-wide .main-deck { grid-template-columns: 420px 1fr; }
   #tab-training { display: none; flex-direction: column; gap: 10px; overflow-y: auto; }
   #tab-training.active { display: flex; }
   .td-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
@@ -1758,7 +1758,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   trainingDash = new TrainingDashboard({ root: '#trainingDash', viewer });
   document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
     document.body.classList.toggle('training-wide', btn.dataset.tab === 'tab-training');
-    if (btn.dataset.tab === 'tab-training' && trainingDash) setTimeout(() => trainingDash.redrawCharts(), 50);
+    // the viewport column changed width: resize the 3D canvas after layout settles
+    setTimeout(() => { if (viewer && typeof viewer.onWindowResize === 'function') viewer.onWindowResize(); }, 60);
+    if (btn.dataset.tab === 'tab-training' && trainingDash) setTimeout(() => trainingDash.redrawCharts(), 80);
   }));
   setupTimelineControls();
   setupDriveControls();

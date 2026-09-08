@@ -132,6 +132,12 @@ export class BittleViewer {
     requestAnimationFrame(this.animate);
 
     window.addEventListener('resize', () => this.onWindowResize());
+    // The container also changes size WITHOUT a window resize (the Training tab narrows the
+    // viewport column): watch the element itself, or the canvas keeps its old size and the
+    // robot ends up outside the visible strip.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => this.onWindowResize()).observe(this.container);
+    }
   }
 
   loadCourse(presetName) {
