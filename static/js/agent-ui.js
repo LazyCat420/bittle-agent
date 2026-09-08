@@ -13,8 +13,8 @@ export class AgentUI {
     this.cancelBtn = document.getElementById('agentCancelBtn');
     this.autoExecToggle = document.getElementById('agentAutoExecToggle');
     this.targetGetter = options.getTarget || (() => 'sim');
-    this.modeGetter = opts.getMode || (() => 'control');
-    this.onTrainingProgress = opts.onTrainingProgress || null;
+    this.modeGetter = options.getMode || (() => 'control');
+    this.onTrainingProgress = options.onTrainingProgress || null;
     this.confirmTokenGetter = options.getConfirmToken || (() => null);
     this.onActionExecuted = options.onActionExecuted || (() => {});
 
@@ -315,7 +315,7 @@ export class AgentUI {
       case 'progress': {
         // keepalive from a long tool call (training cycles take minutes)
         this.removeThinkingIndicator();
-        const card = this.toolCards ? this.toolCards[ev.id] : null;
+        const card = document.getElementById(`tool-${ev.id}`);
         const det = ev.detail || {};
         const prog = det.progress || {};
         const pct = (prog.total && prog.step) ? ` ${Math.round(100 * prog.step / prog.total)}%` : '';

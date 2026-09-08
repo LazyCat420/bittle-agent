@@ -548,6 +548,63 @@
     overflow-x: auto;
   }
   .agent-tool-status { color: var(--muted); font-size: 11px; }
+  /* ── Training dashboard (static/js/training-dash.js) ── */
+  body.training-wide .main-deck { grid-template-columns: 340px 1fr; }
+  #tab-training { display: none; flex-direction: column; gap: 10px; overflow-y: auto; }
+  #tab-training.active { display: flex; }
+  .td-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+  .td-chip { background: #0d1117; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; color: var(--muted); font-size: 11.5px; }
+  .td-chip select { background: transparent; color: var(--text); border: none; font: inherit; }
+  .td-chip.td-ok { border-color: var(--sim); color: var(--sim); }
+  .td-chip.td-bad { border-color: var(--real); color: var(--real); }
+  .td-chip.td-live { border-color: var(--warn); color: var(--warn); animation: tdPulse 1.6s infinite; }
+  @keyframes tdPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, .35); } 50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); } }
+  .td-small { font-size: 11px; padding: 3px 8px; }
+  .td-muted { color: var(--muted); font-size: 11.5px; }
+  .td-tiny { font-size: 11px; }
+  .td-ok { color: var(--sim); } .td-bad { color: var(--real); } .td-warn { color: var(--warn); } .td-busy { color: var(--accent); }
+  .td-live { color: var(--warn); font-weight: 700; }
+  .td-tasks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .td-task { background: var(--panel-sub); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 10px; font-size: 12px; cursor: pointer; min-width: 180px; }
+  .td-task:hover { border-color: var(--border-highlight); }
+  .td-task-blocked { opacity: .7; }
+  .td-task-name { font-weight: 600; }
+  .td-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .td-span2 { grid-column: 1 / -1; }
+  .td-card { background: var(--panel-sub); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 10px 12px; min-width: 0; }
+  .td-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 8px; font-size: 13px; }
+  .td-head select { max-width: 60%; background: #0d1117; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .td-tablewrap { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+  .td-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .td-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel-sub); }
+  .td-table td { padding: 5px 6px; border-bottom: 1px solid #1b2230; vertical-align: top; }
+  .td-table tr[data-run] { cursor: pointer; }
+  .td-table tr[data-run]:hover { background: rgba(59, 130, 246, .08); }
+  .td-table tr.td-row-sel { background: rgba(59, 130, 246, .16); }
+  .td-runname { font-weight: 600; }
+  .td-kv { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin: 4px 0; }
+  .td-kv b { color: var(--muted); font-weight: 500; margin-right: 4px; }
+  .td-notes { font-style: italic; margin: 2px 0 6px; }
+  .td-canvas { width: 100%; height: 200px; display: block; background: #0d1117; border-radius: var(--radius-sm); margin: 6px 0; }
+  .td-canvas-tall { height: 250px; }
+  .td-progress { height: 6px; background: #0d1117; border-radius: 3px; overflow: hidden; margin: 4px 0; }
+  .td-progress > div { height: 100%; background: linear-gradient(90deg, var(--accent), var(--sim)); transition: width .5s; }
+  .td-reflection { font-size: 11.5px; line-height: 1.45; background: #0d1117; border-left: 3px solid var(--accent); padding: 6px 8px; border-radius: 4px; margin: 6px 0; white-space: pre-wrap; }
+  .td-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .td-session .td-cycles { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .td-cycle { flex: 0 0 280px; background: #0f1623; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px; font-size: 12px; }
+  .td-cycle-live { border-color: var(--warn); box-shadow: 0 0 0 1px rgba(245, 158, 11, .3); }
+  .td-cycle-head { font-weight: 600; margin-bottom: 4px; }
+  .td-cycle-hyp { font-style: italic; margin-bottom: 4px; }
+  .td-cycle-patch { display: block; font-size: 10.5px; color: var(--muted); white-space: pre-wrap; word-break: break-all; margin-bottom: 4px; }
+  .td-cycle-status { margin-top: 4px; }
+  .td-cycle-res { margin-top: 4px; }
+  .td-link { cursor: pointer; text-decoration: underline; }
+  .td-feed { max-height: 260px; overflow-y: auto; font-size: 11.5px; display: flex; flex-direction: column; gap: 3px; }
+  .td-ev { padding: 2px 4px; border-bottom: 1px solid #1b2230; }
+  .td-pre { white-space: pre-wrap; max-height: 160px; overflow-y: auto; }
+  .td-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  #tab-training details > summary { cursor: pointer; color: var(--muted); font-size: 11.5px; margin: 4px 0; }
   .agent-tool-card.tool-success { border-left: 3px solid var(--sim); }
   .agent-tool-card.tool-refused { border-left: 3px solid var(--real); }
   .agent-tool-clamp { color: var(--warn); font-size: 11px; }
@@ -1385,6 +1442,7 @@
       <button class="tab-btn" data-tab="tab-movesets">🎬 Movesets &amp; Replay</button>
       <button class="tab-btn" data-tab="tab-joints">🦿 Joints</button>
       <button class="tab-btn" data-tab="tab-skills">⚡ Skills &amp; Gaits</button>
+      <button class="tab-btn" data-tab="tab-training">📈 Training</button>
       <button class="tab-btn" data-tab="tab-activity">📡 Activity</button>
     </div>
 
@@ -1435,6 +1493,11 @@
         <button class="btn-primary" id="agentSendBtn">Send</button>
         <button class="vbtn" id="agentCancelBtn" style="display:none; border:1px solid var(--real); color:var(--real)">Stop</button>
       </div>
+    </div>
+
+    <!-- Tab: Training dashboard (runs, gates, GLM cycles, compare) -->
+    <div class="tab-content" id="tab-training">
+      <div id="trainingDash"></div>
     </div>
 
     <!-- Tab: Primitives & Motion Composer -->
@@ -1594,9 +1657,11 @@
 <script type="module">
 import { BittleViewer, REST_POSE, STAND_POSE, BUILTIN_MOVESETS } from '/js/viewer.js';
 import { AgentUI } from '/js/agent-ui.js';
+import { TrainingDashboard } from '/js/training-dash.js';
 
 let viewer = null;
 let agentUI = null;
+let trainingDash = null;
 let TARGET = 'sim';
 let JOINTS = [];
 let hwAllowed = false;
@@ -1689,6 +1754,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 
   setupTabs();
+  // Training dashboard: runs, gates, live GLM cycles, compare. The tab widens the panel column.
+  trainingDash = new TrainingDashboard({ root: '#trainingDash', viewer });
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+    document.body.classList.toggle('training-wide', btn.dataset.tab === 'tab-training');
+    if (btn.dataset.tab === 'tab-training' && trainingDash) setTimeout(() => trainingDash.redrawCharts(), 50);
+  }));
   setupTimelineControls();
   setupDriveControls();
   await refreshStatus();
