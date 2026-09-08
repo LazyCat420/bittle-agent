@@ -48,12 +48,14 @@ TERRAIN_LADDER_V1: list[dict[str, Any]] = [
 #: house_v1: the rocks champion warm-started onto the level-4 mixture (flat / slope any direction / rocks / both,
 #: the full command box, pushes, friction 0.3-1.2, 100 g payload), then one tuning rung on the same suite.
 HOUSE_V1: list[dict[str, Any]] = [
-    {"name": "h0-house-warm-15M", "task": "house_walk", "base": "best_of:rough_walk",
+    {"name": "h0b-house-warm-15M", "task": "house_walk", "base": "best_of:rough_walk",
      "patch": {"ppo": {"num_timesteps": 15_000_000}},
      "notes": "H0: the rocks champion warm-started onto the house mixture (terrain level 4, stage-2 commands, pushes, wide DR)"},
     {"name": "h1-house-track-15M", "task": "house_walk", "base": "best",
-     "patch": {"reward": {"weights": {"tracking_lin_vel": 2.5, "tracking_ang_vel": 1.5}}, "ppo": {"num_timesteps": 15_000_000}},
-     "notes": "H1: stronger velocity and yaw-rate tracking on the mixture (the house asks for turning while walking)",
+     "patch": {"reward": {"weights": {"tracking_lin_vel": 4.0, "tracking_ang_vel": 2.5, "foot_clearance": -2.0}},
+               "ppo": {"num_timesteps": 15_000_000}},
+     "notes": "H1: stronger velocity and yaw-rate tracking plus 4x foot clearance on the mixture (h0 was stuck on the "
+              "12 mm edges at 0.5 mm swing clearance and turned at rmse 0.37)",
      "stop_on_pass": True},
 ]
 
