@@ -397,6 +397,18 @@ def main() -> int:
         env, cmd = _suite_env(cfg, "flat_v1")
         summary[label] = render_episode(env, PolicyController(NumpyPolicy.load(path)), seed=0, command=cmd,
                                         out_gif=out / f"policy_{label}.gif", label=label)
+    # scene clips (nine GIFs a run) only for the BEST run on each scenes suite: the ledger clip is enough for the rest
+    best_on_suite: dict[str, str] = {}
+    for rid in run_ids:
+        suite = scanned[rid]["suite"]
+        if not _scene_names(suite):
+            continue
+        rep = _report(runs_dir, rid, suite) or {}
+        key = (rep.get("gates_passed") or 0, rep.get("score") or 0.0)
+        cur = best_on_suite.get(suite)
+        if cur is None or key > cur[1]:
+            best_on_suite[suite] = (rid, key)
+    best_ids = {rid for rid, _ in best_on_suite.values()}
     for rid in run_ids:
         r = scanned[rid]
         # the run's OWN config (control rate, action scale) in its OWN suite's terrain
@@ -406,7 +418,7 @@ def main() -> int:
         summary[rid] = render_episode(env, pol, seed=0, command=cmd, out_gif=out / f"policy_{r['name']}.gif",
                                       label=f"{r['name']} ({r['suite']})")
         # a scenes suite: one clip per scene, on that scene's ground, with its command and pushes
-        for scene in _scene_names(r["suite"]):
+        for scene in (_scene_names(r["suite"]) if rid in best_ids else []):
             env, cmd = _suite_env(run_cfg, r["suite"], scene=scene)
             summary[f"{rid}@{scene}"] = render_episode(env, pol, seed=0, command=cmd,
                                                        out_gif=out / f"policy_{r['name']}_{scene}.gif",
