@@ -83,16 +83,23 @@ class RunStore:
 
     # ── lifecycle ──────────────────────────────────────────────────────
     def create(self, config: dict[str, Any], *, name: str = "", parent: str | None = None, notes: str = "",
-               config_hash: str = "") -> str:
+               config_hash: str = "", task: str | None = None, suite: str | None = None) -> str:
+        """``task``/``suite`` default from the config (the task decides the suite); the three runs
+        shipped before suites existed have neither key and read as flat_walk / flat_v1."""
+        from ..tasks import default_suite_for, task_name_for
+
         run_id = new_run_id()
         d = self.run_dir(run_id)
         d.mkdir(parents=True)
         _write_json(d / "config.json", config)
+        task = task or task_name_for(config)
         _write_json(d / "state.json", {
             "run_id": run_id,
             "name": name or run_id,
             "parent": parent,
             "notes": notes,
+            "task": task,
+            "suite": suite or default_suite_for(task),
             "config_hash": config_hash,
             "status": "queued",
             "progress": {"step": 0, "total": int(config.get("ppo", {}).get("num_timesteps", 0)), "elapsed_s": 0.0, "eta_s": None},
@@ -125,6 +132,13 @@ class RunStore:
 
     def config(self, run_id: str) -> dict[str, Any]:
         return _read_json(self.run_dir(run_id) / "config.json", {})
+
+    def run_task(self, run_id: str) -> str:
+        return str(self.state(run_id).get("task") or "flat_walk")
+
+    def run_suite(self, run_id: str) -> str:
+        """The suite this run is judged on: recorded at creation, flat_v1 for pre-suite runs."""
+        return str(self.state(run_id).get("suite") or "flat_v1")
 
     def metrics(self, run_id: str) -> dict[str, Any]:
         return _read_json(self.run_dir(run_id) / "metrics.json", {})
@@ -165,25 +179,34 @@ class RunStore:
     def rollout_path(self, run_id: str, suite: str, version: str, seed: int) -> Path:
         return self.benchmark_dir(run_id, suite, version) / "rollouts" / f"seed_{seed}.json"
 
-    # ── baselines ──────────────────────────────────────────────────────
-    def baseline_dir(self, gait: str) -> Path:
-        return self.root / "baselines" / gait
+    # ── baselines (per suite; the flat_v1 layout predates suites and stays where it was) ──
+    def baseline_dir(self, gait: str, suite: str | None = "flat_v1") -> Path:
+        if not suite or suite == "flat_v1":
+            return self.root / "baselines" / gait
+        return self.root / "baselines" / gait / suite
 
-    def write_baseline(self, gait: str, report: dict[str, Any]) -> None:
-        _write_json(self.baseline_dir(gait) / "report.json", report)
+    def write_baseline(self, gait: str, report: dict[str, Any], suite: str | None = "flat_v1") -> None:
+        _write_json(self.baseline_dir(gait, suite) / "report.json", report)
 
-    def baselines(self) -> dict[str, Any]:
+    def baseline(self, gait: str, suite: str | None = "flat_v1") -> dict[str, Any] | None:
+        return _read_json(self.baseline_dir(gait, suite) / "report.json")
+
+    def baselines(self, suite: str | None = "flat_v1") -> dict[str, Any]:
         out = {}
-        for d in sorted((self.root / "baselines").iterdir()):
-            rep = _read_json(d / "report.json")
-            if rep:
-                out[d.name] = rep
+        base = self.root / "baselines"
+        for d in sorted(base.iterdir()):
+            if d.is_dir():
+                rep = self.baseline(d.name, suite)
+                if rep:
+                    out[d.name] = rep
         return out
 
     # ── index / leaderboard ────────────────────────────────────────────
     def summary(self, run_id: str) -> dict[str, Any]:
+        """One leaderboard row, scored on the run's OWN suite."""
         st = self.state(run_id)
-        bench = self.benchmark(run_id, "flat_v1")
+        suite = self.run_suite(run_id)
+        bench = self.benchmark(run_id, suite)
         m = bench.get("metrics", {}) if bench else {}
         return {
             "run_id": run_id,
@@ -191,6 +214,8 @@ class RunStore:
             "status": st.get("status"),
             "created": st.get("created"),
             "parent": st.get("parent"),
+            "task": self.run_task(run_id),
+            "suite": suite,
             "config_hash": st.get("config_hash"),
             "score": bench.get("score") if bench else None,
             "gates_passed": bench.get("gates_passed") if bench else None,
@@ -201,7 +226,9 @@ class RunStore:
             "error": st.get("error"),
         }
 
-    def list_runs(self, *, sort: str = "created", limit: int = 20) -> list[dict[str, Any]]:
+    def list_runs(self, *, sort: str = "created", limit: int = 20, suite: str | None = None) -> list[dict[str, Any]]:
+        """``suite`` filters to runs judged on that suite. Scores from different suites are NOT
+        comparable, so a score sort without a suite groups by (suite, version) first."""
         rows = []
         for d in self.root.iterdir():
             if d.is_dir() and (d / "state.json").is_file():
@@ -209,16 +236,41 @@ class RunStore:
                     rows.append(self.summary(d.name))
                 except Exception:  # corrupt dir: skip, never crash the listing
                     continue
+        if suite:
+            rows = [r for r in rows if r["suite"] == suite]
         if sort == "score":
-            rows.sort(key=lambda r: ((r["gates_passed"] or 0), (r["score"] or -1e9), (r["dist_p50"] or 0)), reverse=True)
+            rows.sort(key=lambda r: (r["suite"] or "", r["suite_version"] or "", (r["gates_passed"] or 0),
+                                     (r["score"] or -1e9), (r["dist_p50"] or 0)), reverse=True)
         else:
             rows.sort(key=lambda r: r["created"] or "", reverse=True)
-        _write_json(self.root / "index.json", {"updated": _now(), "runs": rows})
+        if not suite:
+            _write_json(self.root / "index.json", {"updated": _now(), "runs": rows})
         return rows[:limit]
 
-    def best(self) -> dict[str, Any] | None:
-        rows = [r for r in self.list_runs(sort="score", limit=1000) if r["score"] is not None]
-        return rows[0] if rows else None
+    def best(self, suite: str = "flat_v1") -> dict[str, Any] | None:
+        """Best run on ``suite``, ranked only within the HIGHEST suite version present; older-version
+        runs are reported under ``stale_versions`` rather than mixed into the ranking."""
+        rows = [r for r in self.list_runs(sort="score", limit=1000, suite=suite) if r["score"] is not None]
+        if not rows:
+            return None
+        newest = max(r["suite_version"] or "" for r in rows)
+        current = [r for r in rows if (r["suite_version"] or "") == newest]
+        stale = sorted({r["suite_version"] for r in rows if (r["suite_version"] or "") != newest})
+        top = dict(current[0])
+        if stale:
+            top["stale_versions"] = stale
+        return top
+
+    def best_by_suite(self) -> dict[str, dict[str, Any]]:
+        suites = sorted({r["suite"] for r in self.list_runs(limit=1000)})
+        return {s: b for s in suites if (b := self.best(s)) is not None}
+
+    def all_gates_pass_run(self, suite: str) -> str | None:
+        """The best run on ``suite`` that passes every evaluated gate (a task prerequisite), or None."""
+        for r in self.list_runs(sort="score", limit=1000, suite=suite):
+            if r["gates_total"] and r["gates_passed"] == r["gates_total"]:
+                return r["run_id"]
+        return None
 
     def delete(self, run_id: str) -> None:
         shutil.rmtree(self.run_dir(run_id), ignore_errors=True)

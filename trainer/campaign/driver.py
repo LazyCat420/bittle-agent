@@ -53,32 +53,54 @@ class AgentInProcess:
 
 async def run_campaign(agent, *, strategy: str, out: Path, max_cycles: int | None = None,
                        dr_sweep: bool = False) -> dict[str, Any]:
+    """Greedy per SUITE: a step is accepted if it beats the best score on its own suite; scores from
+    different suites are never compared. ``base`` resolves per step (see strategies.py)."""
+    from ..tasks import default_suite_for
+
     steps = STRATEGIES[strategy]
     if max_cycles:
         steps = steps[:max_cycles]
-    log: dict[str, Any] = {"strategy": strategy, "started": time.strftime("%Y-%m-%dT%H:%M:%S"), "cycles": [], "best": None}
-    best_score, best_run = float("-inf"), None
+    log: dict[str, Any] = {"strategy": strategy, "started": time.strftime("%Y-%m-%dT%H:%M:%S"), "cycles": [],
+                           "best": None, "best_by_suite": {}}
+    best_by_suite: dict[str, tuple[float, str]] = {}
+
+    def resolve_base(step: dict[str, Any]) -> str | None:
+        base = step.get("base", "best")
+        if base is None:
+            return None
+        if base == "best":
+            suite = default_suite_for(step["task"])
+        elif isinstance(base, str) and base.startswith("best_of:"):
+            suite = default_suite_for(base.split(":", 1)[1])
+        else:
+            raise ValueError(f"step {step['name']!r}: unknown base {base!r}")
+        return best_by_suite[suite][1] if suite in best_by_suite else None
+
     for i, step in enumerate(steps):
-        args = {"name": step["name"], "config_patch": step["patch"], "notes": step["notes"], "dr_sweep": dr_sweep}
-        if best_run:
-            args["base_run_id"] = best_run
+        args = {"name": step["name"], "task": step["task"], "config_patch": step["patch"], "notes": step["notes"],
+                "dr_sweep": dr_sweep}
+        base_run = resolve_base(step)
+        if base_run:
+            args["base_run_id"] = base_run
         t0 = time.time()
         res = await agent.call("bittle_train_and_benchmark", args)
         score = res.get("score") if res.get("ok") else None
-        accepted = score is not None and score > best_score
+        suite = res.get("suite") or default_suite_for(step["task"])
+        accepted = score is not None and score > best_by_suite.get(suite, (float("-inf"), ""))[0]
         if accepted:
-            best_score, best_run = score, res["run_id"]
-        entry = {"cycle": i, "name": step["name"], "patch": step["patch"], "base_run_id": args.get("base_run_id"),
-                 "run_id": res.get("run_id"), "ok": res.get("ok"), "score": score,
+            best_by_suite[suite] = (score, res["run_id"])
+        entry = {"cycle": i, "name": step["name"], "task": step["task"], "suite": suite, "patch": step["patch"],
+                 "base_run_id": args.get("base_run_id"), "run_id": res.get("run_id"), "ok": res.get("ok"), "score": score,
                  "gates_passed": res.get("gates_passed"), "gates_total": res.get("gates_total"),
                  "reflection": res.get("reflection") or res.get("detail"), "accepted": accepted,
                  "elapsed_s": round(time.time() - t0, 1)}
         log["cycles"].append(entry)
-        log["best"] = {"run_id": best_run, "score": best_score if best_run else None}
+        log["best_by_suite"] = {s: {"run_id": r, "score": sc} for s, (sc, r) in best_by_suite.items()}
+        log["best"] = log["best_by_suite"].get(suite)
         out.write_text(json.dumps(log, indent=2))
-        print(f"[cycle {i}] {step['name']}: ok={res.get('ok')} score={score} accepted={accepted} run={res.get('run_id')}")
-        if res.get("ok") and res.get("passed"):
-            print("all gates pass; stopping early")
+        print(f"[cycle {i}] {step['name']} ({step['task']}): ok={res.get('ok')} score={score} accepted={accepted} run={res.get('run_id')}")
+        if step.get("stop_on_pass") and res.get("ok") and res.get("passed"):
+            print("all gates pass on the final rung; stopping early")
             break
     log["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     out.write_text(json.dumps(log, indent=2))
@@ -105,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         ap.error("give --agent-url or --in-process")
     log = asyncio.run(run_campaign(agent, strategy=a.strategy, out=Path(a.out), max_cycles=a.max_cycles, dr_sweep=a.dr_sweep))
-    return 0 if log["best"]["run_id"] else 1
+    return 0 if log["best_by_suite"] else 1
 
 
 if __name__ == "__main__":

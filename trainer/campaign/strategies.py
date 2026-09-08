@@ -1,20 +1,48 @@
-"""Scripted config-search strategies for the campaign driver (no LLM)."""
+"""Scripted config-search strategies for the campaign driver (no LLM).
+
+Each step: ``name``, ``task`` (decides the gate suite), ``patch``, ``notes`` and ``base``:
+``None`` = from scratch, ``"best"`` = the best run so far on THIS step's suite,
+``"best_of:<task>"`` = the best run of another task (the rung-to-rung warm start).
+``stop_on_pass`` ends the campaign early when that step passes every gate.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
-#: scripted_v1: one hypothesis per cycle, greedy accept-if-score-improves.
+#: scripted_v1: one hypothesis per cycle, greedy accept-if-score-improves, flat ground only.
 SCRIPTED_V1: list[dict[str, Any]] = [
-    {"name": "c0-defaults", "patch": {}, "notes": "baseline defaults"},
-    {"name": "c1-track-2.5", "patch": {"reward": {"weights": {"tracking_lin_vel": 2.5}}},
+    {"name": "c0-defaults", "task": "flat_walk", "base": None, "patch": {}, "notes": "baseline defaults"},
+    {"name": "c1-track-2.5", "task": "flat_walk", "base": "best", "patch": {"reward": {"weights": {"tracking_lin_vel": 2.5}}},
      "notes": "stronger velocity tracking"},
-    {"name": "c2-smooth", "patch": {"reward": {"weights": {"action_rate": -0.03}}},
+    {"name": "c2-smooth", "task": "flat_walk", "base": "best", "patch": {"reward": {"weights": {"action_rate": -0.03}}},
      "notes": "penalise jerky targets more"},
-    {"name": "c3-stage1", "patch": {"curriculum_stage": 1}, "notes": "add turning commands"},
-    {"name": "c4-wide-dr", "patch": {"dr": {"kp": [4.0, 20.0], "latency_steps": [0, 4]}},
+    {"name": "c3-stage1", "task": "flat_walk", "base": "best", "patch": {"curriculum_stage": 1}, "notes": "add turning commands"},
+    {"name": "c4-wide-dr", "task": "flat_walk", "base": "best", "patch": {"dr": {"kp": [4.0, 20.0], "latency_steps": [0, 4]}},
      "notes": "wider servo/latency randomisation for robustness"},
-    {"name": "c5-longer", "patch": {"ppo": {"num_timesteps": 60_000_000}}, "notes": "1.5x budget on the best"},
+    {"name": "c5-longer", "task": "flat_walk", "base": "best", "patch": {"ppo": {"num_timesteps": 60_000_000}},
+     "notes": "1.5x budget on the best", "stop_on_pass": True},
 ]
 
-STRATEGIES = {"scripted_v1": SCRIPTED_V1}
+#: terrain_ladder_v1: flat champion -> wide DR -> turning -> slope (warm) -> slope tune -> rocks (warm) -> rocks DR.
+#: Reproduces the LLM's campaign ladder without the LLM; per-suite greedy acceptance.
+TERRAIN_LADDER_V1: list[dict[str, Any]] = [
+    {"name": "t0-flat-baseline", "task": "flat_walk", "base": None, "patch": {}, "notes": "flat champion from scratch"},
+    {"name": "t1-flat-dr", "task": "flat_walk", "base": "best", "patch": {"dr": {"kp": [4.0, 20.0], "latency_steps": [0, 4]},
+                                                                           "ppo": {"num_timesteps": 10_000_000}},
+     "notes": "widen DR before terrain"},
+    {"name": "t2-flat-stage1", "task": "flat_walk", "base": "best", "patch": {"curriculum_stage": 1, "ppo": {"num_timesteps": 10_000_000}},
+     "notes": "turning commands"},
+    {"name": "t3-slope-warm", "task": "slope_up", "base": "best_of:flat_walk", "patch": {"ppo": {"num_timesteps": 10_000_000}},
+     "notes": "warm start the flat champion onto the incline"},
+    {"name": "t4-slope-tune", "task": "slope_up", "base": "best",
+     "patch": {"reward": {"weights": {"base_height": -2.0, "orientation": -4.0}}, "ppo": {"num_timesteps": 10_000_000}},
+     "notes": "terrain-relative height + stronger tilt penalty"},
+    {"name": "t5-rough-warm", "task": "rough_walk", "base": "best_of:slope_up",
+     "patch": {"reward": {"weights": {"foot_clearance": -0.5, "stumble": -0.5}}, "ppo": {"num_timesteps": 10_000_000}},
+     "notes": "slope champion onto rocks, with the clearance and stumble terms switched on"},
+    {"name": "t6-rough-dr", "task": "rough_walk", "base": "best", "patch": {"dr": {"friction": [0.4, 1.2]}, "ppo": {"num_timesteps": 10_000_000}},
+     "notes": "friction spread on rough ground", "stop_on_pass": True},
+]
+
+STRATEGIES = {"scripted_v1": SCRIPTED_V1, "terrain_ladder_v1": TERRAIN_LADDER_V1}

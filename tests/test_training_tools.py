@@ -32,9 +32,10 @@ class FakeTrainer:
         return {"ok": True, "config_hash": "h1", "diff": [{"path": "reward.weights.tracking_lin_vel", "from": 1.5, "to": 2.0}],
                 "resolved": {"reward": {}}, "warnings": []}
 
-    async def submit(self, patch, name="", base_run_id=None, notes=""):
-        self.calls.append(("submit", patch, base_run_id))
-        return {"run_id": "run-1", "status": "queued", "config_hash": "h1", "diff": []}
+    async def submit(self, patch, name="", base_run_id=None, notes="", task=None):
+        self.calls.append(("submit", patch, base_run_id, task))
+        suite = {"slope_up": "slope_v1", "rough_walk": "rough_v1"}.get(task or patch.get("task"), "flat_v1")
+        return {"run_id": "run-1", "status": "queued", "task": task or "flat_walk", "suite": suite, "config_hash": "h1", "diff": []}
 
     async def status(self, run_id, wait_s=0.0, until="any"):
         self.calls.append(("status", run_id, wait_s, until))
@@ -43,25 +44,47 @@ class FakeTrainer:
         return {"run_id": run_id, "status": st, "progress": {"step": 10, "total": 100}, "metrics": {"reward_final": 5.0},
                 "curve": [{"step": 10, "reward": 5.0}]}
 
-    async def benchmark(self, run_id, suite="flat_v1", n_episodes=None, dr_sweep=False, dual_sim=False, wait_s=0.0):
-        self.calls.append(("benchmark", run_id, dr_sweep))
+    async def benchmark(self, run_id, suite=None, force=False, n_episodes=None, dr_sweep=False, dual_sim=False, wait_s=0.0):
+        self.calls.append(("benchmark", run_id, dr_sweep, suite, force))
+        self.last_suite = suite or "slope_v1"  # the trainer resolves None to the run's own suite
         return {"run_id": run_id, "status": "benchmarking", "queued": True}
 
-    async def get_benchmark(self, run_id, suite="flat_v1"):
-        return {"run_id": run_id, "suite": suite, "suite_version": "1.0.0", "gates_passed": 11, "gates_total": 12,
+    mismatch = False
+
+    async def get_benchmark(self, run_id, suite=None):
+        suite = suite or getattr(self, "last_suite", "flat_v1")
+        ctx = {"per_gate": {"fall_rate": {"value": 0.2, "parent": 0.1, "baseline_trot": 0.0, "term": "orientation", "term_share_pct": 0.5}},
+               "reward_shares_pct": {"tracking_lin_vel": 95.0, "orientation": 0.5}, "parent_run_id": "run-0"}
+        if self.mismatch:
+            ctx = {"per_gate": {"fall_rate": {"value": 0.2, "parent": None, "baseline_trot": None, "term": "orientation", "term_share_pct": 0.5}},
+                   "reward_shares_pct": {"tracking_lin_vel": 95.0, "orientation": 0.5}, "parent_run_id": None,
+                   "parent_suite_mismatch": {"parent_run_id": "run-0", "parent_suite": "flat_v1", "this_suite": suite},
+                   "parent_note": "Parent run-0 has no slope_v1 benchmark (it was benchmarked on flat_v1), so there is no per-gate parent comparison. Re-benchmark it with bittle_benchmark_policy(run_id=\"run-0\", suite=\"slope_v1\", force=true) if you want the delta."}
+        return {"run_id": run_id, "task": "slope_up" if suite == "slope_v1" else "flat_walk", "suite": suite,
+                "suite_version": "1.0.0", "gates_passed": 11, "gates_total": 12,
                 "passed": False, "score": 11.3, "reflection": "BENCHMARK FAILED 11/12 gates.",
                 "gates": [{"gate": "fall_rate", "value": 0.2, "op": "<=", "threshold": 0.1, "pass": False, "note": "hint", "unit": "x"}],
-                "metrics": {"fall_rate": 0.2, "forward_distance_p50": 0.7}, "episodes": [{"seed": 0}],
-                "context": {"per_gate": {"fall_rate": {"value": 0.2, "parent": 0.1, "baseline_trot": 0.0, "term": "orientation", "term_share_pct": 0.5}},
-                            "reward_shares_pct": {"tracking_lin_vel": 95.0, "orientation": 0.5}, "parent_run_id": "run-0"}}
+                "metrics": {"fall_rate": 0.2, "forward_distance_p50": 0.7}, "episodes": [{"seed": 0}], "context": ctx}
 
-    async def list_runs(self, sort="score", limit=20):
-        return {"runs": [{"run_id": "run-1", "score": 11.3}], "baselines": {"opencat_trF": {"score": 5.0}}, "best": {"run_id": "run-1"}}
+    async def list_runs(self, sort="score", limit=20, suite=None):
+        self.calls.append(("list_runs", suite))
+        return {"runs": [{"run_id": "run-1", "score": 11.3, "suite": suite or "flat_v1"}], "baselines": {"opencat_trF": {"score": 5.0}},
+                "best": {"run_id": "run-1"}, "best_by_suite": {"flat_v1": {"run_id": "run-1"}}}
+
+    async def tasks(self):
+        return {"tasks": [
+            {"task": "flat_walk", "goal": "walk on flat ground", "suite": "flat_v1", "suite_version": "1.2.0", "aliases": ["walk"],
+             "prerequisites": [], "config_keys": ["reward.weights.tracking_lin_vel"], "prereq_satisfied_by": {},
+             "warm_start_from": "run-1", "status": "ready"},
+            {"task": "slope_up", "goal": "walk up an 8 degree incline", "suite": "slope_v1", "suite_version": "0.1.0-uncalibrated",
+             "aliases": ["slope", "incline"], "prerequisites": ["flat_walk"], "config_keys": ["terrain.slope_deg"],
+             "prereq_satisfied_by": {"flat_walk": None}, "warm_start_from": None, "status": "blocked: no flat_walk run passes every gate yet"}],
+            "suites": ["flat_v1", "rough_v1", "slope_v1"]}
 
     async def compare(self, run_ids):
         return {"runs": {r: {} for r in run_ids}, "gates_table": {}, "config_diffs_vs_first": {}}
 
-    async def baselines(self):
+    async def baselines(self, suite=None):
         return {"opencat_trF": {"score": 5.0, "reflection": "baseline"}}
 
     async def rollout_stream(self, path):
@@ -130,6 +153,56 @@ def test_train_and_benchmark_cycle_returns_gates_and_reflection(harness):
     assert kinds[0] == "submit" and "benchmark" in kinds
     assert harness.training.client.calls[0][2] == "run-0"
     assert harness.training.last_progress["run_id"] == "run-1"
+
+
+# ── task -> suite binding (2026-09-07) ─────────────────────────────────────
+
+def test_train_and_benchmark_passes_task_and_never_names_a_suite(harness):
+    res = run(harness.execute_tool("bittle_train_and_benchmark", {"task": "slope_up", "config_patch": {}, "base_run_id": "run-0"}))
+    assert res["ok"] and res["task"] == "slope_up" and res["suite"] == "slope_v1"
+    calls = harness.training.client.calls
+    assert calls[0] == ("submit", {}, "run-0", "slope_up")
+    bench = [c for c in calls if c[0] == "benchmark"][0]
+    assert bench[3] is None and bench[4] is False  # the trainer resolves the run's own suite
+
+
+def test_train_and_benchmark_rejects_a_task_that_conflicts_with_the_patch(harness):
+    res = run(harness.execute_tool("bittle_train_and_benchmark", {"task": "slope_up", "config_patch": {"task": "flat_walk"}}))
+    assert res == {"ok": False, "error": "task_conflict", "detail": "task='slope_up' but config_patch.task='flat_walk'"}
+    assert harness.training.client.calls == []  # nothing submitted
+
+
+def test_benchmark_policy_forwards_suite_and_force_only_when_given(harness):
+    run(harness.execute_tool("bittle_benchmark_policy", {"run_id": "run-1"}))
+    assert harness.training.client.calls[-1][3:] == (None, False)
+    run(harness.execute_tool("bittle_benchmark_policy", {"run_id": "run-1", "suite": "flat_v1", "force": True}))
+    assert harness.training.client.calls[-1][3:] == ("flat_v1", True)
+
+
+def test_list_tasks_returns_the_catalogue_with_prerequisites(harness):
+    assert "bittle_list_tasks" in TRAINING_TOOL_NAMES
+    res = run(harness.execute_tool("bittle_list_tasks", {}))
+    t = {x["task"]: x for x in res["tasks"]}
+    assert t["slope_up"]["status"].startswith("blocked") and t["slope_up"]["warm_start_from"] is None
+    assert t["flat_walk"]["warm_start_from"] == "run-1" and "hint" in res
+
+
+def test_list_runs_forwards_the_suite_filter(harness):
+    res = run(harness.execute_tool("bittle_list_runs", {"suite": "slope_v1"}))
+    assert harness.training.client.calls[-1] == ("list_runs", "slope_v1") and "best_by_suite" in res
+
+
+def test_training_prompt_is_task_agnostic(harness):
+    p = harness.get_system_prompt(mode="training")
+    assert "bittle_list_tasks" in p and "warm_start_from" in p and "bittle_diagnose_run" in p
+    assert "flat_v1" not in p  # no suite is ever hard-coded into the prompt again
+
+
+def test_diagnose_run_surfaces_a_parent_suite_mismatch(harness):
+    harness.training.client.mismatch = True
+    res = run(harness.execute_tool("bittle_diagnose_run", {"run_id": "run-1"}))
+    assert res["ok"] and res["gates"][0]["parent"] is None and res["parent_run_id"] is None
+    assert any("force=true" in n for n in res["notes"])
 
 
 def test_replay_rollout_returns_viewer_url_not_frames(harness):

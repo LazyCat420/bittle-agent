@@ -21,9 +21,10 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .config import TrainConfig, apply_patch, config_diff, default_config, json_schema, validation_errors
-from .eval.gates import load_suite
+from .eval.gates import list_suites, load_suite
 from .store.jobs import JobManager
 from .store.runs import RunStore
+from .tasks import TASKS, catalogue, default_suite_for
 
 REPO = Path(__file__).resolve().parent.parent
 RUNS_DIR = Path(os.getenv("TRAINER_RUNS_DIR", str(REPO / "runs")))
@@ -49,10 +50,15 @@ class ValidateRequest(BaseModel):
 class SubmitRequest(ValidateRequest):
     name: str = Field("", max_length=80)
     notes: str = Field("", max_length=2000)
+    #: task name from GET /tasks; merged into the patch (its suite is recorded on the run)
+    task: str | None = None
 
 
 class BenchmarkRequest(BaseModel):
-    suite: str = "flat_v1"
+    #: None = the run's own suite (its task's). A different suite needs ``force`` — cross-suite
+    #: numbers are an ablation, never a leaderboard entry.
+    suite: str | None = None
+    force: bool = False
     n_episodes: int | None = Field(None, ge=1, le=200)
     dr_sweep: bool = False
     dual_sim: bool = False
@@ -66,6 +72,7 @@ class CompareRequest(BaseModel):
 class BaselinesRequest(BaseModel):
     n_episodes: int | None = Field(None, ge=1, le=200)
     names: list[str] | None = None
+    suite: str = "flat_v1"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -76,13 +83,31 @@ def _resolve(req: ValidateRequest) -> tuple[TrainConfig, dict[str, Any]]:
         if not store.exists(req.base_run_id):
             raise HTTPException(404, f"base_run_id {req.base_run_id!r} not found")
         base = store.config(req.base_run_id)
+    patch = dict(req.config_patch or {})
+    task = getattr(req, "task", None)
+    if task:
+        if task not in TASKS:
+            raise HTTPException(422, {"errors": [f"unknown task {task!r}; known: {sorted(TASKS)}"]})
+        if patch.get("task") not in (None, task):
+            raise HTTPException(422, {"errors": [f"task_conflict: task={task!r} but config_patch.task={patch['task']!r}"]})
+        # the task's own patch (terrain level etc.) goes UNDER the caller's patch
+        patch = _deep_merge(TASKS[task].config_patch, patch)
     try:
-        cfg = apply_patch(base, req.config_patch)
+        cfg = apply_patch(base, patch)
     except ValidationError as exc:
         raise HTTPException(422, {"errors": validation_errors(exc)})
+    if cfg.task not in TASKS:
+        raise HTTPException(422, {"errors": [f"unknown task {cfg.task!r}; known: {sorted(TASKS)}"]})
     base_cfg = TrainConfig.model_validate(base) if base else default_config()
     diff = config_diff(base_cfg.resolved().model_dump(mode="json"), cfg.resolved().model_dump(mode="json"))
     return cfg, {"base": req.base_run_id or "defaults", "diff": diff}
+
+
+def _deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for k, v in patch.items():
+        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
 
 
 def _gpu_info() -> dict[str, Any]:
@@ -103,7 +128,9 @@ def _state_view(run_id: str) -> dict[str, Any]:
     view["config"] = store.config(run_id)
     view["metrics"] = store.metrics(run_id)
     view["curve"] = store.curve(run_id, limit=20)
-    bench = store.benchmark(run_id, "flat_v1")
+    view["task"] = store.run_task(run_id)
+    view["suite"] = store.run_suite(run_id)
+    bench = store.benchmark(run_id, view["suite"])
     if bench:
         view["benchmark"] = {k: v for k, v in bench.items() if k != "episodes"}
     return view
@@ -117,7 +144,8 @@ def health() -> dict[str, Any]:
 
     info = {"ok": True, "version": __version__, "fake_jobs": FAKE, "runs_dir": str(RUNS_DIR),
             "mujoco": mujoco.__version__, "gpu": _gpu_info(), "jobs": jobs.active(),
-            "orphans_failed_on_boot": orphans, "python": sys.version.split()[0]}
+            "orphans_failed_on_boot": orphans, "python": sys.version.split()[0],
+            "suites": list_suites(), "tasks_hint": "call GET /tasks for the task catalogue"}
     try:
         import mujoco_warp  # noqa: F401
         info["physics_impl"] = "warp"
@@ -154,19 +182,49 @@ def _warnings(cfg: TrainConfig) -> list[str]:
 @app.post("/runs", status_code=202)
 def submit_run(req: SubmitRequest) -> dict[str, Any]:
     cfg, extra = _resolve(req)
+    suite = default_suite_for(cfg.task)
     run_id = store.create(cfg.model_dump(mode="json"), name=req.name, parent=req.base_run_id, notes=req.notes,
-                          config_hash=cfg.config_hash())
+                          config_hash=cfg.config_hash(), task=cfg.task, suite=suite)
     jobs.submit_train(run_id)
-    return {"run_id": run_id, "status": "queued", "config_hash": cfg.config_hash(), "diff": extra["diff"]}
+    return {"run_id": run_id, "status": "queued", "task": cfg.task, "suite": suite,
+            "config_hash": cfg.config_hash(), "diff": extra["diff"]}
+
+
+@app.get("/tasks")
+def list_tasks() -> dict[str, Any]:
+    """The task catalogue plus what the store knows: is each prerequisite met, and by which run."""
+    out = []
+    for t in catalogue():
+        suite = t["suite"]
+        try:
+            t["suite_version"] = str(load_suite(suite).get("version"))
+        except ValueError:
+            t["suite_version"] = None
+        unmet = [p for p in t["prerequisites"] if store.all_gates_pass_run(default_suite_for(p)) is None]
+        satisfied_by = {p: store.all_gates_pass_run(default_suite_for(p)) for p in t["prerequisites"]}
+        warm = None
+        if t["prerequisites"] and not unmet:
+            warm = satisfied_by[t["prerequisites"][-1]]
+        best_here = store.best(suite)
+        if best_here:
+            warm = best_here["run_id"]
+        t.update({"prereq_satisfied_by": satisfied_by, "warm_start_from": warm,
+                  "best_run": best_here["run_id"] if best_here else None,
+                  "status": "ready" if not unmet else f"blocked: no {', '.join(unmet)} run passes every gate yet"})
+        out.append(t)
+    return {"tasks": out, "suites": list_suites()}
 
 
 @app.get("/runs")
-def list_runs(sort: Literal["created", "score"] = "created", limit: int = Query(20, ge=1, le=200)) -> dict[str, Any]:
-    rows = store.list_runs(sort=sort, limit=limit)
+def list_runs(sort: Literal["created", "score"] = "created", limit: int = Query(20, ge=1, le=200),
+              suite: str | None = None) -> dict[str, Any]:
+    rows = store.list_runs(sort=sort, limit=limit, suite=suite)
+    bsuite = suite or "flat_v1"
     baselines = {k: {"score": v.get("score"), "gates_passed": v.get("gates_passed"),
                      "distance_p50": v.get("metrics", {}).get("forward_distance_p50"),
-                     "fall_rate": v.get("metrics", {}).get("fall_rate")} for k, v in store.baselines().items()}
-    return {"runs": rows, "baselines": baselines, "best": store.best()}
+                     "fall_rate": v.get("metrics", {}).get("fall_rate")} for k, v in store.baselines(bsuite).items()}
+    return {"runs": rows, "baselines": baselines, "baselines_suite": bsuite, "best": store.best(bsuite),
+            "best_by_suite": store.best_by_suite()}
 
 
 @app.get("/runs/{run_id}")
@@ -200,15 +258,20 @@ def benchmark_run(run_id: str, req: BenchmarkRequest) -> Any:
     st = store.state(run_id)
     if st["status"] not in ("trained", "done"):
         raise HTTPException(409, f"run {run_id!r} is {st['status']}; benchmark needs a trained policy")
+    own = store.run_suite(run_id)
+    suite = req.suite or own
     try:
-        load_suite(req.suite)
+        load_suite(suite)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
-    jobs.submit_benchmark(run_id, req.model_dump())
+    if suite != own and not req.force:
+        raise HTTPException(422, {"error": "suite_task_mismatch", "run_suite": own, "requested": suite,
+                                  "hint": "pass force=true to benchmark across suites (an ablation, not a leaderboard entry)"})
+    jobs.submit_benchmark(run_id, dict(req.model_dump(), suite=suite))
     if req.wait_s > 0:
         jobs.wait_for(run_id, lambda s: s.get("status") in ("done", "failed", "cancelled")
                       or (s.get("status") == "trained" and s.get("error")), req.wait_s)
-    rep = store.benchmark(run_id, req.suite)
+    rep = store.benchmark(run_id, suite)
     if rep and store.state(run_id)["status"] == "done":
         return JSONResponse(status_code=200, content=_report_view(rep))
     return {"run_id": run_id, "status": store.state(run_id)["status"], "queued": True}
@@ -219,9 +282,10 @@ def _report_view(rep: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/runs/{run_id}/benchmark")
-def get_benchmark(run_id: str, suite: str = "flat_v1", full: bool = False) -> dict[str, Any]:
+def get_benchmark(run_id: str, suite: str | None = None, full: bool = False) -> dict[str, Any]:
     if not store.exists(run_id):
         raise HTTPException(404, f"run {run_id!r} not found")
+    suite = suite or store.run_suite(run_id)
     rep = store.benchmark(run_id, suite)
     if not rep:
         raise HTTPException(404, f"no {suite} benchmark for {run_id!r} yet")
@@ -229,9 +293,10 @@ def get_benchmark(run_id: str, suite: str = "flat_v1", full: bool = False) -> di
 
 
 @app.get("/runs/{run_id}/rollout")
-def get_rollout(run_id: str, seed: int = 0, suite: str = "flat_v1") -> Any:
+def get_rollout(run_id: str, seed: int = 0, suite: str | None = None) -> Any:
     if not store.exists(run_id):
         raise HTTPException(404, f"run {run_id!r} not found")
+    suite = suite or store.run_suite(run_id)
     rep = store.benchmark(run_id, suite)
     if not rep:
         raise HTTPException(404, "benchmark the run first")
@@ -242,13 +307,13 @@ def get_rollout(run_id: str, seed: int = 0, suite: str = "flat_v1") -> Any:
 
 
 @app.get("/baselines")
-def get_baselines() -> dict[str, Any]:
-    return {k: _report_view(v) for k, v in store.baselines().items()}
+def get_baselines(suite: str = "flat_v1") -> dict[str, Any]:
+    return {k: _report_view(v) for k, v in store.baselines(suite).items()}
 
 
 @app.get("/baselines/{name}/rollout")
-def get_baseline_rollout(name: str, seed: int = 0) -> Any:
-    path = store.baseline_dir(name) / "rollouts" / f"seed_{seed}.json"
+def get_baseline_rollout(name: str, seed: int = 0, suite: str = "flat_v1") -> Any:
+    path = store.baseline_dir(name, suite) / "rollouts" / f"seed_{seed}.json"
     if not path.is_file():
         raise HTTPException(404, f"no rollout for baseline {name!r} seed {seed}")
     return FileResponse(path, media_type="application/json")
@@ -260,7 +325,8 @@ def compute_baselines_route(req: BaselinesRequest) -> dict[str, Any]:
         return {"ok": True, "fake": True, "baselines": {}}
     from .eval.baselines import compute_baselines
 
-    return {"ok": True, "baselines": compute_baselines(store, n_episodes=req.n_episodes, names=req.names)}
+    return {"ok": True, "suite": req.suite,
+            "baselines": compute_baselines(store, suite_name=req.suite, n_episodes=req.n_episodes, names=req.names)}
 
 
 @app.post("/runs/compare")
@@ -268,7 +334,8 @@ def compare_runs(req: CompareRequest) -> dict[str, Any]:
     missing = [r for r in req.run_ids if not store.exists(r)]
     if missing:
         raise HTTPException(404, f"unknown runs: {missing}")
-    reports = {r: store.benchmark(r, "flat_v1") for r in req.run_ids}
+    suites = {r: store.run_suite(r) for r in req.run_ids}
+    reports = {r: store.benchmark(r, suites[r]) for r in req.run_ids}
     gates_table: dict[str, dict[str, Any]] = {}
     for rid, rep in reports.items():
         for g in (rep or {}).get("gates", []):
@@ -276,7 +343,8 @@ def compare_runs(req: CompareRequest) -> dict[str, Any]:
     configs = {r: TrainConfig.model_validate(store.config(r)).resolved().model_dump(mode="json") for r in req.run_ids}
     first = req.run_ids[0]
     diffs = {r: config_diff(configs[first], configs[r]) for r in req.run_ids[1:]}
-    return {"runs": {r: store.summary(r) for r in req.run_ids}, "gates_table": gates_table,
+    return {"runs": {r: store.summary(r) for r in req.run_ids}, "suites": suites,
+            "cross_suite": len(set(suites.values())) > 1, "gates_table": gates_table,
             "config_diffs_vs_first": diffs, "reflections": {r: (rep or {}).get("reflection") for r, rep in reports.items()}}
 
 

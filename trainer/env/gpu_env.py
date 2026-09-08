@@ -91,6 +91,8 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         self._foot_pos = jp.array([list(range(sadr(f"{leg}_foot_pos")[0], sadr(f"{leg}_foot_pos")[0] + 3))
                                    for leg in jm.LEGS])
         self._box_gids = jp.array(tr.box_geom_ids(m), dtype=jp.int32)
+        self._box_bids = jp.array(tr.box_body_ids(m), dtype=jp.int32)
+        self._foot_gids = jp.array([m.geom(f"{leg}_foot").id for leg in jm.LEGS], dtype=jp.int32)
         self._spawn_jitter = float(self.cfg.terrain.spawn_jitter_m)
         self._cmd_lo = jp.array([self.cfg.commands.vx[0], self.cfg.commands.vy[0], self.cfg.commands.wz[0]])
         self._cmd_hi = jp.array([self.cfg.commands.vx[1], self.cfg.commands.vy[1], self.cfg.commands.wz[1]])
@@ -111,8 +113,8 @@ class BittleGpuEnv(mjx_env.MjxEnv):
 
     # ── terrain (reads the PER-ENV model: the DR wrapper swaps it inside the vmap) ──
     def _boxes(self):
-        m = self.mjx_model
-        return (m.geom_pos[self._box_gids], m.geom_size[self._box_gids], tr.yaw_from_quat(jp, m.geom_quat[self._box_gids]))
+        m = self.mjx_model  # box bodies sit directly under the terrain body at the origin: body_pos is world
+        return (m.body_pos[self._box_bids], m.geom_size[self._box_gids], tr.yaw_from_quat(jp, m.body_quat[self._box_bids]))
 
     def _terrain_h(self, x, y):
         return tr.terrain_height(jp, x, y, *self._boxes())
@@ -210,7 +212,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
 
         torques = jp.abs(data.actuator_force)
         boxes = self._boxes()
-        feet_pos = data.sensordata[self._foot_pos]
+        feet_pos = data.geom_xpos[self._foot_gids]
         limb = (jp.array([data.sensordata[a] > 0 for a in self._limb_found]).astype(jp.float32)
                 if self._limb_found else jp.zeros(8))
         q = {
@@ -283,7 +285,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         th = tr.terrain_height(jp, data.qpos[0], data.qpos[1], *boxes)
         yaw = tr.yaw_from_quat(jp, data.qpos[3:7])
         scan = tr.height_scan(jp, data.qpos[0], data.qpos[1], yaw, *boxes) - th
-        clearance = tr.foot_clearance(jp, data.sensordata[self._foot_pos], *boxes)
+        clearance = tr.foot_clearance(jp, data.geom_xpos[self._foot_gids], *boxes)
         privileged = jp.concatenate([
             state,
             self._sensor(data, "torso_vel"),
@@ -343,6 +345,7 @@ def make_domain_randomizer(cfg: TrainConfig, mj_model: mujoco.MjModel):
         return None
     ground_ids = jp.array(tr.ground_geom_ids(mj_model), dtype=jp.int32)
     box_ids = jp.array(tr.box_geom_ids(mj_model), dtype=jp.int32)
+    box_bids = jp.array(tr.box_body_ids(mj_model), dtype=jp.int32)
     torso_id = mj_model.body("torso").id
 
     def domain_randomize(model: mjx.Model, rng: jax.Array):
@@ -355,10 +358,10 @@ def make_domain_randomizer(cfg: TrainConfig, mj_model: mujoco.MjModel):
 
             gravity, pos, half, yaw = tr.sample_field(jp, u, tcfg)
             k = box_ids.shape[0]
-            geom_pos = model.geom_pos.at[box_ids].set(pos[:k]) if k else model.geom_pos
+            body_pos = model.body_pos.at[box_bids].set(pos[:k]) if k else model.body_pos
             geom_size = model.geom_size.at[box_ids].set(half[:k]) if k else model.geom_size
-            geom_quat = model.geom_quat.at[box_ids].set(tr.quat_from_yaw(jp, yaw[:k])) if k else model.geom_quat
-            return gravity, geom_pos, geom_size, geom_quat
+            body_quat = model.body_quat.at[box_bids].set(tr.quat_from_yaw(jp, yaw[:k])) if k else model.body_quat
+            return gravity, body_pos, geom_size, body_quat
 
         @jax.vmap
         def rand(rng):
@@ -387,10 +390,10 @@ def make_domain_randomizer(cfg: TrainConfig, mj_model: mujoco.MjModel):
             })
         if terrain_active:
             rng_t = jax.vmap(lambda r: jax.random.fold_in(r, 7))(rng)
-            gravity, geom_pos, geom_size, geom_quat = rand_terrain(rng_t)
+            gravity, body_pos, geom_size, body_quat = rand_terrain(rng_t)
             fields["opt.gravity"] = gravity
             if box_ids.shape[0]:
-                fields.update({"geom_pos": geom_pos, "geom_size": geom_size, "geom_quat": geom_quat})
+                fields.update({"body_pos": body_pos, "geom_size": geom_size, "body_quat": body_quat})
         in_axes = jax.tree_util.tree_map(lambda x: None, model)
         in_axes = in_axes.tree_replace({k: 0 for k in fields})
         model = model.tree_replace(fields)

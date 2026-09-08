@@ -1,0 +1,91 @@
+# Incline suite: walk UP a fixed 8-degree slope (tilted-world protocol; same XML as flat).
+# UNCALIBRATED: every threshold below is a guess until `python -m trainer.eval.baselines --suite slope_v1`
+# has replayed the firmware trot on this exact protocol (the energy-gate lesson: a bar written before
+# the baseline was measured fails the winner). Freeze at 1.0.0 only after that.
+suite: slope_v1
+version: 0.1.0-uncalibrated
+include: [_servo_safety]
+protocol:
+  n_episodes: 20
+  seed_start: 0
+  episode_seconds: 10.0
+  command: [0.10, 0.0, 0.0]
+  model: bittle_cpu.xml
+  dr: nominal
+  terrain:
+    kind: slope
+    slope_deg: 8.0        # scalar: a suite is a fixed bar, whatever the run trained on
+    slope_yaw_deg: 0.0
+    spawn_jitter_m: 0.0
+gates:
+  - name: fall_rate
+    metric: fall_rate
+    op: "<="
+    threshold: 0.20
+    unit: fraction
+    term: orientation
+    hint: "raise orientation / base_height penalties; lower the slope_deg range and warm-start again"
+  - name: forward_distance_p50
+    metric: forward_distance_p50
+    op: ">="
+    threshold: 0.35
+    unit: m
+    term: tracking_lin_vel
+    hint: "raise tracking_lin_vel; ideal is 1.0 m at 0.10 m/s for 10 s"
+  - name: climb_height
+    metric: climb_height_p50
+    op: ">="
+    threshold: 0.045
+    unit: m
+    term: tracking_lin_vel
+    hint: "= 0.35 m x sin(8 deg); turn on slope_progress (reward) if tracking alone stalls"
+  - name: vel_tracking_rmse
+    metric: vel_tracking_rmse
+    op: "<="
+    threshold: 0.07
+    unit: m/s
+    term: tracking_lin_vel
+    hint: "tighten tracking_sigma or raise tracking_lin_vel"
+  - name: heading_drift_lateral
+    metric: lateral_drift_m
+    op: "<="
+    threshold: 0.20
+    unit: m
+    term: tracking_lin_vel
+    hint: "sliding sideways off the fall line is the slope failure mode; penalise lateral velocity"
+  - name: body_stability_tilt
+    metric: mean_tilt_deg
+    op: "<="
+    threshold: 12.0
+    unit: deg
+    term: orientation
+    hint: "tilt is measured against the terrain normal; raise orientation penalty"
+  - name: body_stability_vz
+    metric: rms_vz
+    op: "<="
+    threshold: 0.06
+    unit: m/s
+    term: lin_vel_z
+    hint: "raise lin_vel_z penalty"
+  - name: energy_proxy
+    metric: energy_proxy_w
+    op: "<="
+    threshold: 3.0
+    unit: W
+    term: energy
+    hint: "climbing 8 deg at 0.10 m/s costs ~0.04 W of mechanical work; the rest is gait inefficiency"
+  - name: beats_baseline_trot_distance
+    metric: baseline_distance_ratio
+    op: ">="
+    threshold: 1.1
+    unit: ratio
+    group: baseline
+    term: tracking_lin_vel
+    hint: "the firmware trot replayed on the same slope is the bar (skipped when the trot cannot climb at all)"
+  - name: stand_still_falls
+    metric: stand_still_falls
+    op: "<="
+    threshold: 0
+    unit: count
+    term: stand_still
+    hint: "standing on the slope must not fall"

@@ -74,38 +74,102 @@
   <worldbody>
     <body name="terrain">
       <geom name="floor" type="plane" size="0 0 0.1" pos="0 0 -0.01" material="grid" contype="1" conaffinity="1" />
-      <geom name="terrain_box_00" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_01" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_02" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_03" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_04" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_05" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_06" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_07" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_08" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_09" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_10" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_11" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_12" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_13" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_14" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_15" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_16" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_17" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_18" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_19" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_20" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_21" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_22" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_23" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_24" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_25" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_26" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_27" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_28" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_29" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_30" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
-      <geom name="terrain_box_31" class="terrain" size="0.001 0.001 0.001" pos="0 0 -1" />
+      <body name="terrain_box_00" pos="0 0 -1">
+        <geom name="terrain_box_00" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_01" pos="0 0 -1">
+        <geom name="terrain_box_01" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_02" pos="0 0 -1">
+        <geom name="terrain_box_02" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_03" pos="0 0 -1">
+        <geom name="terrain_box_03" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_04" pos="0 0 -1">
+        <geom name="terrain_box_04" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_05" pos="0 0 -1">
+        <geom name="terrain_box_05" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_06" pos="0 0 -1">
+        <geom name="terrain_box_06" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_07" pos="0 0 -1">
+        <geom name="terrain_box_07" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_08" pos="0 0 -1">
+        <geom name="terrain_box_08" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_09" pos="0 0 -1">
+        <geom name="terrain_box_09" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_10" pos="0 0 -1">
+        <geom name="terrain_box_10" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_11" pos="0 0 -1">
+        <geom name="terrain_box_11" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_12" pos="0 0 -1">
+        <geom name="terrain_box_12" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_13" pos="0 0 -1">
+        <geom name="terrain_box_13" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_14" pos="0 0 -1">
+        <geom name="terrain_box_14" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_15" pos="0 0 -1">
+        <geom name="terrain_box_15" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_16" pos="0 0 -1">
+        <geom name="terrain_box_16" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_17" pos="0 0 -1">
+        <geom name="terrain_box_17" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_18" pos="0 0 -1">
+        <geom name="terrain_box_18" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_19" pos="0 0 -1">
+        <geom name="terrain_box_19" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_20" pos="0 0 -1">
+        <geom name="terrain_box_20" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_21" pos="0 0 -1">
+        <geom name="terrain_box_21" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_22" pos="0 0 -1">
+        <geom name="terrain_box_22" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_23" pos="0 0 -1">
+        <geom name="terrain_box_23" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_24" pos="0 0 -1">
+        <geom name="terrain_box_24" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_25" pos="0 0 -1">
+        <geom name="terrain_box_25" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_26" pos="0 0 -1">
+        <geom name="terrain_box_26" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_27" pos="0 0 -1">
+        <geom name="terrain_box_27" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_28" pos="0 0 -1">
+        <geom name="terrain_box_28" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_29" pos="0 0 -1">
+        <geom name="terrain_box_29" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_30" pos="0 0 -1">
+        <geom name="terrain_box_30" class="terrain" size="0.15 0.15 0.02" />
+      </body>
+      <body name="terrain_box_31" pos="0 0 -1">
+        <geom name="terrain_box_31" class="terrain" size="0.15 0.15 0.02" />
+      </body>
     </body>
     <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" />
     <light pos="0.5 0.5 1.0" dir="-0.5 -0.5 -1" diffuse="0.4 0.4 0.4" />
@@ -174,7 +238,7 @@
                   <joint name="shrft_joint" pos="0 0 0" axis="0 1 0" range="-1.22173 2.6" />
                   <inertial pos="-0.004 0.02 -0.005" mass="0.0107" diaginertia="9e-7 1.2e-6 6e-7" />
                   <geom pos="-0.008067 0.04708 -0.010094" type="mesh" mesh="servos_rf_1" class="visual" material="bittle_black" />
-                  <geom pos="-0.008067 0.04708 -0.010094" type="mesh" mesh="servos_rf_1" class="collision" />
+                  <geom pos="-0.008067 0.04708 -0.010094" type="mesh" mesh="servos_rf_1" class="collision" name="rf_knee_col" />
                   <site name="rf_foot_site" pos="0.01869 0.00000 -0.02242" type="sphere" size="0.001" rgba="0 0 0 0" />
                   <body name="shank_rf_1" pos="-0.008218 0.0075 0.000719">
                     <inertial pos="0 0 0" mass="0.0033" diaginertia="1.2e-6 1.4e-8 1.2e-6" />
@@ -213,7 +277,7 @@
                   <joint name="shrrt_joint" pos="0 0 0" axis="0 1 0" range="-1.22173 2.6" />
                   <inertial pos="0.05 0.02 -0.005" mass="0.0107" diaginertia="9e-7 1.2e-6 6e-7" />
                   <geom pos="0.096933 0.04708 -0.010094" type="mesh" mesh="servos_rr_1" class="visual" material="bittle_black" />
-                  <geom pos="0.096933 0.04708 -0.010094" type="mesh" mesh="servos_rr_1" class="collision" />
+                  <geom pos="0.096933 0.04708 -0.010094" type="mesh" mesh="servos_rr_1" class="collision" name="rr_knee_col" />
                   <site name="rr_foot_site" pos="0.01854 0.00000 -0.02223" type="sphere" size="0.001" rgba="0 0 0 0" />
                   <body name="shank_rr_1" pos="-0.008218 0.0075 0.000719">
                     <inertial pos="0 0 0" mass="0.0033" diaginertia="1.2e-6 1.4e-8 1.2e-6" />
@@ -252,7 +316,7 @@
                   <joint name="shlft_joint" pos="0 0 0" axis="0 1 0" range="-1.22173 2.6" />
                   <inertial pos="-0.004 -0.02 -0.005" mass="0.0107" diaginertia="9e-7 1.2e-6 6e-7" />
                   <geom pos="-0.008067 -0.04708 -0.010094" type="mesh" mesh="servos_lf_1" class="visual" material="bittle_black" />
-                  <geom pos="-0.008067 -0.04708 -0.010094" type="mesh" mesh="servos_lf_1" class="collision" />
+                  <geom pos="-0.008067 -0.04708 -0.010094" type="mesh" mesh="servos_lf_1" class="collision" name="lf_knee_col" />
                   <site name="lf_foot_site" pos="0.01868 0.00000 -0.02241" type="sphere" size="0.001" rgba="0 0 0 0" />
                   <body name="shank_lf_1" pos="-0.008218 -0.007498 0.000719">
                     <inertial pos="0 0 0" mass="0.0033" diaginertia="1.2e-6 1.4e-8 1.2e-6" />
@@ -291,7 +355,7 @@
                   <joint name="shlrt_joint" pos="0 0 0" axis="0 1 0" range="-1.22173 2.6" />
                   <inertial pos="0.05 -0.02 -0.005" mass="0.0107" diaginertia="9e-7 1.2e-6 6e-7" />
                   <geom pos="0.096933 -0.047082 -0.010094" type="mesh" mesh="servos_lr_1" class="visual" material="bittle_black" />
-                  <geom pos="0.096933 -0.047082 -0.010094" type="mesh" mesh="servos_lr_1" class="collision" />
+                  <geom pos="0.096933 -0.047082 -0.010094" type="mesh" mesh="servos_lr_1" class="collision" name="lr_knee_col" />
                   <site name="lr_foot_site" pos="0.01853 0.00000 -0.02222" type="sphere" size="0.001" rgba="0 0 0 0" />
                   <body name="shank_lr_1" pos="-0.008218 -0.0075 0.000719">
                     <inertial pos="0 0 0" mass="0.0033" diaginertia="1.2e-6 1.4e-8 1.2e-6" />
@@ -346,20 +410,20 @@
     <framepos name="rr_foot_pos" objtype="site" objname="rr_foot_site" />
     <framelinvel name="lr_foot_global_linvel" objtype="site" objname="lr_foot_site" />
     <framepos name="lr_foot_pos" objtype="site" objname="lr_foot_site" />
-    <contact name="rf_foot_floor_found" geom1="rf_foot" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lf_foot_floor_found" geom1="lf_foot" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="rr_foot_floor_found" geom1="rr_foot" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lr_foot_floor_found" geom1="lr_foot" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="torso_floor_found" body1="torso" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="head__1_floor_found" body1="head__1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="rf_shank_floor_found" body1="servos_rf_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="rf_thigh_floor_found" body1="c_thrf__1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lf_shank_floor_found" body1="servos_lf_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lf_thigh_floor_found" body1="c_thlf_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="rr_shank_floor_found" body1="servos_rr_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="rr_thigh_floor_found" body1="c_thrr_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lr_shank_floor_found" body1="servos_lr_1" body2="terrain" reduce="mindist" num="1" data="found" />
-    <contact name="lr_thigh_floor_found" body1="c_thlr_1" body2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rf_foot_floor_found" geom1="rf_foot" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lf_foot_floor_found" geom1="lf_foot" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rr_foot_floor_found" geom1="rr_foot" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lr_foot_floor_found" geom1="lr_foot" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="torso_floor_found" body1="torso" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="head__1_floor_found" body1="head__1" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rf_shank_floor_found" geom1="rf_knee_col" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rf_thigh_floor_found" body1="c_thrf__1" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lf_shank_floor_found" geom1="lf_knee_col" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lf_thigh_floor_found" body1="c_thlf_1" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rr_shank_floor_found" geom1="rr_knee_col" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="rr_thigh_floor_found" body1="c_thrr_1" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lr_shank_floor_found" geom1="lr_knee_col" subtree2="terrain" reduce="mindist" num="1" data="found" />
+    <contact name="lr_thigh_floor_found" body1="c_thlr_1" subtree2="terrain" reduce="mindist" num="1" data="found" />
   </sensor>
   <keyframe>
     <key name="stand" qpos="0 0 0.04708 1 0 0 0 -0.7854 1.4835 0.7854 1.4835 -0.7854 1.4835 0.7854 1.4835" ctrl="-0.785398 1.48353 -0.785398 1.48353 0.785398 1.48353 0.785398 1.48353" />

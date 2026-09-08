@@ -1,98 +1,91 @@
-# Benchmark gate suite for Bittle X locomotion policies.
+# Benchmark gate suite for Bittle X locomotion policies on flat ground.
 # This is the policy "test suite": every gate is metric OP threshold.
 # Changing ANY threshold bumps `version`; the leaderboard only ranks reports
-# that share a version. Thresholds below were seeded from the plan and are
-# calibrated once against the OpenCat trot baseline before being frozen.
+# that share a version. 1.2.0 (2026-09-07): the servo-safety gates moved into the shared
+# `_servo_safety` fragment, which adds peak_joint_speed / stall gates to every suite.
 suite: flat_v1
-version: 1.1.0
+version: 1.2.0
+include: [_servo_safety]
 protocol:
   n_episodes: 20
   seed_start: 0
   episode_seconds: 10.0
-  command_vx: 0.12
+  command: [0.12, 0.0, 0.0]
   model: bittle_cpu.xml
   dr: nominal
+  terrain:
+    kind: flat
 gates:
   - name: fall_rate
     metric: fall_rate
     op: "<="
     threshold: 0.10
     unit: fraction
+    term: orientation
     hint: "raise orientation / base_height penalties, lower vx upper bound, add init noise"
   - name: forward_distance_p50
     metric: forward_distance_p50
     op: ">="
     threshold: 0.6
     unit: m
+    term: tracking_lin_vel
     hint: "raise tracking_lin_vel weight or tracking_sigma; check the policy is not standing still"
   - name: vel_tracking_rmse
     metric: vel_tracking_rmse
     op: "<="
     threshold: 0.05
     unit: m/s
+    term: tracking_lin_vel
     hint: "tighten tracking_sigma or raise tracking_lin_vel"
   - name: heading_drift_yaw
     metric: heading_yaw_deg
     op: "<="
     threshold: 20.0
     unit: deg
+    term: tracking_ang_vel
     hint: "raise tracking_ang_vel (wz command is 0 in this suite)"
   - name: heading_drift_lateral
     metric: lateral_drift_m
     op: "<="
     threshold: 0.15
     unit: m
+    term: tracking_lin_vel
     hint: "penalise lateral velocity via tracking_lin_vel (vy=0)"
-  - name: joint_saturation_pct
-    metric: joint_saturation_pct
-    op: "<="
-    threshold: 5.0
-    unit: percent
-    hint: "raise joint_saturation penalty or reduce action_scale_deg"
-  - name: action_smoothness
-    metric: action_smoothness_deg
-    op: "<="
-    threshold: 4.0
-    unit: deg/step
-    hint: "raise action_rate penalty"
   - name: body_stability_tilt
     metric: mean_tilt_deg
     op: "<="
     threshold: 10.0
     unit: deg
+    term: orientation
     hint: "raise orientation penalty"
   - name: body_stability_vz
     metric: rms_vz
     op: "<="
     threshold: 0.05
     unit: m/s
+    term: lin_vel_z
     hint: "raise lin_vel_z penalty"
-  # Calibrated 2026-09-07: the firmware trot (opencat_trF) measures 3.79 W on this proxy and the
-  # first learned policies 1.08-1.39 W. The original 1.0 W was an uncalibrated guess.
-  - name: energy_proxy
-    metric: energy_proxy_w
-    op: "<="
-    threshold: 2.0
-    unit: W
-    hint: "raise the energy penalty by 10-100x (its reward share is usually <1%) or lower action_scale_deg"
   - name: energy_vs_baseline
     metric: baseline_energy_ratio
     op: "<="
     threshold: 0.5
     unit: ratio
     group: baseline
+    term: energy
     hint: "a learned gait must use at most half the firmware trot's power on the same protocol"
   - name: stand_still_drift
     metric: stand_still_drift_m
     op: "<="
     threshold: 0.05
     unit: m
+    term: stand_still
     hint: "raise stand_still penalty"
   - name: stand_still_falls
     metric: stand_still_falls
     op: "<="
     threshold: 0
     unit: count
+    term: stand_still
     hint: "raise stand_still / orientation penalties"
   - name: multi_command
     metric: multi_command_rmse_max
@@ -100,6 +93,7 @@ gates:
     threshold: 0.06
     unit: m/s
     requires_stage: 1
+    term: tracking_lin_vel
     hint: "widen commands.vx and train longer"
   - name: dr_robustness_falls
     metric: dr_fall_rate_max
@@ -107,6 +101,7 @@ gates:
     threshold: 0.20
     unit: fraction
     group: dr_sweep
+    term: orientation
     hint: "widen dr ranges (friction, kp, latency) during training"
   - name: dr_robustness_distance
     metric: dr_distance_ratio_min
@@ -114,6 +109,7 @@ gates:
     threshold: 0.7
     unit: ratio
     group: dr_sweep
+    term: tracking_lin_vel
     hint: "widen dr ranges during training"
   - name: beats_baseline_trot_distance
     metric: baseline_distance_ratio
@@ -121,6 +117,7 @@ gates:
     threshold: 1.1
     unit: ratio
     group: baseline
+    term: tracking_lin_vel
     hint: "the OpenCat trF gait replayed in the same sim is the bar to clear"
   - name: beats_baseline_trot_falls
     metric: baseline_fall_delta
@@ -128,6 +125,7 @@ gates:
     threshold: 0.0
     unit: fraction
     group: baseline
+    term: orientation
     hint: "fall rate must not exceed the baseline gait's"
   - name: dual_sim_consistency
     metric: dual_sim_distance_ratio
@@ -135,4 +133,5 @@ gates:
     threshold: [0.7, 1.3]
     unit: ratio
     group: dual_sim
+    term: null
     hint: "GPU-engine vs CPU-MuJoCo drift; the policy may be exploiting a solver artefact"

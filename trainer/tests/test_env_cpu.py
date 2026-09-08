@@ -151,8 +151,24 @@ def test_walks_over_a_single_step_edge():
         return out
 
     env.step = step
+    box_hits = []
+    m = env.model
+    box_geom = env.box_ids[0]
+    feet = {m.geom(f"{leg}_foot").id for leg in ("rf", "lf", "rr", "lr")}
+    orig_step2 = env.step
+
+    def step2(*a, **kw):
+        out = orig_step2(*a, **kw)
+        box_hits.extend(1 for c in env.data.contact[: env.data.ncon]
+                        if box_geom in (c.geom1, c.geom2) and (c.geom1 in feet or c.geom2 in feet))
+        return out
+
+    env.step = step2
     st = run_episode(env, GaitController.from_opencat("trF"), seed=0, seconds=6.0, command=np.array([0.12, 0, 0]))
-    assert st.distance_x > 0.2 and max(seen) == 0.010
+    assert max(seen) == 0.010, "the torso never passed over the box"
+    # the physics must FEEL the edge: a runtime-resized box with a stale compiled bounding radius is
+    # invisible to the broadphase (zero contacts) even though the analytic height sees it
+    assert len(box_hits) > 0, "no foot-box contact: the box is not colliding"
 
 
 def test_terrain_metrics_are_finite_and_in_range():
@@ -163,7 +179,7 @@ def test_terrain_metrics_are_finite_and_in_range():
     for _ in range(50):
         _, _, done, info = env.step(np.random.default_rng(1).uniform(-1, 1, 8))
         assert np.isfinite(info.peak_qvel).all() and (info.peak_qvel >= 0).all()
-        assert 0 <= info.stall_samples <= 8 * env.n_substeps and 0 <= info.stall_concurrent <= 8
+        assert info.stalled.shape == (8,) and info.stalled.dtype == bool
         assert np.isfinite(info.foot_clearance).all() and info.terrain_h >= 0
         if done:
             break

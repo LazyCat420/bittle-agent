@@ -64,7 +64,12 @@ CHASSIS_BODIES = ("torso", "front__1", "rear__1", "cover_1", "battery_1")
 LEG_TUCK_BODIES = tuple(LEG_KNEE_BODY[leg] for leg in LEGS) + tuple(f"shank_{leg}_1" for leg in LEGS)
 TERRAIN_MAX_BOXES = 32
 TERRAIN_PARKED_POS = "0 0 -1"
-TERRAIN_PARKED_SIZE = "0.001 0.001 0.001"
+#: Parked boxes are baked at the LARGEST size a config may ask for (TerrainConfig.box_size_m <= 0.15,
+#: half-height 0.02): MuJoCo computes each geom's bounding radius / AABB at compile time and the
+#: broadphase never revisits it, so a box grown at run time beyond its compiled size is silently
+#: skipped by collision detection (measured: zero foot-box contacts with 1 mm parked boxes). Shrinking
+#: is always safe. Parked 1 m below the floor they cannot touch anything at any size.
+TERRAIN_PARKED_SIZE = "0.15 0.15 0.02"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -284,10 +289,16 @@ def _add_terrain_class(root: ET.Element) -> None:
 
 
 def _add_terrain_body(root: ET.Element) -> None:
-    """Move ``floor`` into a static body ``terrain`` and add the parked boxes.
+    """Move ``floor`` into a static body ``terrain`` whose CHILD bodies each carry one parked box.
 
-    One body for all ground geoms: contact sensors key on ``body2="terrain"`` whatever
-    the box count, and same-body geoms never collide so overlapping boxes are free.
+    Why one body per box, placed through ``body_pos``/``body_quat`` and never ``geom_pos``:
+    MuJoCo builds a per-body BVH over each body's geoms at compile time, in the body frame, and
+    the broadphase trusts it forever. A geom moved at run time via ``geom_pos`` keeps its
+    compile-time AABB, so a box "moved" from its parking spot at z = -1 is never even tested
+    for collision (measured: zero foot-box contacts, while mj_ray — which reads geom_pos — saw
+    it). A body moved via ``body_pos`` is re-posed by mj_kinematics every step, and its
+    one-geom BVH (geom at the body origin, compile-time MAX size) stays valid. Contact sensors
+    key on ``subtree2="terrain"`` so floor and boxes are one ground.
     """
     world = root.find("worldbody")
     floor = next(g for g in world.findall("geom") if g.get("name") == "floor")
@@ -295,9 +306,18 @@ def _add_terrain_body(root: ET.Element) -> None:
     body = ET.Element("body", {"name": "terrain"})
     body.append(floor)
     for i in range(TERRAIN_MAX_BOXES):
-        ET.SubElement(body, "geom", {"name": f"terrain_box_{i:02d}", "class": "terrain",
-                                     "size": TERRAIN_PARKED_SIZE, "pos": TERRAIN_PARKED_POS})
+        b = ET.SubElement(body, "body", {"name": f"terrain_box_{i:02d}", "pos": TERRAIN_PARKED_POS})
+        ET.SubElement(b, "geom", {"name": f"terrain_box_{i:02d}", "class": "terrain", "size": TERRAIN_PARKED_SIZE})
     world.insert(0, body)
+
+
+def _name_knee_collision_meshes(root: ET.Element) -> None:
+    """Mesh variants: name the knee-servo housing's collision mesh so a stumble sensor can address it
+    (the knee body also carries the foot sphere, and the shank mesh includes the rubber paw)."""
+    for leg in LEGS:
+        knee = _find_body(root, LEG_KNEE_BODY[leg])
+        g = next(g for g in knee.findall("geom") if g.get("class") == "collision")
+        g.set("name", f"{leg}_knee_col")
 
 
 def _sensors(root: ET.Element, gpu: bool, terrain: bool = False) -> None:
@@ -305,8 +325,8 @@ def _sensors(root: ET.Element, gpu: bool, terrain: bool = False) -> None:
     for s in list(sensor):
         if s.tag == "touch":
             sensor.remove(s)
-    # ground reference: the floor geom on the flat variants, the whole terrain body otherwise
-    ground = {"body2": "terrain"} if terrain else {"geom2": "floor"}
+    # ground reference: the floor geom on the flat variants, the terrain SUBTREE (floor + box bodies) otherwise
+    ground = {"subtree2": "terrain"} if terrain else {"geom2": "floor"}
     ET.SubElement(sensor, "framezaxis", {"name": "torso_upvector", "objtype": "site", "objname": "imu_site"})
     ET.SubElement(sensor, "framelinvel", {"name": "torso_global_linvel", "objtype": "body", "objname": "torso"})
     ET.SubElement(sensor, "frameangvel", {"name": "torso_global_angvel", "objtype": "body", "objname": "torso"})
@@ -328,9 +348,12 @@ def _sensors(root: ET.Element, gpu: bool, terrain: bool = False) -> None:
     if terrain:
         # stumble sensors: shank / thigh on the ground (reward term, NOT fall termination)
         for leg in LEGS:
-            for part, gpu_geom, cpu_body in (("shank", f"{leg}_shank_col", LEG_KNEE_BODY[leg]),
-                                             ("thigh", f"{leg}_thigh_col", LEG_THIGH_BODY[leg])):
-                ref = {"geom1": gpu_geom} if gpu else {"body1": cpu_body}
+            # gpu: shank capsule (stops 75% of the way to the foot) / thigh capsule.
+            # cpu: the knee-servo housing mesh (the shank mesh includes the rubber paw, which touches
+            # the ground on every stance) / the thigh bracket body.
+            for part, gpu_ref, cpu_ref in (("shank", {"geom1": f"{leg}_shank_col"}, {"geom1": f"{leg}_knee_col"}),
+                                           ("thigh", {"geom1": f"{leg}_thigh_col"}, {"body1": LEG_THIGH_BODY[leg]})):
+                ref = gpu_ref if gpu else cpu_ref
                 ET.SubElement(sensor, "contact", {"name": f"{leg}_{part}_floor_found", **ref, **ground,
                                                   "reduce": "mindist", "num": "1", "data": "found"})
 
@@ -397,6 +420,7 @@ def build(variant: str) -> tuple[str, dict]:
         info["primitives"] = _add_primitives(root)
     else:
         info["chassis_leg_contact_excludes"] = _exclude_chassis_leg_contacts(root)
+        _name_knee_collision_meshes(root)
     if terrain:
         _add_terrain_class(root)
         _add_terrain_body(root)

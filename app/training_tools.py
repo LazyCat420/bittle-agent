@@ -14,6 +14,7 @@ from typing import Any
 from .trainer_client import TrainerClient, TrainerError, TrainerUnavailable
 
 TRAINING_TOOL_NAMES = (
+    "bittle_list_tasks",
     "bittle_propose_config",
     "bittle_train_policy",
     "bittle_train_status",
@@ -31,7 +32,9 @@ _PATCH = {
     "description": (
         "Partial TrainConfig to merge onto the base (defaults or base_run_id). Keys: reward.weights.{tracking_lin_vel,"
         "tracking_ang_vel,lin_vel_z,ang_vel_xy,orientation,base_height,action_rate,energy,joint_saturation,feet_air_time,"
-        "feet_slip,stand_still}, reward.tracking_sigma, curriculum_stage (0-2), commands.{vx,vy,wz,resample_s}, "
+        "feet_slip,stand_still,foot_clearance,stumble,slope_progress,stall}, reward.tracking_sigma, curriculum_stage (0-2), "
+        "terrain.{level (0 flat,1 slope,2 rocks,3 rocks+slope),slope_deg,n_boxes,box_height_m,box_size_m,spawn_jitter_m}, "
+        "commands.{vx,vy,wz,resample_s}, "
         "dr.{enabled,friction,mass_scale,payload_g,kp,forcerange,damping,frictionloss,latency_steps,gyro_noise,...}, "
         "ppo.{num_envs,num_timesteps,learning_rate,entropy_cost,discounting,unroll_length,num_minibatches,batch_size,"
         "policy_hidden,value_hidden,num_evals}, episode_seconds, control_hz (25|50), action_scale_deg, "
@@ -43,6 +46,10 @@ TRAINING_TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {
         "name": "bittle_trainer_health",
         "description": "Check the RL trainer service (GPU box): reachable, physics backend, active jobs.",
+        "parameters": {"type": "object", "properties": {}, "required": []}}},
+    {"type": "function", "function": {
+        "name": "bittle_list_tasks",
+        "description": "The task catalogue: every trainable task with its goal, aliases, gate suite, prerequisites, the config keys that matter, whether its prerequisite is satisfied (and by which run) and the run to warm-start from. Call this FIRST and match the operator's words to a task; the task decides the gate suite.",
         "parameters": {"type": "object", "properties": {}, "required": []}}},
     {"type": "function", "function": {
         "name": "bittle_propose_config",
@@ -66,17 +73,20 @@ TRAINING_TOOLS: list[dict[str, Any]] = [
             "required": ["run_id"]}}},
     {"type": "function", "function": {
         "name": "bittle_benchmark_policy",
-        "description": "Run the flat_v1 gate suite (the policy test suite) on a trained run in CPU MuJoCo. Returns gate table, score and a reflection string. dr_sweep adds robustness presets (slower).",
+        "description": "Run a gate suite (the policy test suite) on a trained run in CPU MuJoCo. Omit `suite` to use the run's own suite (its task's). Another suite is an ablation and needs force=true; its numbers never enter the leaderboard. Returns gate table, score and a reflection string. dr_sweep adds robustness presets (slower).",
         "parameters": {"type": "object", "properties": {
-            "run_id": {"type": "string"}, "suite": {"type": "string", "default": "flat_v1"},
+            "run_id": {"type": "string"}, "suite": {"type": "string", "description": "omit = the run's own suite"},
+            "force": {"type": "boolean", "description": "required to benchmark on a suite other than the run's own"},
             "dr_sweep": {"type": "boolean"}, "dual_sim": {"type": "boolean"},
             "wait_s": {"type": "number", "description": "0-300 seconds to wait for the report"}},
             "required": ["run_id"]}}},
     {"type": "function", "function": {
         "name": "bittle_train_and_benchmark",
-        "description": "ONE FULL CYCLE: submit training with a config patch, wait for it to finish, benchmark it against the flat_v1 gates, and return {run_id, gates, score, reflection, config_diff, curve}. This is the tool to use for iterative training. Takes minutes; progress is streamed.",
+        "description": "ONE FULL CYCLE: submit training for a task with a config patch, wait for it to finish, benchmark it on THAT TASK'S gate suite, and return {run_id, task, suite, gates, score, reflection, config_diff, curve}. This is the tool to use for iterative training. Takes minutes; progress is streamed.",
         "parameters": {"type": "object", "properties": {
-            "name": {"type": "string"}, "config_patch": _PATCH, "base_run_id": {"type": "string"},
+            "name": {"type": "string"},
+            "task": {"type": "string", "description": "Task name from bittle_list_tasks (flat_walk, slope_up, rough_walk, ...). Decides the gate suite. Omit to keep the parent run's task."},
+            "config_patch": _PATCH, "base_run_id": {"type": "string"},
             "notes": {"type": "string", "description": "Hypothesis for this change"},
             "dr_sweep": {"type": "boolean"}},
             "required": []}}},
@@ -86,9 +96,10 @@ TRAINING_TOOLS: list[dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {"run_id": {"type": "string"}}, "required": []}}},
     {"type": "function", "function": {
         "name": "bittle_list_runs",
-        "description": "Leaderboard of runs (score, gates passed, distance, fall rate) plus the OpenCat baseline gaits.",
+        "description": "Leaderboard of runs (score, gates passed, distance, fall rate) plus the OpenCat baseline gaits. Scores are only comparable WITHIN a suite: pass `suite` to rank one task's runs; without it you get best_by_suite.",
         "parameters": {"type": "object", "properties": {
-            "limit": {"type": "integer"}, "sort": {"type": "string", "enum": ["score", "created"]}},
+            "limit": {"type": "integer"}, "sort": {"type": "string", "enum": ["score", "created"]},
+            "suite": {"type": "string", "description": "e.g. flat_v1, slope_v1, rough_v1"}},
             "required": []}}},
     {"type": "function", "function": {
         "name": "bittle_compare_runs",
@@ -113,17 +124,22 @@ def _err(kind: str, detail: Any) -> dict[str, Any]:
 def _compact_report(rep: dict[str, Any]) -> dict[str, Any]:
     gates = [{"gate": g["gate"], "value": g["value"], "op": g["op"], "threshold": g["threshold"], "pass": g["pass"],
               **({"note": g["note"]} if g.get("note") else {})} for g in rep.get("gates", [])]
-    keep = ("run_id", "suite", "suite_version", "gates_passed", "gates_total", "passed", "score", "reflection", "n_episodes")
+    keep = ("run_id", "task", "suite", "suite_version", "gates_passed", "gates_total", "passed", "score", "reflection", "n_episodes")
     out = {k: rep[k] for k in keep if k in rep}
     out["gates"] = gates
     m = rep.get("metrics", {})
     out["metrics"] = {k: m[k] for k in ("fall_rate", "forward_distance_p50", "vel_tracking_rmse", "heading_yaw_deg",
                                         "lateral_drift_m", "joint_saturation_pct", "action_smoothness_deg",
-                                        "mean_tilt_deg", "energy_proxy_w", "first_fall_time_mean") if k in m}
+                                        "mean_tilt_deg", "energy_proxy_w", "first_fall_time_mean",
+                                        "climb_height_p50", "stumble_rate", "foot_clearance_p50_mm",
+                                        "peak_joint_speed_rad_s", "stall_fraction", "stall_concurrent_max") if k in m}
     ctx = rep.get("context") or {}
     if ctx:
         out["reward_shares_pct"] = ctx.get("reward_shares_pct")
         out["parent_run_id"] = ctx.get("parent_run_id")
+        for k in ("parent_note", "baseline_note"):
+            if ctx.get(k):
+                out[k] = ctx[k]
     return out
 
 
@@ -152,14 +168,32 @@ class TrainingTools:
     async def _trainer_health(self, args):
         return {"ok": True, "health": await self.client.health()}
 
+    async def _list_tasks(self, args):
+        res = await self.client.tasks()
+        return {"ok": True, **res, "hint": "pick the task whose goal/aliases match the operator's words; if none matches, say so"}
+
     async def _propose_config(self, args):
         res = await self.client.validate(args.get("config_patch") or {}, args.get("base_run_id"))
         return {"ok": True, "config_hash": res["config_hash"], "diff": res["diff"], "warnings": res.get("warnings", []),
                 "resolved": res["resolved"]}
 
+    @staticmethod
+    def _task_and_patch(args) -> tuple[str | None, dict[str, Any]] | dict[str, Any]:
+        """The task rides in the patch; a task that disagrees with config_patch.task is refused here,
+        before anything is submitted (a slope run silently gated on flat is the failure this prevents)."""
+        patch = dict(args.get("config_patch") or {})
+        task = args.get("task") or None
+        if task and patch.get("task") not in (None, task):
+            return _err("task_conflict", f"task={task!r} but config_patch.task={patch['task']!r}")
+        return task, patch
+
     async def _train_policy(self, args):
-        res = await self.client.submit(args.get("config_patch") or {}, name=args.get("name", ""),
-                                       base_run_id=args.get("base_run_id"), notes=args.get("notes", ""))
+        tp = self._task_and_patch(args)
+        if isinstance(tp, dict):
+            return tp
+        task, patch = tp
+        res = await self.client.submit(patch, name=args.get("name", ""), base_run_id=args.get("base_run_id"),
+                                       notes=args.get("notes", ""), task=task)
         self.last_run_id = res["run_id"]
         return {"ok": True, **res, "hint": "poll bittle_train_status(run_id, wait_s=300)"}
 
@@ -170,7 +204,7 @@ class TrainingTools:
 
     async def _benchmark_policy(self, args):
         wait = float(min(max(args.get("wait_s", 0) or 0, 0), 300))
-        res = await self.client.benchmark(args["run_id"], suite=args.get("suite", "flat_v1"),
+        res = await self.client.benchmark(args["run_id"], suite=args.get("suite") or None, force=bool(args.get("force")),
                                           dr_sweep=bool(args.get("dr_sweep")), dual_sim=bool(args.get("dual_sim")),
                                           wait_s=wait)
         if "gates" in res:
@@ -179,8 +213,12 @@ class TrainingTools:
 
     async def _train_and_benchmark(self, args):
         t0 = time.monotonic()
-        sub = await self.client.submit(args.get("config_patch") or {}, name=args.get("name", ""),
-                                       base_run_id=args.get("base_run_id"), notes=args.get("notes", ""))
+        tp = self._task_and_patch(args)
+        if isinstance(tp, dict):
+            return tp
+        task, patch = tp
+        sub = await self.client.submit(patch, name=args.get("name", ""), base_run_id=args.get("base_run_id"),
+                                       notes=args.get("notes", ""), task=task)
         run_id = sub["run_id"]
         self.last_run_id = run_id
         budget = float(getattr(self.settings, "trainer_cycle_timeout", 1800.0))
@@ -188,6 +226,7 @@ class TrainingTools:
         if st.get("status") not in ("trained", "done"):
             return {"ok": False, "error": "training_failed", "run_id": run_id, "status": st.get("status"),
                     "detail": st.get("error"), "config_diff": sub.get("diff")}
+        # no suite: the trainer benchmarks on the run's OWN suite (its task's)
         await self.client.benchmark(run_id, dr_sweep=bool(args.get("dr_sweep")), wait_s=0)
         st = await self._wait(run_id, until="done", budget=budget, t0=t0)
         rep = None
@@ -198,7 +237,8 @@ class TrainingTools:
         if not rep:
             return {"ok": False, "error": "benchmark_failed", "run_id": run_id, "status": st.get("status"),
                     "detail": st.get("error"), "config_diff": sub.get("diff")}
-        return {"ok": True, "run_id": run_id, "config_diff": sub.get("diff"), "training": _compact_state(st).get("training"),
+        return {"ok": True, "run_id": run_id, "task": sub.get("task"), "suite": sub.get("suite"),
+                "config_diff": sub.get("diff"), "training": _compact_state(st).get("training"),
                 **_compact_report(rep), "elapsed_s": round(time.monotonic() - t0, 1)}
 
     async def _wait(self, run_id: str, *, until: str, budget: float, t0: float) -> dict[str, Any]:
@@ -239,15 +279,19 @@ class TrainingTools:
                          "reward_term": pg.get("term"), "term_share_pct": pg.get("term_share_pct")})
         shares = ctx.get("reward_shares_pct") or {}
         weak = [k for k, v in shares.items() if v is not None and v < 1.0]
-        return {"ok": True, "run_id": run_id, "suite_version": rep.get("suite_version"), "gates": rows,
+        notes = [ctx[k] for k in ("parent_note", "baseline_note") if ctx.get(k)]
+        return {"ok": True, "run_id": run_id, "task": rep.get("task"), "suite": rep.get("suite"),
+                "suite_version": rep.get("suite_version"), "gates": rows,
                 "reward_shares_pct": shares, "parent_run_id": ctx.get("parent_run_id"),
+                **({"notes": notes} if notes else {}),
                 "advice": (f"Terms with <1% reward share ({', '.join(weak)}) cannot steer the policy; a gate tied to one of them "
                            "needs a 10-100x weight change. Runs with base_run_id warm-start from the parent, so ~10M steps is enough per cycle."
                            if weak else "All reward terms carry weight; adjust thresholds' neighbours by 2-5x."),
                 "reflection": rep.get("reflection")}
 
     async def _list_runs(self, args):
-        res = await self.client.list_runs(sort=args.get("sort", "score"), limit=int(args.get("limit", 10) or 10))
+        res = await self.client.list_runs(sort=args.get("sort", "score"), limit=int(args.get("limit", 10) or 10),
+                                          suite=args.get("suite") or None)
         return {"ok": True, **res}
 
     async def _compare_runs(self, args):

@@ -12,8 +12,8 @@ from typing import Any
 
 from ..config import TrainConfig
 from ..store.runs import RunStore
-from .evaluator import GaitController, StandController, aggregate, evaluate_protocol
-from .gates import evaluate_gates, load_suite
+from .evaluator import GaitController, StandController, aggregate, evaluate_protocol, protocol_kwargs
+from .gates import evaluate_gates, load_suite, suite_protocol
 
 REPO = Path(__file__).resolve().parent.parent.parent
 
@@ -45,23 +45,25 @@ def compute_baselines(store: RunStore, *, suite_name: str = "flat_v1", n_episode
                       names: list[str] | None = None) -> dict[str, Any]:
     cfg = TrainConfig()
     suite = load_suite(suite_name)
-    proto = suite["protocol"]
+    proto = suite_protocol(suite)
     n = int(n_episodes or proto["n_episodes"])
+    common = protocol_kwargs(proto)  # the suite's fixed terrain: the gait is replayed on the SAME ground
     results = {}
     for name, ctrl in baseline_controllers(cfg.control_hz).items():
         if names and name not in names:
             continue
         stats, rollouts = evaluate_protocol(
             cfg, ctrl, n_episodes=n, seed_start=int(proto["seed_start"]), seconds=float(proto["episode_seconds"]),
-            command_vx=float(proto["command_vx"]), envelope_tier="tested", record_seeds={int(proto["seed_start"])},
-            source={"baseline": name, "suite": suite_name})
+            command=[float(x) for x in proto["command"]], envelope_tier="tested",
+            record_seeds={int(proto["seed_start"])}, source={"baseline": name, "suite": suite_name, "terrain": proto["terrain"]},
+            **common)
         metrics = aggregate(stats, float(proto["episode_seconds"]))
         report = evaluate_gates(metrics, suite, curriculum_stage=0)
-        report.update({"baseline": name, "n_episodes": n, "seeds": [s.seed for s in stats],
-                       "episodes": [s.to_dict() for s in stats]})
-        store.write_baseline(name, report)
+        report.update({"baseline": name, "suite": suite_name, "n_episodes": n, "seeds": [s.seed for s in stats],
+                       "protocol": proto, "episodes": [s.to_dict() for s in stats]})
+        store.write_baseline(name, report, suite_name)
         for seed, ro in rollouts.items():
-            p = store.baseline_dir(name) / "rollouts" / f"seed_{seed}.json"
+            p = store.baseline_dir(name, suite_name) / "rollouts" / f"seed_{seed}.json"
             p.parent.mkdir(parents=True, exist_ok=True)
             import json
             p.write_text(json.dumps(ro))
@@ -79,5 +81,6 @@ if __name__ == "__main__":
     ap.add_argument("--runs-dir", default=os.getenv("TRAINER_RUNS_DIR", str(REPO / "runs")))
     ap.add_argument("--n-episodes", type=int, default=None)
     ap.add_argument("--names", nargs="*", default=None)
+    ap.add_argument("--suite", default="flat_v1", help="replay the gaits on this suite's protocol (terrain, command)")
     a = ap.parse_args()
-    compute_baselines(RunStore(a.runs_dir), n_episodes=a.n_episodes, names=a.names)
+    compute_baselines(RunStore(a.runs_dir), suite_name=a.suite, n_episodes=a.n_episodes, names=a.names)

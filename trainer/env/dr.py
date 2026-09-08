@@ -88,20 +88,22 @@ def sample_episode_params(rng: np.random.Generator, dr) -> EpisodeParams:
 
 def apply_model_params_mujoco(model, p: ModelParams, ground_geom_ids: np.ndarray, torso_body_id: int,
                               base_mass: np.ndarray, base_ipos: np.ndarray, base_damping: np.ndarray,
-                              base_frictionloss: np.ndarray, box_geom_ids: np.ndarray | None = None) -> None:
+                              base_frictionloss: np.ndarray, box_geom_ids: np.ndarray | None = None,
+                              box_body_ids: np.ndarray | None = None) -> None:
     """In-place edit of a mujoco.MjModel from its stored nominal arrays.
 
     ``ground_geom_ids`` = the floor plane plus any terrain boxes (friction applies to all of
-    them); ``box_geom_ids`` = the parked terrain boxes to place from ``p.terrain`` (flat
-    variants have none).
+    them); the terrain boxes are placed through their BODIES (``box_body_ids``: body_pos /
+    body_quat) and sized through their geoms (``box_geom_ids``) — never geom_pos, whose
+    compile-time bounding box the broadphase would keep using.
     """
     model.geom_friction[ground_geom_ids, 0] = p.friction
     model.opt.gravity[:] = p.terrain.gravity
     if box_geom_ids is not None and len(box_geom_ids):
         k = len(box_geom_ids)
-        model.geom_pos[box_geom_ids] = p.terrain.box_pos[:k]
+        model.body_pos[box_body_ids] = p.terrain.box_pos[:k]
+        model.body_quat[box_body_ids] = tr.quat_from_yaw(np, p.terrain.box_yaw[:k])
         model.geom_size[box_geom_ids] = p.terrain.box_half[:k]
-        model.geom_quat[box_geom_ids] = tr.quat_from_yaw(np, p.terrain.box_yaw[:k])
     model.body_mass[:] = base_mass * p.mass_scale
     model.body_mass[torso_body_id] += p.payload_kg
     model.body_ipos[:] = base_ipos

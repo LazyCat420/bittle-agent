@@ -61,9 +61,11 @@ class TrainerClient:
         return await self._request("POST", "/config/validate", json={"config_patch": config_patch, "base_run_id": base_run_id})
 
     async def submit(self, config_patch: dict[str, Any], *, name: str = "", base_run_id: str | None = None,
-                     notes: str = "") -> dict[str, Any]:
-        return await self._request("POST", "/runs", json={"config_patch": config_patch, "name": name,
-                                                          "base_run_id": base_run_id, "notes": notes})
+                     notes: str = "", task: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"config_patch": config_patch, "name": name, "base_run_id": base_run_id, "notes": notes}
+        if task:
+            body["task"] = task
+        return await self._request("POST", "/runs", json=body)
 
     async def status(self, run_id: str, *, wait_s: float = 0.0, until: str = "any") -> dict[str, Any]:
         return await self._request("GET", f"/runs/{run_id}", params={"wait_s": wait_s, "until": until},
@@ -72,23 +74,33 @@ class TrainerClient:
     async def cancel(self, run_id: str) -> dict[str, Any]:
         return await self._request("POST", f"/runs/{run_id}/cancel")
 
-    async def benchmark(self, run_id: str, *, suite: str = "flat_v1", n_episodes: int | None = None,
-                        dr_sweep: bool = False, dual_sim: bool = False, wait_s: float = 0.0) -> dict[str, Any]:
-        return await self._request("POST", f"/runs/{run_id}/benchmark",
-                                   json={"suite": suite, "n_episodes": n_episodes, "dr_sweep": dr_sweep,
-                                         "dual_sim": dual_sim, "wait_s": wait_s}, timeout=wait_s + 30.0)
+    async def benchmark(self, run_id: str, *, suite: str | None = None, force: bool = False,
+                        n_episodes: int | None = None, dr_sweep: bool = False, dual_sim: bool = False,
+                        wait_s: float = 0.0) -> dict[str, Any]:
+        """``suite`` None = the run's own suite (its task's); another suite needs ``force``."""
+        body: dict[str, Any] = {"n_episodes": n_episodes, "dr_sweep": dr_sweep, "dual_sim": dual_sim, "wait_s": wait_s}
+        if suite:
+            body["suite"] = suite
+            body["force"] = bool(force)
+        return await self._request("POST", f"/runs/{run_id}/benchmark", json=body, timeout=wait_s + 30.0)
 
-    async def get_benchmark(self, run_id: str, suite: str = "flat_v1") -> dict[str, Any]:
-        return await self._request("GET", f"/runs/{run_id}/benchmark", params={"suite": suite})
+    async def get_benchmark(self, run_id: str, suite: str | None = None) -> dict[str, Any]:
+        return await self._request("GET", f"/runs/{run_id}/benchmark", params={"suite": suite} if suite else None)
 
-    async def list_runs(self, *, sort: str = "score", limit: int = 20) -> dict[str, Any]:
-        return await self._request("GET", "/runs", params={"sort": sort, "limit": limit})
+    async def list_runs(self, *, sort: str = "score", limit: int = 20, suite: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {"sort": sort, "limit": limit}
+        if suite:
+            params["suite"] = suite
+        return await self._request("GET", "/runs", params=params)
+
+    async def tasks(self) -> dict[str, Any]:
+        return await self._request("GET", "/tasks")
 
     async def compare(self, run_ids: list[str]) -> dict[str, Any]:
         return await self._request("POST", "/runs/compare", json={"run_ids": run_ids})
 
-    async def baselines(self) -> dict[str, Any]:
-        return await self._request("GET", "/baselines")
+    async def baselines(self, suite: str | None = None) -> dict[str, Any]:
+        return await self._request("GET", "/baselines", params={"suite": suite} if suite else None)
 
     async def compute_baselines(self, names: list[str] | None = None) -> dict[str, Any]:
         return await self._request("POST", "/baselines/compute", json={"names": names}, timeout=1800.0)

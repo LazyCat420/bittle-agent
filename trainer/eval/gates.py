@@ -1,5 +1,10 @@
 """Gate evaluation: metrics dict -> structured pass/fail report + reflection.
 
+Suites live in ``suites/<name>.yaml``; a suite may ``include:`` fragments
+(``_servo_safety``) whose gates are appended unless the suite re-declares a
+gate of the same name. Every gate names the reward ``term`` that moves it, so
+the reflection's weight-share advice is data, not a Python map.
+
 A gate whose metric is absent from the metrics dict is reported as
 ``pass: None`` ("not evaluated") and does not count towards ``gates_total``.
 Gates with ``requires_stage`` above the run's curriculum stage are skipped
@@ -15,7 +20,7 @@ from typing import Any
 
 import yaml
 
-SUITES_DIR = Path(__file__).resolve().parent
+SUITES_DIR = Path(__file__).resolve().parent / "suites"
 
 _OPS = {
     "<=": lambda v, t: v <= t,
@@ -26,13 +31,43 @@ _OPS = {
 }
 
 
+def list_suites() -> list[str]:
+    """Suite names on disk (fragments start with ``_`` and are not suites)."""
+    return sorted(p.stem for p in SUITES_DIR.glob("*.yaml") if not p.stem.startswith("_"))
+
+
 def load_suite(name: str = "flat_v1") -> dict[str, Any]:
-    path = SUITES_DIR / "gates.yaml"
-    with open(path) as fh:
-        suite = yaml.safe_load(fh)
+    path = SUITES_DIR / f"{name}.yaml"
+    if name.startswith("_") or "/" in name or not path.is_file():
+        raise ValueError(f"unknown gate suite {name!r}; available: {list_suites()}")
+    suite = yaml.safe_load(path.read_text())
     if suite.get("suite") != name:
-        raise ValueError(f"unknown gate suite {name!r}; available: {suite.get('suite')!r}")
+        raise ValueError(f"{path.name} declares suite {suite.get('suite')!r}, not {name!r}")
+    return _merge_includes(suite)
+
+
+def _merge_includes(suite: dict[str, Any]) -> dict[str, Any]:
+    gates = list(suite.get("gates", []))
+    local = {g["name"] for g in gates}
+    for inc in suite.get("include", []) or []:
+        frag_path = SUITES_DIR / f"{inc}.yaml"
+        if not frag_path.is_file():
+            raise ValueError(f"suite {suite.get('suite')!r} includes unknown fragment {inc!r}")
+        frag = yaml.safe_load(frag_path.read_text())
+        for g in frag.get("gates", []):
+            if g["name"] not in local:
+                gates.append(dict(g, included_from=inc))
+    suite["gates"] = gates
     return suite
+
+
+def suite_protocol(suite: dict[str, Any]) -> dict[str, Any]:
+    """The protocol with its command as a 3-vector (older suites carried ``command_vx``)."""
+    proto = dict(suite.get("protocol", {}))
+    if "command" not in proto:
+        proto["command"] = [float(proto.get("command_vx", 0.12)), 0.0, 0.0]
+    proto.setdefault("terrain", {"kind": "flat"})
+    return proto
 
 
 def suite_hash(suite: dict[str, Any]) -> str:
@@ -47,17 +82,6 @@ def _check(op: str, value: float, threshold: Any) -> bool:
     if op not in _OPS:
         raise ValueError(f"unknown gate op {op!r}")
     return bool(_OPS[op](value, float(threshold)))
-
-
-#: Which reward term most directly moves each gate (for the reflection's weight-share advice).
-GATE_TO_TERM = {
-    "energy_proxy": "energy", "energy_vs_baseline": "energy", "action_smoothness": "action_rate",
-    "body_stability_tilt": "orientation", "body_stability_vz": "lin_vel_z", "fall_rate": "orientation",
-    "joint_saturation_pct": "joint_saturation", "stand_still_drift": "stand_still", "stand_still_falls": "stand_still",
-    "heading_drift_yaw": "tracking_ang_vel", "heading_drift_lateral": "tracking_lin_vel",
-    "vel_tracking_rmse": "tracking_lin_vel", "forward_distance_p50": "tracking_lin_vel",
-    "beats_baseline_trot_distance": "tracking_lin_vel", "multi_command": "tracking_lin_vel",
-}
 
 
 def evaluate_gates(
@@ -84,6 +108,7 @@ def evaluate_gates(
             "op": g["op"],
             "threshold": g["threshold"],
             "unit": g.get("unit", ""),
+            "term": g.get("term"),
             "value": None,
             "pass": None,
             "note": "",
@@ -142,11 +167,12 @@ def _context_view(context: dict[str, Any], report: dict[str, Any]) -> dict[str, 
             "value": g["value"],
             "baseline_trot": base.get(g["metric"]),
             "parent": parent.get(g["metric"]),
-            "term": GATE_TO_TERM.get(g["gate"]),
-            "term_share_pct": shares.get(GATE_TO_TERM.get(g["gate"], ""), None),
+            "term": g.get("term"),
+            "term_share_pct": shares.get(g.get("term") or "", None),
         }
     return {"per_gate": per_gate, "reward_breakdown": rb, "reward_shares_pct": shares,
-            "parent_run_id": context.get("parent_run_id"), "baseline": context.get("baseline_name")}
+            "parent_run_id": context.get("parent_run_id"), "baseline": context.get("baseline_name"),
+            "baseline_note": context.get("baseline_note"), "parent_note": context.get("parent_note")}
 
 
 def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: dict[str, Any] | None = None) -> str:
@@ -188,6 +214,9 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
         parts.append(line)
     if len(failed) > 4:
         parts.append(f"(+{len(failed) - 4} more failing gates in the table)")
+    for key in ("parent_note", "baseline_note"):
+        if ctx.get(key):
+            parts.append(str(ctx[key]))
     skipped = [r for r in report["gates"] if r["pass"] is None]
     if skipped:
         parts.append(f"{len(skipped)} gates not evaluated (stage/group/metric).")

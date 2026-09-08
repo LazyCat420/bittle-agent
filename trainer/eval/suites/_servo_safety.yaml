@@ -1,0 +1,52 @@
+# Servo-safety gate fragment — included by EVERY suite (`include: [_servo_safety]`).
+# A suite may re-declare a gate of the same name to override its threshold (slope_v1 raises energy).
+# These are the gates that make "passes in sim" mean "cannot hurt the servos on the real Bittle X":
+# P1S stall torque 0.294 N.m (sim cap 0.25), stall current 1.5 A per servo, battery 2 A continuous /
+# 5 A peak, and a no-load speed spec that disagrees with itself by 10x (0.07 vs 0.7 s/60deg) — so no
+# policy may command joint speeds above the sim servo's own damping-limited 5 rad/s until a servo is timed.
+fragment: _servo_safety
+gates:
+  - name: joint_saturation_pct
+    metric: joint_saturation_pct
+    op: "<="
+    threshold: 5.0
+    unit: percent
+    term: joint_saturation
+    hint: "raise joint_saturation penalty or reduce action_scale_deg"
+  - name: action_smoothness
+    metric: action_smoothness_deg
+    op: "<="
+    threshold: 4.0
+    unit: deg/step
+    term: action_rate
+    hint: "raise action_rate penalty (4 deg/step at 50 Hz = 3.5 rad/s = 70% of the servo speed cap; the firmware trot measures 3.73)"
+  # Calibrated 2026-09-07: the firmware trot (opencat_trF) measures 3.79 W on this proxy and the
+  # first learned policies 1.08-1.39 W. The original 1.0 W was an uncalibrated guess.
+  - name: energy_proxy
+    metric: energy_proxy_w
+    op: "<="
+    threshold: 2.0
+    unit: W
+    term: energy
+    hint: "raise the energy penalty by 10-100x (its reward share is usually <1%) or lower action_scale_deg"
+  - name: peak_joint_speed
+    metric: peak_joint_speed_rad_s
+    op: "<="
+    threshold: 5.0
+    unit: rad/s
+    term: action_rate
+    hint: "p99.5 of |qvel| over substeps must stay under the sim servo's damping-limited 5 rad/s (forcerange 0.25 / damping 0.05); a faster policy is exploiting the integrator, and the P1S no-load speed is only known to lie in [86, 860] deg/s"
+  - name: stall_fraction
+    metric: stall_fraction
+    op: "<="
+    threshold: 0.02
+    unit: fraction
+    term: stall
+    hint: "fraction of (control step, joint) pairs pinned at >= 90% torque cap while barely moving for the whole 20 ms step; a stalled P1S draws 1.5 A. Raise the stall penalty 10-100x or lower action_scale_deg"
+  - name: peak_concurrent_stalls
+    metric: stall_concurrent_max
+    op: "<="
+    threshold: 2
+    unit: count
+    term: stall
+    hint: "3 simultaneously stalled servos draw 4.5 A, above the battery's 2 A continuous rating; 4 draw 6 A, above its 5 A peak"

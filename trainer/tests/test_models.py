@@ -74,13 +74,16 @@ def test_terrain_variant_has_parked_boxes_in_one_body_and_body_keyed_sensors(eng
 
     m = mujoco.MjModel.from_xml_path(str(GEN / f"bittle_{engine}_terrain.xml"))
     ids = tr.box_geom_ids(m)
-    assert len(ids) == tr.MAX_BOXES
+    bids = tr.box_body_ids(m)
+    assert len(ids) == len(bids) == tr.MAX_BOXES
     terrain_body = m.body("terrain").id
-    assert all(m.geom_bodyid[g] == terrain_body for g in ids) and m.geom_bodyid[m.geom("floor").id] == terrain_body
-    assert (m.geom_pos[ids][:, 2] < -0.5).all()
+    assert m.geom_bodyid[m.geom("floor").id] == terrain_body
+    # one static child body per box (placed via body_pos, so its compile-time BVH stays valid), parked 1 m down
+    assert all(m.body_parentid[b] == terrain_body and m.body_weldid[b] == 0 for b in bids)
+    assert (m.body_pos[bids][:, 2] < -0.5).all() and (m.geom_size[ids] == [0.15, 0.15, 0.02]).all()
     for i in range(m.nsensor):
         if m.sensor(i).name.endswith("_floor_found"):
-            assert m.sensor_reftype[i] == mujoco.mjtObj.mjOBJ_BODY and m.sensor_refid[i] == terrain_body
+            assert m.sensor_reftype[i] == mujoco.mjtObj.mjOBJ_XBODY and m.sensor_refid[i] == terrain_body
     names = {m.sensor(i).name for i in range(m.nsensor)}
     assert {f"{leg}_shank_floor_found" for leg in jm.LEGS} <= names
     assert {f"{leg}_thigh_floor_found" for leg in jm.LEGS} <= names

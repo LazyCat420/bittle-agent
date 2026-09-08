@@ -64,7 +64,12 @@ class JobManager:
     def submit_benchmark(self, run_id: str, opts: dict[str, Any]) -> None:
         with self._lock:
             self._bench_q.append((run_id, opts))
-        self.store.update_state(run_id, benchmark_pending=True)
+        # a re-benchmark of a 'done' run goes back to 'trained' first, otherwise a waiter would see the
+        # OLD 'done' and read a report that does not exist yet (cross-suite force benchmarks hit this)
+        fields: dict[str, Any] = {"benchmark_pending": True}
+        if self.store.state(run_id).get("status") == "done":
+            fields["status"] = "trained"
+        self.store.update_state(run_id, **fields)
 
     def cancel(self, run_id: str) -> bool:
         with self._lock:
@@ -150,21 +155,21 @@ class JobManager:
                 return
             run_id, opts = self._bench_q.popleft()
             self._bench_active += 1
-        args = ["-m", "trainer.eval.benchmark_cli", "--run-id", run_id,
-                "--suite", str(opts.get("suite", "flat_v1")),
+        suite = str(opts.get("suite") or self.store.run_suite(run_id))
+        args = ["-m", "trainer.eval.benchmark_cli", "--run-id", run_id, "--suite", suite,
                 "--n-episodes", str(int(opts.get("n_episodes") or 20))]
         if opts.get("dr_sweep"):
             args.append("--dr-sweep")
         if opts.get("dual_sim"):
             args.append("--dual-sim")
         self.store.update_state(run_id, benchmark_pending=False)
-        self._launch(run_id, "bench", args)
+        self._launch(run_id, "bench", args, dict(opts, suite=suite))
 
-    def _launch(self, run_id: str, kind: str, args: list[str]) -> None:
+    def _launch(self, run_id: str, kind: str, args: list[str], opts: dict[str, Any] | None = None) -> None:
         self.store.update_state(run_id, job_kind=kind, status="training" if kind == "train" else "benchmarking")
         if self.fake:
             hook = self._fake_hooks.get(kind)
-            t = threading.Thread(target=self._fake_job, args=(run_id, kind, hook), daemon=True)
+            t = threading.Thread(target=self._fake_job, args=(run_id, kind, hook, opts or {}), daemon=True)
             t.start()
             proc = _ThreadProc(t)
         else:
@@ -193,7 +198,7 @@ class JobManager:
         with self._lock:
             self._procs[run_id] = proc  # type: ignore[assignment]
 
-    def _fake_job(self, run_id: str, kind: str, hook: Callable[..., None] | None) -> None:
+    def _fake_job(self, run_id: str, kind: str, hook: Callable[..., None] | None, opts: dict[str, Any] | None = None) -> None:
         """Deterministic stand-in used by the contract tests."""
         try:
             if hook:
@@ -211,12 +216,15 @@ class JobManager:
                 self.store.update_state(run_id, status="trained")
             else:
                 from ..eval.gates import evaluate_gates, load_suite
-                suite = load_suite("flat_v1")
+                suite = load_suite(str(opts.get("suite") or self.store.run_suite(run_id)))
                 cfg = self.store.config(run_id)
                 metrics = {"fall_rate": 0.05, "forward_distance_p50": 0.8, "vel_tracking_rmse": 0.03,
                            "heading_yaw_deg": 4.0, "lateral_drift_m": 0.02, "joint_saturation_pct": 1.0,
                            "action_smoothness_deg": 2.0, "mean_tilt_deg": 3.0, "rms_vz": 0.01,
                            "energy_proxy_w": 0.3, "stand_still_drift_m": 0.01, "stand_still_falls": 0,
+                           "peak_joint_speed_rad_s": 3.0, "stall_fraction": 0.001, "stall_concurrent_max": 1,
+                           "climb_height_p50": 0.06, "progress_ratio": 0.7, "stumble_rate": 0.02,
+                           "foot_clearance_p50_mm": 11.0, "body_clearance_min_mm": 30.0,
                            "n_episodes": 20, "episode_seconds": 10, "fake": True}
                 report = evaluate_gates(metrics, suite, curriculum_stage=int(cfg.get("curriculum_stage", 0)))
                 report.update({"run_id": run_id, "n_episodes": 20, "seeds": list(range(20)), "sim": "fake"})

@@ -60,8 +60,8 @@ def test_per_world_boxes_are_batched_under_warp():
     from trainer.env.gpu_env import make_domain_randomizer
 
     model, _ = make_domain_randomizer(cfg, env.mj_model)(env.mjx_model, keys)
-    ids = tr.box_geom_ids(env.mj_model)
-    pos = np.asarray(model.geom_pos)[:, ids]
+    ids = tr.box_body_ids(env.mj_model)
+    pos = np.asarray(model.body_pos)[:, ids]
     assert pos.shape == (8, tr.MAX_BOXES, 3)
     assert (pos[:, :20, 2] > -0.1).all() and (pos[:, 20:, 2] < -0.5).all()
     assert len({tuple(np.round(pos[i, 0], 4)) for i in range(8)}) == 8  # distinct per env

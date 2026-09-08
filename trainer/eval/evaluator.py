@@ -18,6 +18,7 @@ from ..assets import opencat_gaits
 from ..config import TrainConfig
 from ..env import dr as dr_mod
 from ..env import spec
+from ..env import terrain as tr
 from ..env.cpu_env import BittleCpuEnv, _quat_to_rpy
 from .rollout import RolloutRecorder
 
@@ -42,6 +43,18 @@ class EpisodeStats:
     rms_vz: float
     energy_w: float
     mean_reward: float
+    # ── terrain / servo-safety (2026-09-07) ──
+    ang_vel_rmse: float = 0.0          # gyro_z vs commanded wz (rad/s)
+    centre_drift_m: float = 0.0        # |xy displacement| (a spin should stay put)
+    climb_height: float = 0.0          # displacement along the uphill direction x sin(slope)
+    stumble_rate: float = 0.0          # fraction of steps with a shank/thigh on the ground
+    foot_clearance_p50_mm: float = 0.0  # median swing-foot height above the local terrain
+    body_clearance_min_mm: float = 0.0  # min torso height above the local terrain
+    peak_joint_speed_rad_s: float = 0.0  # p99.5 of substep |qvel| over (step, joint)
+    max_joint_speed_rad_s: float = 0.0
+    stall_fraction: float = 0.0        # (control step, joint) pairs stalled for the whole step / all pairs
+    stall_concurrent_max: int = 0      # most joints stalled in the same control step
+    travel_deg_max: float = 0.0        # max over joints of sum |delta target|
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -122,6 +135,17 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
     dt = env.cfg.control_dt
     x0, y0 = float(env.data.qpos[0]), float(env.data.qpos[1])
     lo, hi = env.lo, env.hi
+    uphill = tr.uphill_xy(np, env.model.opt.gravity)
+    ang_err2 = 0.0
+    stumbles = 0
+    swing_peaks: list[float] = []      # peak clearance of each completed swing phase
+    swing_cur = np.full(4, -math.inf)  # running max while a foot is off the ground
+    in_swing = np.zeros(4, dtype=bool)
+    body_clear_min = math.inf
+    peaks: list[np.ndarray] = []
+    stall_joint_steps = 0
+    stall_conc = 0
+    travel = np.zeros(8)
     vel_err2 = 0.0
     sat = 0
     smooth = 0.0
@@ -143,9 +167,24 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         rewards += r
         vx = float(env.sensor("torso_vel")[0])
         vel_err2 += (vx - float(command[0])) ** 2
+        ang_err2 += (float(env.sensor("imu_gyro")[2]) - float(command[2])) ** 2
         sat += int(np.sum((info.target_deg <= lo + SAT_MARGIN_DEG) | (info.target_deg >= hi - SAT_MARGIN_DEG)))
         smooth += float(np.mean(np.abs(info.target_deg - prev_target)))
+        travel += np.abs(info.target_deg - prev_target)
         prev_target = info.target_deg.copy()
+        stumbles += int(info.limb_contact.sum() > 0)
+        for i in range(4):
+            if not info.contact[i]:
+                in_swing[i] = True
+                swing_cur[i] = max(swing_cur[i], float(info.foot_clearance[i]))
+            elif in_swing[i]:
+                swing_peaks.append(swing_cur[i])
+                in_swing[i], swing_cur[i] = False, -math.inf
+        body_clear_min = min(body_clear_min, float(env.data.qpos[2]) - info.terrain_h)
+        peaks.append(info.peak_qvel)
+        n_st = int(info.stalled.sum())
+        stall_joint_steps += n_st
+        stall_conc = max(stall_conc, n_st)
         up_z = float(np.clip(env.sensor("torso_upvector")[2], -1, 1))
         tilt += math.degrees(math.acos(up_z))
         vz2 += float(env.sensor("torso_global_linvel")[2]) ** 2
@@ -160,7 +199,17 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
             break
     q = env.data.qpos[3:7]
     yaw = math.degrees(_quat_to_rpy(q)[2])
+    disp = np.array([env.data.qpos[0] - x0, env.data.qpos[1] - y0])
+    peak_arr = np.concatenate(peaks) if peaks else np.zeros(1)
+    n_samples = max(n * 8, 1)
     return EpisodeStats(
+        ang_vel_rmse=math.sqrt(ang_err2 / max(n, 1)), centre_drift_m=float(np.linalg.norm(disp)),
+        climb_height=float(np.dot(disp, uphill)), stumble_rate=stumbles / max(n, 1),
+        foot_clearance_p50_mm=1000.0 * float(np.median(swing_peaks)) if swing_peaks else 0.0,
+        body_clearance_min_mm=1000.0 * (body_clear_min if math.isfinite(body_clear_min) else 0.0),
+        peak_joint_speed_rad_s=float(np.percentile(peak_arr, 99.5)), max_joint_speed_rad_s=float(peak_arr.max()),
+        stall_fraction=stall_joint_steps / n_samples, stall_concurrent_max=int(stall_conc),
+        travel_deg_max=float(travel.max()),
         seed=seed, seconds=n * dt, steps=n, cmd=[float(c) for c in command],
         distance_x=float(env.data.qpos[0] - x0), lateral_y=float(env.data.qpos[1] - y0), yaw_deg=yaw,
         fell=fell, fall_time=fall_time,
@@ -192,18 +241,47 @@ def aggregate(stats: list[EpisodeStats], episode_seconds: float) -> dict[str, An
         "rms_vz": float(np.mean([s.rms_vz for s in stats])),
         "energy_proxy_w": float(np.mean([s.energy_w for s in stats])),
         "mean_reward": float(np.mean([s.mean_reward for s in stats])),
+        # terrain / task metrics
+        "ang_vel_rmse": float(np.mean([s.ang_vel_rmse for s in stats])),
+        "centre_drift_m": float(np.mean([s.centre_drift_m for s in stats])),
+        "climb_height_p50": float(np.median([s.climb_height for s in stats])),
+        "progress_ratio": float(np.median(d) / max(abs(stats[0].cmd[0]) * episode_seconds, 1e-6)),
+        "stumble_rate": float(np.mean([s.stumble_rate for s in stats])),
+        "foot_clearance_p50_mm": float(np.median([s.foot_clearance_p50_mm for s in stats])),
+        "body_clearance_min_mm": float(np.min([s.body_clearance_min_mm for s in stats])),
+        # servo safety: the WORST episode, not the mean — one bad episode is one broken servo
+        "peak_joint_speed_rad_s": float(np.max([s.peak_joint_speed_rad_s for s in stats])),
+        "max_joint_speed_rad_s": float(np.max([s.max_joint_speed_rad_s for s in stats])),
+        "stall_fraction": float(np.max([s.stall_fraction for s in stats])),
+        "stall_concurrent_max": int(np.max([s.stall_concurrent_max for s in stats])),
+        "travel_deg_max": float(np.max([s.travel_deg_max for s in stats])),
     }
 
 
 # ── protocols ──────────────────────────────────────────────────────────────
 
-def nominal_env(cfg: TrainConfig, *, variant: str = "cpu", envelope_tier: str = "agent",
+def nominal_env(cfg: TrainConfig, *, variant: str | None = None, envelope_tier: str = "agent",
                 model_params: dr_mod.ModelParams | None = None,
-                episode_params: dr_mod.EpisodeParams | None = None) -> BittleCpuEnv:
-    """Env with DR fixed to nominal (or the given overrides) — the benchmark protocol."""
+                episode_params: dr_mod.EpisodeParams | None = None,
+                terrain: tr.TerrainField | None = None, spawn_jitter_m: float | None = None) -> BittleCpuEnv:
+    """Env with DR fixed to nominal (or the given overrides) — the benchmark protocol.
+
+    ``terrain`` pins the ground (a suite protocol overrides whatever the run trained on) and
+    picks the XML variant; without it the run's own terrain config is used.
+    """
+    if terrain is not None and variant is None:
+        variant = "cpu_terrain" if terrain.n_boxes > 0 else "cpu"
     return BittleCpuEnv(cfg, variant=variant, seed=0, envelope_tier=envelope_tier,
                         dr_override=model_params or dr_mod.nominal_model_params(),
-                        episode_override=episode_params or dr_mod.nominal_episode_params())
+                        episode_override=episode_params or dr_mod.nominal_episode_params(),
+                        terrain_override=terrain, spawn_jitter_m=spawn_jitter_m)
+
+
+def protocol_kwargs(proto: dict[str, Any]) -> dict[str, Any]:
+    """Env-level kwargs shared by every sub-protocol of a suite: its fixed terrain + spawn jitter."""
+    pt = proto.get("terrain") or {"kind": "flat"}
+    return {"terrain": tr.field_from_protocol(pt), "spawn_jitter_m": float(pt.get("spawn_jitter_m", 0.0)),
+            "variant": tr.variant_for(pt.get("kind", "flat"), "cpu")}
 
 
 DR_PRESETS: dict[str, dict[str, Any]] = {
@@ -227,12 +305,15 @@ def preset_params(name: str) -> tuple[dr_mod.ModelParams, dr_mod.EpisodeParams]:
 
 
 def evaluate_protocol(cfg: TrainConfig, controller, *, n_episodes: int, seed_start: int, seconds: float,
-                      command_vx: float, variant: str = "cpu", envelope_tier: str = "agent",
-                      model_params=None, episode_params=None, record_seeds: set[int] | None = None,
-                      source: dict[str, Any] | None = None) -> tuple[list[EpisodeStats], dict[int, dict[str, Any]]]:
+                      command_vx: float | None = None, command: Any = None, variant: str | None = None,
+                      envelope_tier: str = "agent", model_params=None, episode_params=None,
+                      record_seeds: set[int] | None = None, source: dict[str, Any] | None = None,
+                      terrain: tr.TerrainField | None = None, spawn_jitter_m: float | None = None,
+                      ) -> tuple[list[EpisodeStats], dict[int, dict[str, Any]]]:
     env = nominal_env(cfg, variant=variant, envelope_tier=envelope_tier, model_params=model_params,
-                      episode_params=episode_params)
-    cmd = np.array([command_vx, 0.0, 0.0])
+                      episode_params=episode_params, terrain=terrain, spawn_jitter_m=spawn_jitter_m)
+    cmd = np.array(command, dtype=np.float64) if command is not None else np.array([command_vx or 0.0, 0.0, 0.0])
+    variant = env.variant
     stats, rollouts = [], {}
     for i in range(n_episodes):
         seed = seed_start + i

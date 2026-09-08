@@ -27,9 +27,11 @@ import numpy as np
 PLANE_Z = -0.01
 #: Boxes baked into the terrain XML variants; a config may enable up to this many.
 MAX_BOXES = 32
-#: Parked (disabled) box: far below the floor, 1 mm — cannot touch anything.
+#: Parked (disabled) box: 1 m below the floor — cannot touch anything. Its half-extents are the
+#: LARGEST a config may request (box_size_m <= 0.15): MuJoCo fixes each geom's bounding radius at
+#: compile time, so a box may shrink at run time but never grow past its compiled size.
 PARKED_POS = np.array([0.0, 0.0, -1.0])
-PARKED_HALF = np.array([0.001, 0.001, 0.001])
+PARKED_HALF = np.array([0.15, 0.15, 0.02])
 #: Half height of an enabled box; the box top sits at PLANE_Z + protrusion.
 BOX_HALF_Z = 0.02
 G = 9.81
@@ -116,10 +118,20 @@ def height_scan(xp, x, y, yaw, box_pos, box_half, box_yaw):
     return xp.stack(out)
 
 
-def foot_clearance(xp, foot_pos, box_pos, box_half, box_yaw):
-    """Per-foot site height above the local terrain (0 when standing on it)."""
-    return xp.stack([foot_pos[i, 2] - terrain_height(xp, foot_pos[i, 0], foot_pos[i, 1], box_pos, box_half, box_yaw)
-                     for i in range(foot_pos.shape[0])])
+#: foot sphere radius (build_models.FOOT_RADIUS); the sphere bottom is what touches the ground
+FOOT_RADIUS = 0.006
+
+
+def foot_clearance(xp, foot_geom_pos, box_pos, box_half, box_yaw):
+    """Per-foot height of the SPHERE BOTTOM above the local terrain surface (0 when standing on it).
+
+    Uses the foot geom centre, not the FK site: the site sits at the leg tip and swings up to
+    10 mm relative to the rubber paw's contact point as the foot rotates, so a site-based
+    clearance reads negative during a perfectly good swing.
+    """
+    return xp.stack([foot_geom_pos[i, 2] - FOOT_RADIUS - PLANE_Z
+                     - terrain_height(xp, foot_geom_pos[i, 0], foot_geom_pos[i, 1], box_pos, box_half, box_yaw)
+                     for i in range(foot_geom_pos.shape[0])])
 
 
 # ── per-env field ──────────────────────────────────────────────────────────
@@ -205,11 +217,23 @@ def field_from_protocol(proto: dict[str, Any], k: int = MAX_BOXES) -> TerrainFie
 
 
 def box_geom_ids(model) -> np.ndarray:
-    """Ids of the parked terrain boxes (empty array on the flat variants)."""
+    """Geom ids of the parked terrain boxes (empty array on the flat variants)."""
     ids = []
     for i in range(MAX_BOXES):
         try:
             ids.append(model.geom(f"terrain_box_{i:02d}").id)
+        except KeyError:
+            break
+    return np.array(ids, dtype=np.int32)
+
+
+def box_body_ids(model) -> np.ndarray:
+    """Body ids of the parked terrain boxes — placement goes through body_pos/body_quat (see
+    build_models._add_terrain_body for why geom_pos would be invisible to collision)."""
+    ids = []
+    for i in range(MAX_BOXES):
+        try:
+            ids.append(model.body(f"terrain_box_{i:02d}").id)
         except KeyError:
             break
     return np.array(ids, dtype=np.int32)

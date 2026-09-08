@@ -594,15 +594,17 @@ TOOLS = TOOLS + TRAINING_TOOLS + RESEARCH_TOOLS
 
 TRAINING_PROTOCOL = """
 
-TRAINING MODE PROTOCOL (RL locomotion policy on the GPU trainer):
-- Goal: a neural-net walking policy that passes every flat_v1 gate. You never write training code; you edit a validated JSON config.
-- Each cycle = ONE call to `bittle_train_and_benchmark` with a `config_patch` (and `base_run_id` = the best run so far). It trains, benchmarks and returns gates + a reflection. It takes minutes; that is expected.
-- Change at most 3 config keys per cycle and state your hypothesis in `notes`. Read the reflection and the failing gates' hints before choosing the next patch.
-- Runs with `base_run_id` WARM-START from the parent's policy (same network shape), so use `ppo.num_timesteps` 10000000 (10M, ~4 min) per cycle; only train 40M from scratch when you change the network or observation.
-- Reward terms are per-step weighted sums. Call `bittle_diagnose_run` first: a term whose reward share is below ~1% cannot steer the policy; change its weight by 10-100x (the config bounds allow up to |10|), not by 2x.
-- Use `bittle_list_runs` first to see the leaderboard and baselines; use `bittle_compare_runs` to reason about what moved a gate.
-- If you are unsure what to change, RESEARCH: `bittle_web_search` / `bittle_search_papers` / `bittle_read_url` for how others tuned quadruped PPO (reward weights, tracking sigma, DR ranges, PPO hyperparameters); save useful findings with `bittle_save_research_note` and check `bittle_list_research_notes` at the start.
-- Stop when all gates pass (then optionally raise curriculum_stage or request dr_sweep) or when the turn budget is spent; then reply with a short report: best run_id, gates passed, what mattered."""
+TRAINING MODE PROTOCOL (RL policy on the GPU trainer):
+- You never write training code. You pick a TASK, edit a validated JSON config, train, read the gates, and patch again.
+- Turn 1: call `bittle_list_tasks`. Match the operator's words to a task's `goal`/`aliases`; if nothing matches, say so and show the catalogue instead of guessing. The task decides the gate suite — you never choose a suite yourself.
+- CAMPAIGN LADDER, in order: (1) if the task's `status` is blocked (a prerequisite has no all-gates-pass run), train the PREREQUISITE task first (usually `flat_walk` until every gate passes) and stop there for this cycle; (2) then train the requested task with `base_run_id` = the task's `warm_start_from`.
+- Each cycle = ONE `bittle_train_and_benchmark(task=..., config_patch=..., base_run_id=..., notes=...)`. It trains, benchmarks on that task's own suite, and returns gates + a reflection. It takes minutes; that is expected.
+- Before every patch after the first, call `bittle_diagnose_run` on the last run and read it: a reward term below ~1% share cannot steer the policy, so change its weight by 10-100x (the config bounds allow up to |10|), not by 2x.
+- Change at most 3 config keys per cycle and put your hypothesis in `notes`. Warm-started runs need `ppo.num_timesteps` 10000000 (10M, ~4 min); train 40M from scratch only when the network or the observation changes.
+- `bittle_list_runs(suite=...)` ranks only runs benchmarked on that suite; scores from different suites are NOT comparable. Use `bittle_compare_runs` to see what moved a gate.
+- If you do not know what to change, RESEARCH: `bittle_web_search` / `bittle_search_papers` / `bittle_read_url` for how others tuned quadruped PPO (reward weights, tracking sigma, DR ranges, terrain curricula); save findings with `bittle_save_research_note` and read `bittle_list_research_notes` first.
+- STOP when every gate of the task's suite passes (then raise `curriculum_stage` / `terrain.level` or ask for `dr_sweep`), OR three consecutive cycles fail to improve the score, OR the turn budget is spent. Never start a fourth cycle on a hypothesis that has already failed twice.
+- Final reply: task, best run_id, its suite and gates passed, the ONE config key that mattered, and the next thing you would try."""
 
 RESEARCH_HINT = """
 - Research tools are available (`bittle_web_search`, `bittle_search_papers`, `bittle_read_url`, notes). Use them when the operator asks a question you cannot answer from context, or to check how others solved a training problem."""

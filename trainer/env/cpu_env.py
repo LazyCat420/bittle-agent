@@ -32,10 +32,8 @@ class StepInfo:
     fell: bool = False
     #: per-joint max |qvel| over the substeps (rad/s) — impact spikes a 50 Hz sample misses
     peak_qvel: np.ndarray = field(default_factory=lambda: np.zeros(8))
-    #: (substep, joint) samples at >= 90% torque cap with |qvel| < 0.1 rad/s
-    stall_samples: int = 0
-    #: max number of joints stalled in the same substep
-    stall_concurrent: int = 0
+    #: joints at >= 90% torque cap with |qvel| < 0.1 rad/s for EVERY substep of this control step
+    stalled: np.ndarray = field(default_factory=lambda: np.zeros(8, dtype=bool))
     limb_contact: np.ndarray = field(default_factory=lambda: np.zeros(8))
     foot_clearance: np.ndarray = field(default_factory=lambda: np.zeros(4))
     terrain_h: float = 0.0
@@ -72,6 +70,7 @@ class BittleCpuEnv:
         self.floor_id = m.geom("floor").id
         self.ground_ids = tr.ground_geom_ids(m)
         self.box_ids = tr.box_geom_ids(m)
+        self.box_body_ids = tr.box_body_ids(m)
         self.imu_site = m.site("imu_site").id
         self.lo, self.hi = spec.load_envelope(envelope_tier)
         self._sensor = {m.sensor(i).name: (m.sensor_adr[i], m.sensor_dim[i]) for i in range(m.nsensor)}
@@ -81,6 +80,7 @@ class BittleCpuEnv:
         self.limb_found = [n for n in spec.limb_contact_sensor_names() if n in self._sensor]
         self.foot_vel = [f"{leg}_foot_global_linvel" for leg in jm.LEGS]
         self.foot_pos = [f"{leg}_foot_pos" for leg in jm.LEGS]
+        self.foot_geom_ids = np.array([m.geom(f"{leg}_foot").id for leg in jm.LEGS])
         # nominal arrays for DR
         self._base_mass = m.body_mass.copy()
         self._base_ipos = m.body_ipos.copy()
@@ -115,7 +115,7 @@ class BittleCpuEnv:
         self.ep = self.episode_override or dr_mod.sample_episode_params(self.rng, self.cfg.dr)
         dr_mod.apply_model_params_mujoco(m, self.model_params, self.ground_ids, self.torso_id,
                                          self._base_mass, self._base_ipos, self._base_damping, self._base_frictionloss,
-                                         box_geom_ids=self.box_ids)
+                                         box_geom_ids=self.box_ids, box_body_ids=self.box_body_ids)
         mujoco.mj_setConst(m, d)
         mujoco.mj_resetDataKeyframe(m, d, 0)
         # per-episode spawn offset so different episodes meet different boxes; never inside a box
@@ -170,8 +170,7 @@ class BittleCpuEnv:
             self.next_push_step = self.t + int(round(self.ep.push_interval_s / self.cfg.control_dt))
         torques = np.zeros(8)
         peak_qvel = np.zeros(8)
-        stall_samples = 0
-        stall_concurrent = 0
+        stalled = np.ones(8, dtype=bool)
         cap = spec.STALL_TORQUE_FRACTION * m.actuator_forcerange[:, 1]
         for _ in range(self.n_substeps):
             mujoco.mj_step(m, d)
@@ -179,10 +178,7 @@ class BittleCpuEnv:
             v = np.abs(d.qvel[self.dof_idx])
             torques += f
             peak_qvel = np.maximum(peak_qvel, v)
-            stalled = (f >= cap) & (v < spec.STALL_VEL_RAD_S)
-            n_st = int(stalled.sum())
-            stall_samples += n_st
-            stall_concurrent = max(stall_concurrent, n_st)
+            stalled &= (f >= cap) & (v < spec.STALL_VEL_RAD_S)
         torques /= self.n_substeps
         self.t += 1
 
@@ -209,7 +205,7 @@ class BittleCpuEnv:
                 self.steps_until_cmd = int(round(self.cfg.commands.resample_s / self.cfg.control_dt))
         info = StepInfo(terms={k: float(v) for k, v in terms.items()}, contact=contact,
                         target_deg=self.target_deg.copy(), applied_deg=applied.copy(), fell=done,
-                        peak_qvel=peak_qvel, stall_samples=stall_samples, stall_concurrent=stall_concurrent,
+                        peak_qvel=peak_qvel, stalled=stalled,
                         limb_contact=q["limb_contact"], foot_clearance=q["foot_clearance"],
                         terrain_h=float(q["terrain_h"]))
         return self._obs(), reward, done, info
@@ -234,8 +230,8 @@ class BittleCpuEnv:
         return spec.build_obs(np, gravity, gyro, self.cmd, self.hist[: self.history_n], self.action, phase)
 
     def _boxes(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        m = self.model
-        return (m.geom_pos[self.box_ids], m.geom_size[self.box_ids], tr.yaw_from_quat(np, m.geom_quat[self.box_ids]))
+        m = self.model  # box bodies sit directly under the terrain body at the origin: body_pos is world
+        return (m.body_pos[self.box_body_ids], m.geom_size[self.box_ids], tr.yaw_from_quat(np, m.body_quat[self.box_body_ids]))
 
     def _terrain_h(self, x: float, y: float) -> float:
         return float(tr.terrain_height(np, x, y, *self._boxes()))
@@ -243,7 +239,7 @@ class BittleCpuEnv:
     def _quantities(self, torques, contact, first_contact) -> dict[str, Any]:
         d, m = self.data, self.model
         feet_vel = np.stack([self.sensor(n) for n in self.foot_vel])
-        feet_pos = np.stack([self.sensor(n) for n in self.foot_pos])
+        feet_pos = d.geom_xpos[self.foot_geom_ids]
         boxes = self._boxes()
         limb = np.array([float(self.sensor(n)[0] > 0) for n in self.limb_found]) if self.limb_found else np.zeros(8)
         return {
