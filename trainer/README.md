@@ -34,7 +34,7 @@ Docker (secondary): `docker compose -f trainer/docker-compose.yml up --build`
 | tool | does |
 |---|---|
 | `bittle_propose_config` | validate a config patch, see the diff and warnings |
-| `bittle_list_tasks` | the task catalogue (flat_walk, slope_up, rough_walk): goal, suite, prerequisite met?, warm-start run |
+| `bittle_list_tasks` | the task catalogue (flat_walk, slope_up, rough_walk, house_walk, spin, statue, backward_walk): goal, suite, prerequisite met?, warm-start run |
 | `bittle_train_and_benchmark` | ONE cycle: train a task → wait → that task's gate suite → report + reflection |
 | `bittle_train_policy` / `bittle_train_status` / `bittle_benchmark_policy` | the same, step by step |
 | `bittle_list_runs` / `bittle_compare_runs` | leaderboard, baselines, gate tables, config diffs |
@@ -45,6 +45,17 @@ The config the agent edits is `trainer/config.py::TrainConfig` — bounded,
 `extra="forbid"`, hashed. The gates are `trainer/eval/suites/<suite>.yaml` (every suite includes the
 `_servo_safety` fragment; a run's task decides its suite, see `trainer/tasks.py`); changing a
 threshold bumps the suite version and the leaderboard only ranks same-version reports.
+
+**Terrain.** `terrain.level` 0 flat, 1 slope, 2 rocks, 3 rocks on a slope, 4 = the **house mixture**: every
+env draws slope-or-not and rocks-or-not independently (`terrain.slope_share` / `terrain.box_share`, 0.6 each),
+the slope points any direction and the rock field starts 1 m behind the spawn, so ONE policy meets every
+floor in one batch. `house_walk` trains on it with the full command box (backward, sideways, turning), pushes,
+friction 0.3–1.2 and a 0–100 g payload.
+
+**Scenes suites.** A suite may declare `scenes:` (house_v1: nine named protocols) instead of one `protocol:`.
+The benchmark runs every scene and publishes `<scene>/<metric>` next to the pooled forward-walking metrics;
+the servo-safety fragment reads the worst episode of any scene. `trainer/eval/scenes.py` is the one loop
+both the policy benchmark and the firmware-gait baselines go through.
 
 ## Model
 
@@ -69,7 +80,11 @@ envelope, rounded to integer degrees, delayed by 0–3 steps (DR).
 ```bash
 python -m trainer.campaign --agent-url http://nas:8008 --strategy scripted_v1   # through bittle-agent tools
 python -m trainer.campaign --in-process --trainer-url http://127.0.0.1:8009       # direct
+python -m trainer.campaign --in-process --strategy house_v1                        # the house ladder (warm from the rocks champion)
 ```
+
+A `best_of:<task>` warm start that this campaign has not produced yet is looked up on the store's
+leaderboard, so a ladder can start from a champion GLM or an earlier campaign trained.
 
 ## Tests
 
