@@ -12,8 +12,9 @@ from typing import Any
 
 from ..config import TrainConfig
 from ..store.runs import RunStore
-from .evaluator import GaitController, StandController, aggregate, evaluate_protocol, protocol_kwargs
-from .gates import evaluate_gates, load_suite, suite_protocol
+from .evaluator import GaitController, StandController
+from .gates import evaluate_gates, load_suite
+from .scenes import run_suite_scenes
 
 REPO = Path(__file__).resolve().parent.parent.parent
 
@@ -49,19 +50,14 @@ def compute_baselines(store: RunStore, *, suite_name: str = "flat_v1", n_episode
                       names: list[str] | None = None) -> dict[str, Any]:
     cfg = TrainConfig()
     suite = load_suite(suite_name)
-    proto = suite_protocol(suite)
-    n = int(n_episodes or proto["n_episodes"])
-    common = protocol_kwargs(proto)  # the suite's fixed terrain: the gait is replayed on the SAME ground
     results = {}
     for name, ctrl in baseline_controllers(cfg.control_hz).items():
         if names and name not in names:
             continue
-        stats, rollouts = evaluate_protocol(
-            cfg, ctrl, n_episodes=n, seed_start=int(proto["seed_start"]), seconds=float(proto["episode_seconds"]),
-            command=[float(x) for x in proto["command"]], envelope_tier="tested",
-            record_seeds={int(proto["seed_start"])}, source={"baseline": name, "suite": suite_name, "terrain": proto["terrain"]},
-            **common)
-        metrics = aggregate(stats, float(proto["episode_seconds"]))
+        # every scene of the suite: the gait is replayed on the SAME ground the policies are judged on
+        metrics, stats, rollouts, proto = run_suite_scenes(cfg, ctrl, suite, n_episodes=n_episodes, envelope_tier="tested",
+                                                           record_n=1, source={"baseline": name, "suite": suite_name})
+        n = len(stats)
         report = evaluate_gates(metrics, suite, curriculum_stage=0)
         report.update({"baseline": name, "suite": suite_name, "n_episodes": n, "seeds": [s.seed for s in stats],
                        "protocol": proto, "episodes": [s.to_dict() for s in stats]})

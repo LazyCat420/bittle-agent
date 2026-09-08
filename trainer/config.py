@@ -181,13 +181,23 @@ class TerrainConfig(_Strict):
     yaw-only boxes, ``*_terrain.xml``) | rough_slope. ``level`` is the curriculum
     knob: terrain-managed fields follow ``TERRAIN_DEFAULTS[level]`` until a patch
     names them explicitly, exactly like ``curriculum_stage``.
+
+    ``slope_share`` / ``box_share`` turn one terrain kind into a PER-ENV MIXTURE: each env
+    draws its slope with probability ``slope_share`` (else it is flat) and its boxes with
+    probability ``box_share`` (else they stay parked). At 1.0 (the default) every env gets the
+    kind's full terrain, exactly as before; level 4 ("house") uses 0.6 / 0.6 so one policy
+    meets flat, sloped, rocky and rocky-sloped ground in the same batch and forgets none of them.
     """
 
     kind: Literal["flat", "slope", "rough", "rough_slope"] = "flat"
-    #: 0 = flat, 1 = gentle slope, 2 = rocks/edges, 3 = rocks on a slope.
-    level: int = Field(0, ge=0, le=3)
+    #: 0 = flat, 1 = gentle slope, 2 = rocks/edges, 3 = rocks on a slope, 4 = the house mixture.
+    level: int = Field(0, ge=0, le=4)
     slope_deg: Range = (0.0, 0.0)
     slope_yaw_deg: Range = (0.0, 0.0)
+    #: probability an env has a (non-zero) slope at all; 1.0 = every env (kinds with a slope only)
+    slope_share: float = Field(1.0, ge=0.0, le=1.0)
+    #: probability an env has its boxes enabled at all; 1.0 = every env (kinds with boxes only)
+    box_share: float = Field(1.0, ge=0.0, le=1.0)
     #: boxes enabled per env (the rest stay parked); the XML carries 32
     n_boxes: int = Field(0, ge=0, le=32)
     #: box protrusion above the plane (m); 18 mm = the app's mini-stairs riser, 48 mm = standing height
@@ -196,8 +206,9 @@ class TerrainConfig(_Strict):
     box_size_m: Range = (0.02, 0.06)
     box_spacing_m: float = Field(0.12, ge=0.04, le=0.50)
     box_yaw_deg: Range = (-45.0, 45.0)
-    #: clear runway in front of the spawn before the first box
-    field_start_m: float = Field(0.15, ge=0.0, le=1.0)
+    #: x of the first box (the field extends +x from here). Positive = a clear runway in front of the
+    #: spawn; NEGATIVE puts rocks behind and under the robot too, which backward walking needs
+    field_start_m: float = Field(0.15, ge=-3.0, le=3.0)
     field_width_m: float = Field(0.40, ge=0.10, le=2.0)
     #: per-episode xy spawn offset so different episodes meet different boxes
     spawn_jitter_m: float = Field(0.0, ge=0.0, le=0.20)
@@ -315,16 +326,28 @@ STAGE_DEFAULTS: dict[int, dict[str, Any]] = {
 }
 
 #: Terrain-managed fields per ``terrain.level``. Level 1 keeps the slope's lower bound at 0 so a
-#: share of envs stays flat (anti-forgetting for the warm-started gait).
+#: share of envs stays flat (anti-forgetting for the warm-started gait). Level 4 is the HOUSE
+#: mixture: every env draws slope-or-not and rocks-or-not independently (0.6 / 0.6), so a batch is
+#: 16 % flat, 24 % slope only, 24 % rocks only, 36 % both, with the slope pointing any direction
+#: (downhill is where a small robot tips forward). Every level names every managed field so a
+#: level change moves them all (apply_stage_defaults indexes the base level's table).
+_TERRAIN_MIX_FLAT = {"terrain.slope_yaw_deg": (0.0, 0.0), "terrain.box_size_m": (0.02, 0.06),
+                     "terrain.slope_share": 1.0, "terrain.box_share": 1.0, "terrain.field_start_m": 0.15}
 TERRAIN_DEFAULTS: dict[int, dict[str, Any]] = {
     0: {"terrain.kind": "flat", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 0,
-        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0},
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
     1: {"terrain.kind": "slope", "terrain.slope_deg": (0.0, 8.0), "terrain.n_boxes": 0,
-        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0},
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
     2: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 20,
-        "terrain.box_height_m": (0.003, 0.012), "terrain.spawn_jitter_m": 0.05},
+        "terrain.box_height_m": (0.003, 0.012), "terrain.spawn_jitter_m": 0.05, **_TERRAIN_MIX_FLAT},
     3: {"terrain.kind": "rough_slope", "terrain.slope_deg": (0.0, 14.0), "terrain.n_boxes": 28,
-        "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08},
+        "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08, **_TERRAIN_MIX_FLAT},
+    4: {"terrain.kind": "rough_slope", "terrain.slope_deg": (2.0, 10.0), "terrain.n_boxes": 28,
+        "terrain.box_height_m": (0.003, 0.015), "terrain.spawn_jitter_m": 0.08,
+        "terrain.slope_yaw_deg": (-180.0, 180.0), "terrain.box_size_m": (0.02, 0.06),
+        "terrain.slope_share": 0.6, "terrain.box_share": 0.6,
+        # rocks from 1 m BEHIND the spawn to 1.9 m ahead: backward and sideways commands meet them too
+        "terrain.field_start_m": -1.0},
 }
 
 #: The curriculum axes: (field path of the level, its defaults table).
@@ -374,6 +397,8 @@ def apply_stage_defaults(merged: dict[str, Any], *, base_stage: int, explicit: s
     for axis, table in CURRICULUM_AXES:
         new_level = int(_get_path(merged, axis) or 0)
         base_level = base_levels[axis]
+        if new_level not in table or base_level not in table:
+            continue  # out of range: pydantic reports it as a bound error, not a KeyError here
         for path, new_default in table[new_level].items():
             if path in explicit:
                 continue

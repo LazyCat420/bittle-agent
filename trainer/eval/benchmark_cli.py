@@ -22,7 +22,8 @@ from ..policy.mlp import NumpyPolicy
 from ..store.runs import RunStore
 from ..tasks import TASKS
 from .evaluator import DR_PRESETS, PolicyController, aggregate, evaluate_protocol, preset_params, protocol_kwargs
-from .gates import evaluate_gates, load_suite, suite_protocol
+from .gates import evaluate_gates, load_suite
+from .scenes import run_suite_scenes
 
 REPO = Path(__file__).resolve().parent.parent.parent
 
@@ -69,29 +70,19 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
     cfg = TrainConfig.model_validate(store.config(run_id)).resolved()
     suite_name = suite_name or store.run_suite(run_id)
     suite = load_suite(suite_name)
-    proto = suite_protocol(suite)
-    n = int(n_episodes or proto["n_episodes"])
-    seed0 = int(proto["seed_start"])
-    seconds = float(proto["episode_seconds"])
-    cmd = [float(x) for x in proto["command"]]
-    common = protocol_kwargs(proto)  # the suite's fixed terrain + spawn jitter + XML variant
-    flat_protocol = proto["terrain"].get("kind", "flat") == "flat"
     policy = NumpyPolicy.load(store.policy_path(run_id))
     ctrl = PolicyController(policy)
     groups: set[str] = set()
 
-    # 1. nominal protocol
-    stats, rollouts = evaluate_protocol(cfg, ctrl, n_episodes=n, seed_start=seed0, seconds=seconds, command=cmd,
-                                        record_seeds=set(range(seed0, seed0 + record_n)),
-                                        source={"run_id": run_id, "suite": suite_name, "terrain": proto["terrain"]},
-                                        **common)
-    metrics = aggregate(stats, seconds)
-
-    # 2. stand still (5 s, zero command) on the same terrain
-    ss, _ = evaluate_protocol(cfg, ctrl, n_episodes=max(3, n // 4), seed_start=seed0 + 100, seconds=5.0,
-                              command=[0.0, 0.0, 0.0], **common)
-    metrics["stand_still_drift_m"] = float(np.mean([abs(s.distance_x) + abs(s.lateral_y) for s in ss]))
-    metrics["stand_still_falls"] = int(sum(1 for s in ss if s.fell))
+    # 1 + 2. every scene of the suite (one for a classic suite) + its stand-still sub-protocol
+    metrics, stats, rollouts, proto = run_suite_scenes(cfg, ctrl, suite, n_episodes=n_episodes, record_n=record_n,
+                                                       source={"run_id": run_id, "suite": suite_name}, stand_still=True)
+    n = int(proto["n_episodes"])
+    seed0 = int(proto["seed_start"])
+    seconds = float(proto["episode_seconds"])
+    cmd = [float(x) for x in proto["command"]]
+    common = protocol_kwargs(proto)  # the PRIMARY scene's terrain: what the sub-protocols below run on
+    flat_protocol = proto["terrain"].get("kind", "flat") == "flat"
 
     # 3. multi command (stage >= 1): the same direction at three speeds
     if cfg.curriculum_stage >= 1 and abs(cmd[0]) > 0:
@@ -156,7 +147,7 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
 
             groups.add("dual_sim")
             gpu_d = gpu_distances(cfg, policy, seeds=list(range(seed0, seed0 + 5)), seconds=seconds, command_vx=cmd[0])
-            cpu_d = np.median([s.distance_x for s in stats[:5]])
+            cpu_d = np.median([s.distance_x for s in stats if s.scene == proto.get("scene", "")][:5])
             metrics["dual_sim_gpu_distance_p50"] = float(np.median(gpu_d))
             metrics["dual_sim_distance_ratio"] = float(np.median(gpu_d) / max(cpu_d, 1e-6))
         except Exception as exc:  # GPU unavailable in this process: report, don't fail the benchmark

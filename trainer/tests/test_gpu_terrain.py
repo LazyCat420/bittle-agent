@@ -99,3 +99,26 @@ def test_rough_slope_terrain_no_nan_512_envs_1000_steps(capfd):
     assert bool(jp.isfinite(st.reward).all())
     out = capfd.readouterr()
     assert "overflow" not in (out.out + out.err).lower()
+
+
+def test_house_level_mixes_terrains_across_the_batch():
+    """terrain.level 4 under the vmapped randomizer: some worlds flat, some tilted, some with live boxes,
+    some parked — all four combinations in one batch of 64, and downhill (+x gravity) is among them."""
+    import jax.numpy as jp
+
+    from trainer.env.gpu_env import BittleGpuEnv, make_domain_randomizer
+
+    cfg = apply_patch(None, {"terrain": {"level": 4}, "dr": {"enabled": False}})
+    env = BittleGpuEnv(cfg, num_envs=64)
+    rand = make_domain_randomizer(cfg, env.mj_model)
+    keys = jax.random.split(jax.random.PRNGKey(1), 64)
+    model, _ = rand(env.mjx_model, keys)
+    g = np.asarray(model.opt.gravity)
+    sloped = np.abs(g[:, 0]) + np.abs(g[:, 1]) > 1e-6
+    bids = tr.box_body_ids(env.mj_model)
+    live = (np.asarray(model.body_pos)[:, bids, 2] > -0.5).sum(axis=1)
+    assert set(live.tolist()) <= {0, cfg.terrain.n_boxes}
+    combos = {(bool(s), bool(l > 0)) for s, l in zip(sloped, live)}
+    assert combos == {(False, False), (True, False), (False, True), (True, True)}
+    assert (g[:, 0] > 0.5).any(), "no downhill world in the batch"
+    assert 0.3 < sloped.mean() < 0.9 and 0.3 < (live > 0).mean() < 0.9

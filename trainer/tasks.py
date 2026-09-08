@@ -57,6 +57,28 @@ TASKS: dict[str, Task] = {
                      "reward.weights.stumble", "reward.weights.base_height", "reward.weights.stall", "ppo.num_timesteps"),
         config_patch={"task": "rough_walk", "terrain": {"level": 2}},
     ),
+    "house_walk": Task(
+        name="house_walk",
+        goal="ONE policy for the whole house: walk forward, backward and turn on flat, sloped (either direction), "
+             "rocky and rocky-sloped ground, on any friction, carrying up to 100 g, while being bumped, and stand "
+             "still on command on all of them (house_v1 judges nine scenes at once)",
+        suite="house_v1",
+        aliases=("house", "everything", "all terrain", "all-terrain", "general", "dynamic", "mixed terrain",
+                 "any floor", "carpet", "rug edge", "cable"),
+        prerequisites=("slope_up",),
+        config_keys=("terrain.slope_share", "terrain.box_share", "terrain.box_height_m", "terrain.slope_deg",
+                     "reward.weights.foot_clearance", "reward.weights.stumble", "reward.weights.orientation",
+                     "reward.weights.tracking_lin_vel", "reward.weights.tracking_ang_vel", "reward.weights.stand_still",
+                     "dr.friction", "dr.payload_g", "dr.push_vel", "commands.vx", "commands.wz", "ppo.num_timesteps"),
+        config_patch={"task": "house_walk", "terrain": {"level": 4}, "curriculum_stage": 2,
+                      # the full command box: backward, sideways, turning; zero commands come from ZERO_CMD_PROB
+                      "commands": {"vx": [-0.15, 0.20], "vy": [-0.08, 0.08], "wz": [-0.6, 0.6]},
+                      # the house: hardwood to rug (0.3-1.2), a 100 g payload, a weak battery, late IMU, bumps
+                      "dr": {"friction": [0.3, 1.2], "payload_g": [0.0, 100.0], "forcerange": [0.15, 0.35],
+                             "latency_steps": [0, 4], "push_enabled": True, "push_vel": [0.1, 0.4],
+                             "push_interval_s": [3.0, 6.0]},
+                      "reward": {"weights": {"foot_clearance": -0.5, "stumble": -0.5, "energy": -0.05, "stall": -0.05}}},
+    ),
     # ── fun moves (config + suite only; the servo-safety fragment guards every one) ──
     "spin": Task(
         name="spin",

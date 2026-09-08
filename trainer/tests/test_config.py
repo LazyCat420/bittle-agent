@@ -95,3 +95,25 @@ def test_pre_terrain_configs_resolve_unchanged():
     assert cfg.task == "flat_walk" and cfg.terrain.kind == "flat" and cfg.terrain.level == 0
     assert cfg.reward.weights.stumble == 0.0 and cfg.reward.weights.foot_clearance == 0.0
     assert cfg.reward.weights.stall == 0.0 and cfg.reward.weights.slope_progress == 0.0
+
+
+def test_house_terrain_level_and_the_way_back_down():
+    c4 = apply_patch(None, {"terrain": {"level": 4}})
+    assert c4.terrain.kind == "rough_slope" and c4.terrain.slope_share == 0.6 and c4.terrain.box_share == 0.6
+    assert tuple(c4.terrain.slope_yaw_deg) == (-180.0, 180.0) and c4.terrain.n_boxes == 28 and c4.terrain.field_start_m == -1.0
+    # stepping back to a single-kind level restores every share and the yaw to their full-field values
+    c2 = apply_patch(c4, {"terrain": {"level": 2}})
+    assert c2.terrain.kind == "rough" and c2.terrain.slope_share == 1.0 and c2.terrain.box_share == 1.0
+    assert tuple(c2.terrain.slope_yaw_deg) == (0.0, 0.0)
+    # explicit shares survive a level change
+    c = apply_patch(apply_patch(None, {"terrain": {"level": 4, "box_share": 0.9}}), {"terrain": {"level": 3}})
+    assert c.terrain.box_share == 0.9 and c.terrain.slope_share == 1.0
+    with pytest.raises(ValidationError):
+        apply_patch(None, {"terrain": {"level": 5}})
+    with pytest.raises(ValidationError):
+        apply_patch(None, {"terrain": {"box_share": 1.5}})
+    # the house task's own patch resolves to level 4 + the full command box + pushes
+    from trainer.tasks import TASKS
+
+    h = apply_patch(None, TASKS["house_walk"].config_patch)
+    assert h.terrain.level == 4 and h.curriculum_stage == 2 and h.dr.push_enabled and h.commands.vx[0] < 0 < h.commands.wz[1]

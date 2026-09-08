@@ -1,0 +1,237 @@
+# The house suite: ONE policy judged on nine scenes at once, each a fixed bar over the CPU mesh model.
+# The terrain axis (flat / 8 deg up / 8 deg down / 12 mm rocks / rocks on 6 deg) crossed with the command axis
+# (forward / backward / turning / zero) plus bumps. Every scene has its own seed_start (spaced by 1000) so the
+# recorded rollouts never collide and the viewer can replay any scene by seed. Per-scene metrics are published
+# as `<scene>/<metric>`; the bare top-level metrics pool the forward-walking scenes (baseline ratio + score),
+# the servo-safety fragment reads the WORST episode of ANY scene, and `fall_rate_max` / `stand_still_falls`
+# span all nine. n_episodes is per scene (12 x 9 = 108 walking episodes + 9 x 3 stand-stills).
+#
+# UNCALIBRATED (0.1.0): distance / fall bars per scene are the flat_v1 / slope_v1 / rough_v1 bars where a
+# scene repeats one of those protocols, and design targets elsewhere (nothing in the firmware walks down a
+# slope, turns while walking, or backs over rocks). Replay the firmware gaits with
+# `python -m trainer.eval.baselines --suite house_v1` and read runs/baselines/opencat_trF/house_v1/report.json;
+# the numbers measured on 2026-09-08 are in chapter 05 of the documentation.
+suite: house_v1
+version: 0.1.0-uncalibrated
+include: [_servo_safety]
+protocol:            # defaults every scene inherits
+  n_episodes: 12
+  episode_seconds: 10.0
+  model: bittle_cpu_terrain.xml
+  dr: nominal
+scenes:
+  - name: flat            # the flat_v1 protocol
+    seed_start: 0
+    command: [0.12, 0.0, 0.0]
+    terrain: {kind: flat}
+  - name: slope_up        # the slope_v1 protocol
+    seed_start: 1000
+    command: [0.10, 0.0, 0.0]
+    terrain: {kind: slope, slope_deg: 8.0, slope_yaw_deg: 0.0}
+  - name: slope_down      # the same slope walked DOWN: gravity pulls forward, the robot tips onto its nose
+    seed_start: 2000
+    command: [0.10, 0.0, 0.0]
+    terrain: {kind: slope, slope_deg: 8.0, slope_yaw_deg: 180.0}
+  - name: rough           # the rough_v1 field
+    seed_start: 3000
+    command: [0.12, 0.0, 0.0]
+    terrain: {kind: rough, n_boxes: 24, box_height_m: 0.012, box_size_m: 0.035, box_spacing_m: 0.10,
+              field_start_m: 0.15, field_width_m: 0.40, field_seed: 11, spawn_jitter_m: 0.06}
+  - name: rough_slope     # 10 mm rocks up a 6 deg slope: the door-sill-on-a-ramp case
+    seed_start: 4000
+    command: [0.10, 0.0, 0.0]
+    terrain: {kind: rough_slope, slope_deg: 6.0, slope_yaw_deg: 0.0, n_boxes: 16, box_height_m: 0.010,
+              box_size_m: 0.035, box_spacing_m: 0.12, field_start_m: 0.15, field_width_m: 0.40, field_seed: 23,
+              spawn_jitter_m: 0.06}
+  - name: pushed          # flat, walking, shoved 0.4 m/s every 2.5 s: a chair leg, a foot, a toddler
+    seed_start: 5000
+    command: [0.12, 0.0, 0.0]
+    terrain: {kind: flat}
+    push: {vel: 0.4, interval_s: 2.5}
+  - name: turn            # walk-and-turn on flat: doorways and corridors
+    seed_start: 6000
+    command: [0.08, 0.0, 0.4]
+    terrain: {kind: flat}
+  - name: backward_rough  # back out from under the sofa over 8 mm cables
+    seed_start: 7000
+    command: [-0.10, 0.0, 0.0]
+    terrain: {kind: rough, n_boxes: 16, box_height_m: 0.008, box_size_m: 0.035, box_spacing_m: 0.12,
+              field_start_m: -1.95, field_width_m: 0.40, field_seed: 37, spawn_jitter_m: 0.06}   # boxes at x -1.95..-0.15: BEHIND the robot
+  - name: statue_rough    # zero command on 8 mm rocks while shoved: "wait here"
+    seed_start: 8000
+    command: [0.0, 0.0, 0.0]
+    terrain: {kind: rough, n_boxes: 8, box_height_m: 0.008, box_size_m: 0.035, box_spacing_m: 0.08,
+              field_start_m: -0.30, field_width_m: 0.30, field_seed: 41, spawn_jitter_m: 0.06}   # rocks AROUND the robot, x -0.30..+0.26
+    push: {vel: 0.4, interval_s: 2.5}
+gates:
+  # ── the house as a whole ──
+  - name: falls_worst_scene
+    metric: fall_rate_max
+    op: "<="
+    threshold: 0.15
+    unit: fraction
+    term: orientation
+    hint: "the worst scene's fall rate; find it in the <scene>/fall_rate metrics and raise orientation / base_height"
+  - name: fall_rate
+    metric: fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "pooled over the forward-walking scenes"
+  - name: progress_worst_scene
+    metric: progress_ratio_min
+    op: ">="
+    threshold: 0.35
+    unit: ratio
+    term: tracking_lin_vel
+    hint: "distance along the commanded direction / (|vx| x seconds), worst moving scene; the robot is stuck somewhere"
+  - name: vel_tracking_rmse
+    metric: vel_tracking_rmse
+    op: "<="
+    threshold: 0.08
+    unit: m/s
+    term: tracking_lin_vel
+    hint: "pooled over the forward scenes; tighten tracking_sigma or raise tracking_lin_vel"
+  - name: stand_still_falls
+    metric: stand_still_falls
+    op: "<="
+    threshold: 0
+    unit: count
+    term: stand_still
+    hint: "zero command must hold on EVERY scene's ground (summed over the nine stand-still sub-protocols)"
+  - name: stand_still_drift
+    metric: stand_still_drift_m
+    op: "<="
+    threshold: 0.08
+    unit: m
+    term: stand_still
+    hint: "worst scene's 5 s zero-command drift; raise stand_still"
+  - name: beats_baseline_trot_distance
+    metric: baseline_distance_ratio
+    op: ">="
+    threshold: 1.1
+    unit: ratio
+    group: baseline
+    term: tracking_lin_vel
+    hint: "the firmware trot replayed on the same nine scenes, pooled forward distance"
+  # ── per scene ──
+  - name: flat_distance
+    metric: flat/forward_distance_p50
+    op: ">="
+    threshold: 0.6
+    unit: m
+    term: tracking_lin_vel
+    hint: "the flat_v1 bar"
+  - name: slope_up_distance
+    metric: slope_up/forward_distance_p50
+    op: ">="
+    threshold: 0.55
+    unit: m
+    term: tracking_lin_vel
+    hint: "the slope_v1 bar (1.1 x the firmware trot)"
+  - name: slope_up_falls
+    metric: slope_up/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "raise orientation / base_height"
+  - name: slope_down_distance
+    metric: slope_down/forward_distance_p50
+    op: ">="
+    threshold: 0.55
+    unit: m
+    term: tracking_lin_vel
+    hint: "downhill at the commanded speed, not a slide: raise tracking_lin_vel"
+  - name: slope_down_falls
+    metric: slope_down/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "tipping onto the nose going downhill: raise orientation and lin_vel_z"
+  - name: rough_progress
+    metric: rough/progress_ratio
+    op: ">="
+    threshold: 0.40
+    unit: ratio
+    term: tracking_lin_vel
+    hint: "the rough_v1 bar; stuck on the 12 mm edges: raise foot_clearance / stumble 10-100x"
+  - name: rough_falls
+    metric: rough/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "the rough_v1 bar"
+  - name: rough_slope_progress
+    metric: rough_slope/progress_ratio
+    op: ">="
+    threshold: 0.35
+    unit: ratio
+    term: tracking_lin_vel
+    hint: "rocks on a 6 deg ramp; raise foot_clearance and slope_progress"
+  - name: rough_slope_falls
+    metric: rough_slope/fall_rate
+    op: "<="
+    threshold: 0.15
+    unit: fraction
+    term: orientation
+    hint: "raise orientation / base_height"
+  - name: pushed_distance
+    metric: pushed/forward_distance_p50
+    op: ">="
+    threshold: 0.5
+    unit: m
+    term: tracking_lin_vel
+    hint: "keep walking through the shoves"
+  - name: pushed_falls
+    metric: pushed/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "a 0.4 m/s shove mid-stride must not topple it: widen dr.push_vel in training"
+  - name: turn_rate_rmse
+    metric: turn/ang_vel_rmse
+    op: "<="
+    threshold: 0.25
+    unit: rad/s
+    term: tracking_ang_vel
+    hint: "0.4 rad/s commanded while walking; the flat-only spin run managed rmse 0.43 — raise tracking_ang_vel"
+  - name: turn_falls
+    metric: turn/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "raise orientation"
+  - name: backward_rough_distance
+    metric: backward_rough/forward_distance_p50
+    op: "<="
+    threshold: -0.35
+    unit: m
+    term: tracking_lin_vel
+    hint: "-0.10 m/s over 8 mm cables for 10 s is -1.0 m ideal; the backward_v1 bar on flat is -0.6"
+  - name: backward_rough_falls
+    metric: backward_rough/fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "raise orientation / base_height"
+  - name: statue_rough_falls
+    metric: statue_rough/fall_rate
+    op: "<="
+    threshold: 0.0
+    unit: fraction
+    term: orientation
+    hint: "a shove while standing on rocks must never topple it (statue_v1 is 0 on flat)"
+  - name: statue_rough_drift
+    metric: statue_rough/centre_drift_m
+    op: "<="
+    threshold: 0.15
+    unit: m
+    term: stand_still
+    hint: "may re-step but must come back (statue_v1 bar on flat is 0.10)"

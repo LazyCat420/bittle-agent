@@ -156,8 +156,9 @@ class JobManager:
             run_id, opts = self._bench_q.popleft()
             self._bench_active += 1
         suite = str(opts.get("suite") or self.store.run_suite(run_id))
-        args = ["-m", "trainer.eval.benchmark_cli", "--run-id", run_id, "--suite", suite,
-                "--n-episodes", str(int(opts.get("n_episodes") or 20))]
+        args = ["-m", "trainer.eval.benchmark_cli", "--run-id", run_id, "--suite", suite]
+        if opts.get("n_episodes"):  # unset = the suite's own protocol count (a scenes suite sets it per scene)
+            args += ["--n-episodes", str(int(opts["n_episodes"]))]
         if opts.get("dr_sweep"):
             args.append("--dr-sweep")
         if opts.get("dual_sim"):

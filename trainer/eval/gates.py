@@ -5,6 +5,12 @@ Suites live in ``suites/<name>.yaml``; a suite may ``include:`` fragments
 gate of the same name. Every gate names the reward ``term`` that moves it, so
 the reflection's weight-share advice is data, not a Python map.
 
+A suite may carry ``scenes:`` instead of one protocol: a list of named
+protocols (each merged over the suite-level ``protocol`` defaults) that the
+benchmark runs one after another. Per-scene metrics are published as
+``<scene>/<metric>`` next to the combined top-level ones, so a gate can bar
+one scene ("rough/fall_rate") or the whole house ("fall_rate_max").
+
 A gate whose metric is absent from the metrics dict is reported as
 ``pass: None`` ("not evaluated") and does not count towards ``gates_total``.
 Gates with ``requires_stage`` above the run's curriculum stage are skipped
@@ -61,13 +67,44 @@ def _merge_includes(suite: dict[str, Any]) -> dict[str, Any]:
     return suite
 
 
-def suite_protocol(suite: dict[str, Any]) -> dict[str, Any]:
-    """The protocol with its command as a 3-vector (older suites carried ``command_vx``)."""
-    proto = dict(suite.get("protocol", {}))
+def _norm_protocol(proto: dict[str, Any]) -> dict[str, Any]:
+    proto = dict(proto)
     if "command" not in proto:
         proto["command"] = [float(proto.get("command_vx", 0.12)), 0.0, 0.0]
     proto.setdefault("terrain", {"kind": "flat"})
     return proto
+
+
+def suite_scenes(suite: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """``[(scene_name, protocol)]``. A single-protocol suite is one unnamed scene (``""``), so
+    every consumer loops the same way and a classic suite's metrics keep their bare names."""
+    scenes = suite.get("scenes")
+    if not scenes:
+        return [("", suite_protocol(suite))]
+    base = dict(suite.get("protocol", {}))
+    out: list[tuple[str, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for sc in scenes:
+        name = str(sc.get("name", ""))
+        if not name or not name.replace("_", "").isalnum() or name in seen:
+            raise ValueError(f"suite {suite.get('suite')!r}: scene names must be unique identifiers, got {name!r}")
+        seen.add(name)
+        merged = dict(base)
+        merged.update({k: v for k, v in sc.items() if k != "name"})
+        out.append((name, _norm_protocol(merged)))
+    return out
+
+
+def suite_protocol(suite: dict[str, Any]) -> dict[str, Any]:
+    """The protocol with its command as a 3-vector (older suites carried ``command_vx``).
+    For a scenes suite this is the FIRST scene's protocol (the primary scene: what the
+    multi-command / DR-sweep sub-protocols and the ledger line use) with ``scenes`` = the names."""
+    if suite.get("scenes"):
+        name, proto = suite_scenes(suite)[0]
+        proto["scene"] = name
+        proto["scenes"] = [n for n, _ in suite_scenes(suite)]
+        return proto
+    return _norm_protocol(suite.get("protocol", {}))
 
 
 def suite_hash(suite: dict[str, Any]) -> str:

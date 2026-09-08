@@ -138,3 +138,69 @@ def test_reflection_uses_context_for_weak_terms():
     assert "'energy' term is only 0.07% of the total reward" in refl and "multiply its weight" in refl
     assert rep["context"]["per_gate"]["energy_proxy"]["term"] == "energy"
     assert rep["context"]["reward_shares_pct"]["tracking_lin_vel"] > 90
+
+
+def _aggregate_keys() -> set[str]:
+    from trainer.eval.evaluator import EpisodeStats, aggregate
+
+    st = EpisodeStats(seed=0, seconds=1.0, steps=50, cmd=[0.1, 0.0, 0.0], distance_x=0.1, lateral_y=0.0, yaw_deg=0.0,
+                      fell=False, fall_time=None, vel_rmse=0.0, saturation_pct=0.0, smoothness_deg=0.0, tilt_deg=0.0,
+                      rms_vz=0.0, energy_w=0.0, mean_reward=0.0)
+    return set(aggregate([st], 1.0)) | {"stand_still_drift_m", "stand_still_falls"}
+
+
+def test_house_v1_scenes_are_distinct_and_every_gate_names_a_metric_that_exists():
+    """A scenes suite must not lie either: every gate reads a top-level aggregate, a benchmark extra,
+    or <scene>/<aggregate> for a scene that is actually in the suite."""
+    from trainer.eval.gates import suite_scenes
+
+    s = load_suite("house_v1")
+    scenes = suite_scenes(s)
+    names = [n for n, _ in scenes]
+    assert len(names) == 9 and len(set(names)) == 9 and names[0] == "flat"
+    seeds = [p["seed_start"] for _, p in scenes]
+    assert len(set(seeds)) == 9 and min(abs(a - b) for a in seeds for b in seeds if a != b) >= 400  # sub-protocols use +100..+300
+    for _, p in scenes:
+        assert len(p["command"]) == 3 and p["n_episodes"] == 12 and p["terrain"]["kind"] in ("flat", "slope", "rough", "rough_slope")
+    primary = suite_protocol(s)
+    assert primary["scene"] == "flat" and primary["scenes"] == names and primary["terrain"]["kind"] == "flat"
+    top = _aggregate_keys() | {"fall_rate_max", "progress_ratio_min", "baseline_distance_ratio", "baseline_fall_delta",
+                               "baseline_energy_ratio", "dr_fall_rate_max", "dr_distance_ratio_min", "multi_command_rmse_max",
+                               "dual_sim_distance_ratio"}
+    for g in s["gates"]:
+        m = g["metric"]
+        if "/" in m:
+            scene, key = m.split("/", 1)
+            assert scene in names and key in _aggregate_keys(), g["name"]
+        else:
+            assert m in top, g["name"]
+    # classic suites are one unnamed scene and keep their bare protocol
+    assert suite_scenes(load_suite("flat_v1")) == [("", suite_protocol(load_suite("flat_v1")))]
+
+
+def test_scene_gates_evaluate_against_prefixed_metrics():
+    s = load_suite("house_v1")
+    metrics = dict(GOOD, fall_rate_max=0.0, progress_ratio_min=0.8, stand_still_drift_m=0.01)
+    for name in ("flat", "slope_up", "slope_down", "rough", "rough_slope", "pushed", "turn", "backward_rough", "statue_rough"):
+        metrics.update({f"{name}/fall_rate": 0.0, f"{name}/forward_distance_p50": 0.9 if name != "backward_rough" else -0.9,
+                        f"{name}/progress_ratio": 0.8, f"{name}/ang_vel_rmse": 0.1, f"{name}/centre_drift_m": 0.02})
+    rep = evaluate_gates(metrics, s, curriculum_stage=2)
+    assert rep["passed"] and rep["gates_total"] == len(s["gates"]) - 1  # the baseline group is not requested
+    metrics["rough/fall_rate"] = 0.5
+    rep = evaluate_gates(metrics, s, curriculum_stage=2)
+    failed = {g["gate"] for g in rep["gates"] if g["pass"] is False}
+    assert failed == {"rough_falls"}
+
+
+def test_scene_names_must_be_unique_identifiers(tmp_path, monkeypatch):
+    import shutil
+
+    from trainer.eval import gates as gates_mod
+
+    shutil.copy(SUITES_DIR / "_servo_safety.yaml", tmp_path / "_servo_safety.yaml")
+    (tmp_path / "y_v1.yaml").write_text(
+        "suite: y_v1\nversion: 0.0.1-uncalibrated\ninclude: [_servo_safety]\nprotocol: {n_episodes: 1, episode_seconds: 1.0}\n"
+        "scenes:\n  - {name: a, seed_start: 0, command: [0.1, 0, 0]}\n  - {name: a, seed_start: 1000, command: [0.1, 0, 0]}\ngates: []\n")
+    monkeypatch.setattr(gates_mod, "SUITES_DIR", tmp_path)
+    with pytest.raises(ValueError):
+        gates_mod.suite_scenes(load_suite("y_v1"))

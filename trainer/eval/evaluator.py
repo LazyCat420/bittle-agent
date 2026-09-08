@@ -55,6 +55,7 @@ class EpisodeStats:
     stall_fraction: float = 0.0        # (control step, joint) pairs stalled for the whole step / all pairs
     stall_concurrent_max: int = 0      # most joints stalled in the same control step
     travel_deg_max: float = 0.0        # max over joints of sum |delta target|
+    scene: str = ""                    # the suite scene this episode ran in ("" = single-protocol suite)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

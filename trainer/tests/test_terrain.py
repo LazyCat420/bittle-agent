@@ -107,3 +107,46 @@ def test_flat_terrain_is_a_noop_against_pre_terrain_golden():
         for k in ("foot_clearance", "stumble", "slope_progress", "stall"):
             assert k in info.terms
         assert info.terms["stumble"] == 0.0 and info.terms["slope_progress"] == 0.0 and info.terrain_h == 0.0
+
+
+def test_shares_make_a_per_env_mixture_and_leave_the_full_field_stream_alone():
+    """slope_share / box_share < 1 switch the slope / boxes off for a share of envs; the share draws
+    come LAST, so an env that keeps its terrain gets exactly the field it would have had at share 1."""
+    full = TerrainConfig(kind="rough_slope", n_boxes=10, slope_deg=(4.0, 10.0), slope_yaw_deg=(-180.0, 180.0),
+                         box_height_m=(0.005, 0.015))
+    mixed = full.model_copy(update={"slope_share": 0.5, "box_share": 0.5})
+    n_slope = n_boxes = 0
+    for seed in range(400):
+        a = tr.sample_field_numpy(np.random.default_rng(seed), full)
+        b = tr.sample_field_numpy(np.random.default_rng(seed), mixed)
+        has_slope = np.degrees(tr.slope_from_gravity(np, b.gravity)[0]) > 1e-9
+        n_slope += has_slope
+        n_boxes += b.n_boxes > 0
+        assert b.n_boxes in (0, 10)
+        if has_slope:
+            assert np.allclose(a.gravity, b.gravity)
+        else:
+            assert np.allclose(b.gravity, [0.0, 0.0, -tr.G])
+        if b.n_boxes:
+            assert np.allclose(a.box_pos, b.box_pos) and np.allclose(a.box_yaw, b.box_yaw)
+        else:
+            assert (b.box_pos[:, 2] < -0.5).all()
+    assert 150 < n_slope < 250 and 150 < n_boxes < 250
+    off = tr.sample_field_numpy(np.random.default_rng(3), full.model_copy(update={"slope_share": 0.0, "box_share": 0.0}))
+    assert off.n_boxes == 0 and np.allclose(off.gravity, [0.0, 0.0, -tr.G])
+
+
+def test_house_level_is_a_mixture_over_every_kind():
+    """terrain.level 4: a batch of envs contains flat, slope-only, rocks-only and both."""
+    cfg = apply_patch(None, {"terrain": {"level": 4}})
+    t = cfg.terrain
+    assert t.kind == "rough_slope" and t.slope_share == 0.6 and t.box_share == 0.6
+    assert tuple(t.slope_yaw_deg) == (-180.0, 180.0) and t.slope_deg[1] <= 10.0 and t.box_height_m[1] <= 0.015
+    kinds = set()
+    for seed in range(200):
+        f = tr.sample_field_numpy(np.random.default_rng(seed), t)
+        sloped = np.degrees(tr.slope_from_gravity(np, f.gravity)[0]) > 1e-9
+        kinds.add((bool(sloped), f.n_boxes > 0))
+    assert kinds == {(False, False), (True, False), (False, True), (True, True)}
+    # downhill happens: some sampled gravities pull FORWARD (+x)
+    assert any(tr.sample_field_numpy(np.random.default_rng(s), t).gravity[0] > 0.5 for s in range(200))

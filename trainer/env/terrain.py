@@ -160,22 +160,33 @@ def sample_field(xp, u, tcfg: Any, k: int = MAX_BOXES):
     uniform sampler (numpy or jax). Shapes are fixed (K boxes) so the jax path
     is vmappable: disabled boxes are parked, not dropped.
 
+    ``slope_share`` / ``box_share`` < 1 make the field a per-env MIXTURE: the slope (boxes)
+    are switched off for a 1 - share fraction of envs. The share draws come LAST so a config
+    with both shares at 1.0 consumes exactly the random stream it always did.
+
     Returns (gravity, box_pos, box_half, box_yaw) as ``xp`` arrays.
     """
     if has_slope(tcfg.kind):
         slope = u(np.radians(tcfg.slope_deg[0]), np.radians(tcfg.slope_deg[1]), ())
         yaw = u(np.radians(tcfg.slope_yaw_deg[0]), np.radians(tcfg.slope_yaw_deg[1]), ())
-        gravity = gravity_for_slope(xp, slope, yaw)
-    else:
-        gravity = xp.asarray([0.0, 0.0, -G])
     n = tcfg.n_boxes if has_boxes(tcfg.kind) else 0
     idx = xp.arange(k)
-    enabled = idx < n
     x = tcfg.field_start_m + idx * tcfg.box_spacing_m + u(-0.3, 0.3, (k,)) * tcfg.box_spacing_m
     y = u(-tcfg.field_width_m / 2, tcfg.field_width_m / 2, (k,))
     h = u(tcfg.box_height_m[0], tcfg.box_height_m[1], (k,))
     size = u(tcfg.box_size_m[0], tcfg.box_size_m[1], (k,))
     yaw_b = u(np.radians(tcfg.box_yaw_deg[0]), np.radians(tcfg.box_yaw_deg[1]), (k,))
+    slope_share = float(getattr(tcfg, "slope_share", 1.0))
+    box_share = float(getattr(tcfg, "box_share", 1.0))
+    if has_slope(tcfg.kind):
+        if slope_share < 1.0:
+            slope = xp.where(u(0.0, 1.0, ()) < slope_share, slope, 0.0)
+        gravity = gravity_for_slope(xp, slope, yaw)
+    else:
+        gravity = xp.asarray([0.0, 0.0, -G])
+    if n and box_share < 1.0:
+        n = xp.where(u(0.0, 1.0, ()) < box_share, n, 0)
+    enabled = idx < n
     pos = xp.stack([x, y, PLANE_Z + h - BOX_HALF_Z], axis=-1)
     half = xp.stack([size, size, xp.full((k,), BOX_HALF_Z)], axis=-1)
     parked_pos = xp.asarray(PARKED_POS) * xp.ones((k, 1))
