@@ -355,3 +355,82 @@ def test_diagnose_run_reports_weak_terms(harness):
     assert res["ok"] and res["gates"][0]["parent"] == 0.1 and res["gates"][0]["baseline_trot"] == 0.0
     assert "orientation" in res["advice"] and res["reward_shares_pct"]["tracking_lin_vel"] == 95.0
     assert "bittle_diagnose_run" in harness.get_system_prompt(mode="training")
+
+
+# ── training dashboard: recorded sessions + proxies (2026-09-07) ──────────
+
+def test_session_recorder_tees_a_training_stream_into_cycles(tmp_path):
+    from app.training_sessions import SessionRecorder
+
+    rec = SessionRecorder(tmp_path)
+
+    async def fake_stream():
+        yield {"type": "thought", "content": "I will "}
+        yield {"type": "thought", "content": "train."}
+        yield {"type": "tool_call", "id": "c1", "name": "bittle_train_and_benchmark",
+               "args": {"task": "slope_up", "config_patch": {"ppo": {"num_timesteps": 1}}, "notes": "hyp"}}
+        yield {"type": "progress", "id": "c1", "detail": {"status": "training", "progress": {"step": 5, "total": 10}}, "elapsed_s": 3}
+        yield {"type": "tool_result", "id": "c1", "name": "bittle_train_and_benchmark",
+               "result": {"ok": True, "run_id": "run-9", "task": "slope_up", "suite": "slope_v1", "score": 9.5,
+                          "gates_passed": 9, "gates_total": 10, "reflection": "BENCHMARK FAILED",
+                          "gates": [{"gate": "fall_rate", "value": 0.2, "op": "<=", "threshold": 0.1, "pass": False, "note": "x", "unit": "f"}],
+                          "episodes": [1, 2, 3]}}
+        yield {"type": "done", "final_message": "report"}
+
+    async def consume():
+        got = []
+        sub = rec.subscribe()
+        hello = await sub.__anext__()
+        s = rec.start("train it to walk up a slope")
+        async for ev in rec.tee(s, fake_stream()):
+            got.append(ev)
+        live = []
+        for _ in range(3):
+            live.append(await sub.__anext__())
+        await sub.aclose()
+        return s, got, hello, live
+
+    s, got, hello, live = asyncio.run(consume())
+    assert hello["type"] == "hello" and len(got) == 6  # the caller still sees every raw event
+    d = s.to_dict()
+    assert d["prompt"].startswith("train it") and d["live"] is False
+    assert [e["type"] for e in d["events"]] == ["thought", "tool_call", "progress", "tool_result", "done"]  # thoughts coalesced
+    assert d["events"][0]["content"] == "I will train."
+    c = d["cycles"][0]
+    assert c["tool"] == "bittle_train_and_benchmark" and c["status"] == "ok" and c["result"]["run_id"] == "run-9"
+    assert c["args"]["task"] == "slope_up" and c["progress"]["progress"]["step"] == 5
+    assert "episodes" not in c["result"] and c["result"]["gates"][0]["gate"] == "fall_rate"
+    assert d["run_ids"] == ["run-9"]
+    assert live[0]["type"] == "session_start" and live[1]["type"] == "event"
+    # persisted: a fresh recorder over the same dir replays the session
+    rec2 = SessionRecorder(tmp_path)
+    assert rec2.list()[0]["session_id"] == s.session_id and rec2.get(s.session_id).cycles[0]["result"]["run_id"] == "run-9"
+    assert rec2.get(s.session_id).prompt.startswith("train it")
+
+
+def test_training_dashboard_proxies(monkeypatch):
+    from app import main as main_mod
+
+    class DashTrainer(FakeTrainer):
+        async def run(self, run_id):
+            return {"run_id": run_id, "status": "training", "task": "slope_up", "suite": "slope_v1",
+                    "curve": [{"step": 1, "reward": 2.0}], "config": {}, "metrics": {}}
+
+    main_mod.agent_harness.trainer = DashTrainer()
+    with TestClient(app) as c:
+        assert c.get("/api/training/tasks").json()["tasks"][1]["task"] == "slope_up"
+        r = c.get("/api/training/run/run-1").json()
+        assert r["suite"] == "slope_v1" and r["curve"][0]["reward"] == 2.0
+        assert c.get("/api/training/benchmark/run-1", params={"suite": "slope_v1"}).json()["suite"] == "slope_v1"
+        assert c.get("/api/training/runs", params={"suite": "slope_v1"}).json()["runs"][0]["suite"] == "slope_v1"
+        assert c.post("/api/training/compare", json={"run_ids": ["run-1"]}).json()["runs"]
+        assert "opencat_trF" in c.get("/api/training/baselines").json()
+        assert c.get("/api/training/sessions").json()["live"] is None
+        assert c.get("/api/training/sessions/nope").status_code == 404
+    class Down(DownTrainer):
+        async def tasks(self):
+            raise TrainerUnavailable("connection refused")
+
+    main_mod.agent_harness.trainer = Down()
+    with TestClient(app) as c:
+        assert c.get("/api/training/tasks").status_code == 503

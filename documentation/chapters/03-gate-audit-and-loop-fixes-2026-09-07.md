@@ -93,4 +93,5 @@ gate table is where the change shows.
 - The next lever after flat-ground gates is not harder terrain yet: run the **DR sweep** (`dr_sweep`) to check
   robustness to friction, payload, servo strength and latency, then **curriculum stage 1** (turning, 0–0.25 m/s),
   then stage 2 (lateral, pushes). Terrain (the 18 mm mini-stairs from the obstacle course, as box geoms) comes
-  after that — it is a new gate suite, not a tweak.
+  after that — it is a new gate suite, not a tweak. *(Done the same day: chapter 04 adds the incline and
+  rock suites, the servo-safety gates and the task catalogue; the order above still holds for a new parent.)*

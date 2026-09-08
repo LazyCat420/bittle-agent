@@ -20,7 +20,7 @@ from .config import settings
 from .controller import Controller, TargetUnavailable
 from .motion import CompositionError, get_composer
 from .safety import EStopEngaged, SafetyError
-from .trainer_client import TrainerUnavailable
+from .trainer_client import TrainerError, TrainerUnavailable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("bittle-agent")
@@ -29,6 +29,10 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 controller = Controller(settings)
 agent_harness = GLMAgentHarness(controller, settings)
+# Training-mode chat sessions are recorded so the Training tab can show GLM's cycles to every viewer
+from .training_sessions import SessionRecorder  # noqa: E402
+
+session_recorder = SessionRecorder(Path(__file__).resolve().parent.parent / "storage" / "training_sessions")
 
 
 @asynccontextmanager
@@ -719,18 +723,19 @@ async def agent_chat(req: AgentChatRequest):
     messages = list(req.history)
     messages.append({"role": "user", "content": req.prompt})
 
+    stream = agent_harness.chat_stream(messages, target=req.target, confirm_token=req.confirm, mode=req.mode)
+    if req.mode == "training":
+        # tee the session into the recorder: the dashboard follows it live and can replay it later
+        stream = session_recorder.tee(session_recorder.start(req.prompt), stream)
+
     if not req.stream:
         events = []
-        async for ev in agent_harness.chat_stream(
-            messages, target=req.target, confirm_token=req.confirm, mode=req.mode
-        ):
+        async for ev in stream:
             events.append(ev)
         return {"events": events}
 
     async def event_generator():
-        async for ev in agent_harness.chat_stream(
-            messages, target=req.target, confirm_token=req.confirm, mode=req.mode
-        ):
+        async for ev in stream:
             yield f"data: {json.dumps(ev)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream",
@@ -750,12 +755,79 @@ async def training_health():
         return {"ok": False, "error": "trainer_unavailable", "detail": str(exc)}
 
 
+def _trainer_call(coro):
+    async def run():
+        if not agent_harness.trainer.configured:
+            raise HTTPException(status_code=503, detail="trainer_not_configured")
+        try:
+            return await coro
+        except TrainerUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        except TrainerError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail)
+    return run()
+
+
 @app.get("/api/training/runs")
-async def training_runs(sort: str = "score", limit: int = 20):
-    try:
-        return await agent_harness.trainer.list_runs(sort=sort, limit=limit)
-    except TrainerUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+async def training_runs(sort: str = "score", limit: int = 20, suite: str | None = None):
+    """Leaderboard (per suite when `suite` is given) + best_by_suite + baselines."""
+    return await _trainer_call(agent_harness.trainer.list_runs(sort=sort, limit=limit, suite=suite))
+
+
+@app.get("/api/training/tasks")
+async def training_tasks():
+    return await _trainer_call(agent_harness.trainer.tasks())
+
+
+@app.get("/api/training/run/{run_id}")
+async def training_run(run_id: str):
+    """One run: state, config, training metrics, reward curve, latest benchmark on its own suite."""
+    return await _trainer_call(agent_harness.trainer.run(run_id))
+
+
+@app.get("/api/training/benchmark/{run_id}")
+async def training_benchmark(run_id: str, suite: str | None = None):
+    return await _trainer_call(agent_harness.trainer.get_benchmark(run_id, suite=suite))
+
+
+@app.get("/api/training/baselines")
+async def training_baselines(suite: str | None = None):
+    return await _trainer_call(agent_harness.trainer.baselines(suite))
+
+
+class CompareRequest(BaseModel):
+    run_ids: list[str] = Field(..., min_length=1, max_length=10)
+
+
+@app.post("/api/training/compare")
+async def training_compare(req: CompareRequest):
+    return await _trainer_call(agent_harness.trainer.compare(req.run_ids))
+
+
+# ── Training sessions (GLM's cycles, recorded server-side for every viewer) ──
+
+
+@app.get("/api/training/sessions")
+async def training_sessions():
+    return {"sessions": session_recorder.list(), "live": session_recorder.live_session_id()}
+
+
+@app.get("/api/training/sessions/live")
+async def training_sessions_live():
+    async def gen():
+        async for msg in session_recorder.subscribe():
+            yield f"data: {json.dumps(msg)}\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/training/sessions/{session_id}")
+async def training_session(session_id: str):
+    s = session_recorder.get(session_id)
+    if s is None:
+        raise HTTPException(status_code=404, detail="no such session")
+    return s.to_dict()
 
 
 def _proxy_stream(path: str) -> StreamingResponse:

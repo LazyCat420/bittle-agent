@@ -16,3 +16,4 @@ storage/movesets/*.json
 runs/
 storage/research/*.json
 trainer/**/__pycache__/
+storage/training_sessions/*.jsonl

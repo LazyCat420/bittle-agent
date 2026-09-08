@@ -99,6 +99,10 @@ class TrainerClient:
     async def compare(self, run_ids: list[str]) -> dict[str, Any]:
         return await self._request("POST", "/runs/compare", json={"run_ids": run_ids})
 
+    async def run(self, run_id: str) -> dict[str, Any]:
+        """State + config + metrics + curve + benchmark view of one run (no long-poll)."""
+        return await self._request("GET", f"/runs/{run_id}")
+
     async def baselines(self, suite: str | None = None) -> dict[str, Any]:
         return await self._request("GET", "/baselines", params={"suite": suite} if suite else None)
 
