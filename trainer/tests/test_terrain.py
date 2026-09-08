@@ -169,3 +169,18 @@ def test_box_share_zero_env_reads_flat_ground_at_the_spawn():
         obs, r, done, info = env.step(np.zeros(8))
     assert info.terrain_h == 0.0 and abs(info.terms["base_height"]) < 0.05, info.terms["base_height"]
     assert np.all(np.abs(info.foot_clearance) < 0.005)
+
+
+def test_foot_clearance_term_is_order_one_for_a_shuffling_swing():
+    """A swing foot that never lifts (clearance 0 vs the 12 mm target) must cost O(0.1) per foot, the same
+    mm^2/1000 convention as base_height — unscaled it was 1.4e-4 and invisible at any allowed weight."""
+    q = {"up_world": np.array([0.0, 0.0, 1.0]), "terrain_h": 0.0, "torque_cap": np.full(8, 0.25),
+         "foot_clearance": np.zeros(4), "limb_contact": np.zeros(8), "uphill_xy": np.zeros(2), "cmd": np.array([0.1, 0.0, 0.0]),
+         "local_linvel": np.array([0.1, 0.0, 0.0]), "gyro": np.zeros(3), "global_linvel": np.array([0.1, 0.0, 0.0]),
+         "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
+         "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
+         "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
+         "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
+    terms = spec.reward_terms(np, q, 0.01, 0.25, 0.048)
+    per_foot = 1000.0 * spec.FOOT_CLEARANCE_TARGET ** 2
+    assert abs(terms["foot_clearance"] - 2 * per_foot) < 1e-9 and 0.1 < per_foot < 0.2  # two feet in swing

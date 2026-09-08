@@ -157,7 +157,9 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         # ── terrain / servo-safety terms (default weight 0.0; see TerrainConfig) ──
         # swing-foot height error vs FOOT_CLEARANCE_TARGET, only while airborne AND moving,
         # so a permanently high stance earns nothing
-        "foot_clearance": xp.sum(xp.square(q["foot_clearance"] - FOOT_CLEARANCE_TARGET) * swing),
+        # mm^2/1000 like base_height: unscaled (m^2) a 12 mm miss was 1.4e-4 per foot and the term stayed
+        # < 0.2 % of the reward at the weight bound (house_v1 rungs h1/h2, 2026-09-08)
+        "foot_clearance": xp.sum(xp.square(q["foot_clearance"] - FOOT_CLEARANCE_TARGET) * swing) * 1000.0,
         # shank / thigh touching the ground: the edge-collision ("stumble") penalty
         "stumble": xp.sum(q["limb_contact"]),
         # height gained per second up the slope; exactly 0 on flat ground

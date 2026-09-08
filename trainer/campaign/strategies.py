@@ -70,5 +70,14 @@ HOUSE_V1_RUNG2: list[dict[str, Any]] = [
               "tracking_ang_vel 4.0 for the walk-and-turn scene", "stop_on_pass": True},
 ]
 
+#: house_v1_rung3: after the foot_clearance term was rescaled x1000 (spec.py), the h1 champion with a clearance
+#: weight that now carries ~10-20 % of the reward. h2's yaw weight is NOT kept (it forgot to walk while turning).
+HOUSE_V1_RUNG3: list[dict[str, Any]] = [
+    {"name": "h3-house-clearance-rescaled-15M", "task": "house_walk", "base": "best",
+     "patch": {"reward": {"weights": {"foot_clearance": -1.0, "feet_air_time": 0.3}}, "ppo": {"num_timesteps": 15_000_000}},
+     "notes": "H3: foot_clearance term rescaled x1000 in spec.py (it was 1.4e-4 per 12 mm miss and < 0.2 % of the reward "
+              "at the weight bound); weight -1.0 under the new scale + feet_air_time 0.3, warm from h1", "stop_on_pass": True},
+]
+
 STRATEGIES = {"scripted_v1": SCRIPTED_V1, "terrain_ladder_v1": TERRAIN_LADDER_V1, "house_v1": HOUSE_V1,
-              "house_v1_rung2": HOUSE_V1_RUNG2}
+              "house_v1_rung2": HOUSE_V1_RUNG2, "house_v1_rung3": HOUSE_V1_RUNG3}
