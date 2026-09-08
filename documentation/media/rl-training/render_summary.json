@@ -1,10 +1,4 @@
 {
-  "opencat_trF@backward_v1": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_backward_v1.gif"
-  },
   "opencat_trF@flat_v1": {
     "distance_m": 0.368,
     "fell": false,
@@ -17,76 +11,10 @@
     "frames": 63,
     "gif": "baseline_opencat_trot_rough_v1.gif"
   },
-  "opencat_trF@slope_v1": {
-    "distance_m": 0.276,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_slope_v1.gif"
-  },
-  "opencat_trF@spin_v1": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_spin_v1.gif"
-  },
-  "opencat_trF@statue_v1": {
-    "distance_m": 0.353,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_statue_v1.gif"
-  },
-  "20260907-135830-42943f": {
-    "distance_m": 0.515,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r1-defaults-40M.gif"
-  },
-  "20260907-142153-d17a72": {
-    "distance_m": 0.598,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r2-energy-fix-15M.gif"
-  },
-  "20260907-165840-e406b4": {
-    "distance_m": 0.553,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r3-energy-x100-warm-10M.gif"
-  },
-  "20260907-192026-85c9be": {
-    "distance_m": 0.505,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r4-flat-parent-critic-v2-40M.gif"
-  },
-  "20260907-193948-30a684": {
-    "distance_m": 0.416,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r5-slope-warm-10M.gif"
-  },
   "20260907-194643-343fc2": {
     "distance_m": 0.274,
     "fell": false,
     "frames": 63,
     "gif": "policy_r9-rough-warm-10M.gif"
-  },
-  "20260907-194644-ea153a": {
-    "distance_m": 0.006,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r7-statue-warm-10M.gif"
-  },
-  "20260907-194644-799782": {
-    "distance_m": 0.049,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r6-spin-warm-10M.gif"
-  },
-  "20260907-194644-907826": {
-    "distance_m": -0.442,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r8-backward-warm-10M.gif"
   }
 }

@@ -281,10 +281,11 @@ def _exclude_chassis_leg_contacts(root: ET.Element) -> int:
 def _add_terrain_class(root: ET.Element) -> None:
     default = root.find("default")
     cls = ET.SubElement(default, "default", {"class": "terrain"})
-    # conaffinity=1 so the robot's prim class (contype 1, conaffinity 0) collides with it; margin 0
+    # conaffinity=1 so the robot's prim class (contype 1, conaffinity 0) collides with it; margin 0.
+    # group 2: visible by default (the renderer hides groups >= 3, which made the first rough GIFs look flat)
     ET.SubElement(cls, "geom", {
         "type": "box", "contype": "1", "conaffinity": "1", "condim": "3",
-        "friction": "0.9 0.02 0.01", "group": "3", "rgba": "0.45 0.4 0.35 1",
+        "friction": "0.9 0.02 0.01", "group": "2", "rgba": "0.55 0.48 0.40 1",
     })
 
 

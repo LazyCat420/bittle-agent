@@ -164,5 +164,6 @@ def test_service_tasks_catalogue_reports_prerequisites(client):
     assert client.post(f"/runs/{rid}/benchmark", json={"wait_s": 10}).status_code == 200
     t1 = {t["task"]: t for t in client.get("/tasks").json()["tasks"]}
     assert t1["slope_up"]["status"] == "ready" and t1["slope_up"]["warm_start_from"] == rid
-    assert t1["flat_walk"]["best_run"] == rid and t1["slope_up"]["suite_version"] == "0.1.0-uncalibrated"
+    assert t1["flat_walk"]["best_run"] == rid and t1["slope_up"]["suite_version"] == "1.0.0"
+    assert t1["rough_walk"]["suite_version"].endswith("-uncalibrated")
     assert {"flat_v1", "rough_v1", "slope_v1", "spin_v1", "statue_v1", "backward_v1"} <= set(client.get("/health").json()["suites"])
