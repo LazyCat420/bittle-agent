@@ -329,6 +329,14 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
             factor = max(2, int(round(2.0 / max(share, 1e-6))))
             line += (f". The '{term}' term is only {share:.2f}% of the total reward, so the optimiser barely sees it: "
                      f"multiply its weight by ~{min(factor, 1000)}x (to ~2% share), not by 2-10x.")
+        elif (r["gate"] == "foot_clearance" and r["value"] is not None and float(r["value"]) < 2.0
+              and share is not None and share >= 2.0):
+            shares = ctx.get("reward_shares_pct") or {}
+            line += (f". The '{term}' term already carries {share:.1f}% of the reward yet the swing stays under 2 mm: the "
+                     f"policy is DRAGGING its feet instead of swinging them, and a term that only scores swings cannot "
+                     f"pay for a swing that never happens. The terms that make a real swing profitable are invisible "
+                     f"(feet_air_time {shares.get('feet_air_time', 0.0):.2f}%, feet_slip {shares.get('feet_slip', 0.0):.2f}%): "
+                     f"raise reward.weights.feet_air_time and reward.weights.feet_slip 10-40x, not foot_clearance again.")
         elif share is not None and term and share >= 2.0 and flat_vs_parent:
             line += (f". The '{term}' term already carries {share:.1f}% of the reward and the gate did not move vs the parent: "
                      f"the weight is not the lever -- this needs a longer budget (ppo.num_timesteps 30M: a gait has to be "

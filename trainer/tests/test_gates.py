@@ -246,8 +246,9 @@ def test_reflection_says_a_zero_weight_term_is_off_not_weak():
 def test_reflection_calls_a_flat_gate_with_a_heavy_term_a_budget_problem():
     ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0, "foot_clearance": -40.0},
            "reward_weights": {"foot_clearance": -2.0}, "parent_run_id": "p",
-           "parent_metrics": {"foot_clearance_p50_mm": 1.19}}
-    refl = _rough_report({"foot_clearance_p50_mm": 1.2}, ctx)["reflection"]
+           "parent_metrics": {"foot_clearance_p50_mm": 5.1}}
+    # a 5 mm swing is a swing (the dragging rule needs < 2 mm); it just did not move vs the parent
+    refl = _rough_report({"foot_clearance_p50_mm": 5.0}, ctx)["reflection"]
     assert "already carries 5.4% of the reward" in refl and "ppo.num_timesteps 30M" in refl
 
 
@@ -267,3 +268,13 @@ def test_reflection_reports_where_it_got_stuck_and_whether_the_legs_caught():
     assert "STUCK: 80% of episodes stalled" in refl and "first stall at x = 0.31 m" in refl and "NOT catching edges" in refl
     refl2 = _rough_report(dict(m, stuck_limb_share=0.6), ctx)["reflection"]
     assert "the legs catch the edges" in refl2
+
+
+def test_reflection_names_dragging_when_a_heavy_clearance_term_still_leaves_a_sub_2mm_swing():
+    """r11 (2026-09-10): foot_clearance at 17% share, swing 0.66 mm -- the policy stopped swinging; the swing
+    rewards (feet_air_time, feet_slip) were < 0.2%. The advice must move to THOSE terms, not the clearance weight."""
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 400.0, "foot_clearance": -150.0, "feet_air_time": 1.0, "feet_slip": -0.2},
+           "reward_weights": {"foot_clearance": -2.0, "feet_air_time": 0.3, "feet_slip": -0.05}}
+    refl = _rough_report({"foot_clearance_p50_mm": 0.66}, ctx)["reflection"]
+    assert "DRAGGING its feet" in refl and "raise reward.weights.feet_air_time and reward.weights.feet_slip" in refl
+    assert "feet_air_time 0.18%" in refl
