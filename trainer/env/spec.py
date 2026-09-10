@@ -159,7 +159,9 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         # so a permanently high stance earns nothing
         # mm^2/1000 like base_height: unscaled (m^2) a 12 mm miss was 1.4e-4 per foot and the term stayed
         # < 0.2 % of the reward at the weight bound (house_v1 rungs h1/h2, 2026-09-08)
-        "foot_clearance": xp.sum(xp.square(q["foot_clearance"] - FOOT_CLEARANCE_TARGET) * swing) * 1000.0,
+        # ONE-SIDED: only a swing BELOW the target is penalised (the gate wants a per-swing peak >= 8 mm; the
+        # symmetric form also punished a 20 mm step, so the cheapest policy hovered at the target while dragging)
+        "foot_clearance": xp.sum(xp.square(xp.maximum(FOOT_CLEARANCE_TARGET - q["foot_clearance"], 0.0)) * swing) * 1000.0,
         # shank / thigh touching the ground: the edge-collision ("stumble") penalty
         "stumble": xp.sum(q["limb_contact"]),
         # height gained per second up the slope; exactly 0 on flat ground

@@ -117,7 +117,7 @@ def test_rough_terrain_places_boxes_and_stumble_sensors_do_not_terminate():
     env = BittleCpuEnv(apply_patch(None, {"terrain": {"level": 2}, "dr": {"enabled": False}}), seed=2)
     env.reset(command=np.zeros(3))
     assert env.xml_path.name == "bittle_cpu_terrain.xml" and len(env.limb_found) == 8
-    assert env.model_params.terrain.n_boxes == 20 and (env.model.geom_pos[env.box_ids][:20, 2] > -0.1).all()
+    assert env.model_params.terrain.n_boxes == 24 and (env.model.geom_pos[env.box_ids][:24, 2] > -0.1).all()
     assert set(env.body_found) == {"torso_floor_found", "head__1_floor_found"}
     # force a shank onto the ground for 20 steps: a stumble, not a fall
     env.reset(command=np.zeros(3))
@@ -183,3 +183,29 @@ def test_terrain_metrics_are_finite_and_in_range():
         assert np.isfinite(info.foot_clearance).all() and info.terrain_h >= 0
         if done:
             break
+
+
+def test_stuck_diagnostics_see_a_robot_that_never_moves_and_a_rollout_carries_limb_contacts():
+    """A commanded robot holding STAND for 3 s is stuck from t=0; the rollout frames carry limb contacts."""
+    from trainer.config import apply_patch
+    from trainer.eval.evaluator import STUCK_MIN_S, aggregate, run_episode
+    from trainer.eval.rollout import RolloutRecorder
+
+    class Hold:
+        def reset(self, env):
+            pass
+
+        def act(self, obs, env, t):
+            return "target", np.asarray(spec.STAND_DEG, dtype=np.float64)
+
+    env = BittleCpuEnv(apply_patch(None, {"dr": {"enabled": False}}), seed=0)
+    rec = RolloutRecorder(fps=50, source={})
+    st = run_episode(env, Hold(), seed=0, seconds=3.0, command=np.array([0.12, 0.0, 0.0]), recorder=rec)
+    assert st.stuck_seconds >= 3.0 - STUCK_MIN_S - 0.1 and st.stuck_x is not None and abs(st.stuck_x) < 0.05
+    agg = aggregate([st], 3.0)
+    assert agg["stuck_episode_rate"] == 1.0 and agg["stuck_seconds_p50"] == st.stuck_seconds
+    assert agg["stuck_limb_share"] is not None and 0.0 <= agg["stuck_limb_share"] <= 1.0
+    assert rec.frames and len(rec.frames[0]["limb_contacts"]) == 8
+    # a zero command is never "stuck"
+    st0 = run_episode(env, Hold(), seed=0, seconds=1.0, command=np.array([0.0, 0.0, 0.0]))
+    assert st0.stuck_seconds == 0.0 and st0.stuck_x is None

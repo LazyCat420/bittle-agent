@@ -77,7 +77,7 @@ def test_terrain_level_defaults_are_a_second_curriculum_axis():
     assert c1.terrain.kind == "slope" and tuple(c1.terrain.slope_deg) == (0.0, 8.0) and c1.terrain.n_boxes == 0
     assert c1.curriculum_stage == 0 and tuple(c1.commands.vx) == (0.05, 0.20)  # the command axis is untouched
     c2 = apply_patch(c1, {"terrain": {"level": 2}})
-    assert c2.terrain.kind == "rough" and c2.terrain.n_boxes == 20 and tuple(c2.terrain.slope_deg) == (0.0, 0.0)
+    assert c2.terrain.kind == "rough" and c2.terrain.n_boxes == 24 and tuple(c2.terrain.slope_deg) == (0.0, 0.0)
     # explicit wins over the level default, and survives the next level bump
     c3 = apply_patch(None, {"terrain": {"level": 2, "n_boxes": 8}})
     assert c3.terrain.n_boxes == 8
@@ -117,3 +117,19 @@ def test_house_terrain_level_and_the_way_back_down():
 
     h = apply_patch(None, TASKS["house_walk"].config_patch)
     assert h.terrain.level == 4 and h.curriculum_stage == 2 and h.dr.push_enabled and h.commands.vx[0] < 0 < h.commands.wz[1]
+
+
+def test_level_2_covers_the_rough_v1_bar():
+    """The training field must be at least as hard as the exam: every rough_v1 protocol value lies inside (or at
+    the edge of) the level-2 sampling range, and a level change back to flat restores the spacing."""
+    from trainer.eval.gates import load_suite
+
+    proto = load_suite("rough_v1")["protocol"]["terrain"]
+    c2 = apply_patch(None, {"terrain": {"level": 2}})
+    lo, hi = c2.terrain.box_height_m
+    assert lo <= proto["box_height_m"] <= hi and hi > proto["box_height_m"], "training rocks never reach the 12 mm bar"
+    assert c2.terrain.n_boxes >= proto["n_boxes"]
+    assert c2.terrain.box_spacing_m <= proto["box_spacing_m"]
+    assert c2.terrain.box_size_m[0] <= proto["box_size_m"] <= c2.terrain.box_size_m[1]
+    c0 = apply_patch(c2, {"terrain": {"level": 0}})
+    assert c0.terrain.box_spacing_m == 0.12 and c0.terrain.n_boxes == 0

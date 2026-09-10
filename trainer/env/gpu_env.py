@@ -49,8 +49,11 @@ def playground_config(cfg: TrainConfig, *, impl: str | None = None, num_envs: in
 
 class BittleGpuEnv(mjx_env.MjxEnv):
     def __init__(self, config: TrainConfig, *, impl: str | None = None, num_envs: int = 1,
-                 variant: str | None = None, sim_dt: float = 0.002):
+                 variant: str | None = None, sim_dt: float = 0.002,
+                 fixed_command: tuple[float, float, float] | None = None):
+        """``fixed_command`` pins every episode to one (vx, vy, wz) -- the benchmark-protocol ("bar") eval."""
         self.cfg = config.resolved()
+        self._fixed_cmd = None if fixed_command is None else jp.array([float(c) for c in fixed_command])
         variant = variant or tr.variant_for(self.cfg.terrain.kind, "gpu")
         pg = playground_config(self.cfg, impl=impl, num_envs=num_envs, sim_dt=sim_dt)
         super().__init__(pg)
@@ -99,6 +102,21 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         self._resample_steps = int(round(self.cfg.commands.resample_s / self.dt))
         self._dr = self.cfg.dr
 
+    def pin_terrain(self, field) -> None:
+        """Place a fixed ``TerrainField`` (a benchmark protocol's field) on this env's UNBATCHED model.
+        Box bodies sit under the terrain body at the origin, so body_pos is world; parked boxes stay parked."""
+        m = self._mjx_model
+        k = int(self._box_bids.shape[0])
+        fields = {"opt.gravity": jp.asarray(field.gravity, dtype=jp.float32)}
+        if k:
+            pos = jp.asarray(field.box_pos[:k], dtype=jp.float32)
+            half = jp.asarray(field.box_half[:k], dtype=jp.float32)
+            yaw = jp.asarray(field.box_yaw[:k], dtype=jp.float32)
+            fields["body_pos"] = m.body_pos.at[self._box_bids].set(pos)
+            fields["geom_size"] = m.geom_size.at[self._box_gids].set(half)
+            fields["body_quat"] = m.body_quat.at[self._box_bids].set(tr.quat_from_yaw(jp, yaw))
+        self._mjx_model = m.tree_replace(fields)
+
     # ── conversions ────────────────────────────────────────────────────
     def _deg_to_ctrl(self, deg_policy: jax.Array) -> jax.Array:
         rad = (deg_policy + self._offset) * self._sign * (math.pi / 180.0)
@@ -119,6 +137,26 @@ class BittleGpuEnv(mjx_env.MjxEnv):
     def _terrain_h(self, x, y):
         return tr.terrain_height(jp, x, y, *self._boxes())
 
+    def _place_static_boxes(self, data: mjx.Data) -> mjx.Data:
+        """Write the per-env box poses into ``data.geom_xpos`` / ``geom_xmat``.
+
+        The boxes are world-attached, so the warp engine treats their geoms as STATIC: their world pose
+        is baked ONCE at make_data from the unbatched ``mj_model`` (boxes parked at z = -1) and never
+        recomputed by kinematics, whatever ``body_pos`` says in the per-env model. Until 2026-09-10 every
+        GPU "rough" run therefore trained on a flat floor with phantom rocks: the analytic terrain (reward,
+        critic, foot clearance) saw boxes the feet passed straight through (0 foot-box contacts under
+        warp vs 104 on the CPU for the same policy and field). Static geoms keep whatever pose sits in
+        ``data``, so setting it here at reset holds for the whole episode.
+        """
+        if not self._box_gids.shape[0]:
+            return data
+        pos, _half, yaw = self._boxes()
+        c, s = jp.cos(yaw), jp.sin(yaw)
+        z, o = jp.zeros_like(c), jp.ones_like(c)
+        xmat = jp.stack([jp.stack([c, -s, z], -1), jp.stack([s, c, z], -1), jp.stack([z, z, o], -1)], -2)
+        return data.replace(geom_xpos=data.geom_xpos.at[self._box_gids].set(pos),
+                            geom_xmat=data.geom_xmat.at[self._box_gids].set(xmat))
+
     # ── episode sampling ───────────────────────────────────────────────
     def _sample_episode(self, rng: jax.Array) -> dict[str, Any]:
         dr = self._dr
@@ -136,6 +174,8 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         }
 
     def _sample_command(self, rng: jax.Array) -> jax.Array:
+        if self._fixed_cmd is not None:
+            return self._fixed_cmd
         k1, k2 = jax.random.split(rng)
         cmd = jax.random.uniform(k1, (3,), minval=self._cmd_lo, maxval=self._cmd_hi)
         zero = jax.random.uniform(k2) < spec.ZERO_CMD_PROB
@@ -159,6 +199,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         data = mjx_env.make_data(self.mj_model, qpos=qpos, qvel=jp.zeros(self.mjx_model.nv), ctrl=ctrl,
                                  impl=self.mjx_model.impl.value, naconmax=self._config.naconmax, njmax=self._config.njmax)
         data = mjx.forward(self.mjx_model, data)
+        data = self._place_static_boxes(data)
         info = {
             "rng": rng,
             "command": self._sample_command(k_cmd),

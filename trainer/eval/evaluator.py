@@ -23,6 +23,9 @@ from ..env.cpu_env import BittleCpuEnv, _quat_to_rpy
 from .rollout import RolloutRecorder
 
 SAT_MARGIN_DEG = 2.0
+#: "stuck": commanded to move but |vx| below STUCK_VX for at least STUCK_MIN_S (10 mm/s over 0.5 s)
+STUCK_VX = 0.02
+STUCK_MIN_S = 0.5
 
 
 @dataclass
@@ -56,6 +59,10 @@ class EpisodeStats:
     stall_concurrent_max: int = 0      # most joints stalled in the same control step
     travel_deg_max: float = 0.0        # max over joints of sum |delta target|
     scene: str = ""                    # the suite scene this episode ran in ("" = single-protocol suite)
+    # ── stuck diagnostics (2026-09-10): WHERE and for how long the robot stopped while commanded ──
+    stuck_seconds: float = 0.0         # time inside stalls of >= STUCK_MIN_S with |vx| < STUCK_VX (commanded to move)
+    stuck_x: float | None = None       # x of the first such stall (None = never stuck)
+    stuck_limb_steps: int = 0          # steps inside those stalls with a shank/thigh on the ground (edge catch)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -158,6 +165,14 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
     fell = False
     fall_time = None
     n = 0
+    commanded = abs(float(command[0])) >= spec.ZERO_CMD_EPS
+    stuck_min_steps = max(1, int(round(STUCK_MIN_S / dt)))
+    slow_run = 0            # consecutive slow steps
+    slow_limb = 0           # of which with a limb on the ground
+    slow_x0 = 0.0           # x where the current slow stretch began
+    stuck_steps = 0
+    stuck_limb = 0
+    stuck_x = None
     for t in range(steps):
         kind, val = controller.act(obs, env, t)
         if kind == "target":
@@ -173,7 +188,23 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         smooth += float(np.mean(np.abs(info.target_deg - prev_target)))
         travel += np.abs(info.target_deg - prev_target)
         prev_target = info.target_deg.copy()
-        stumbles += int(info.limb_contact.sum() > 0)
+        limb_on = int(info.limb_contact.sum() > 0)
+        stumbles += limb_on
+        if commanded and abs(vx) < STUCK_VX:
+            if slow_run == 0:
+                slow_x0 = float(env.data.qpos[0])
+            slow_run += 1
+            slow_limb += limb_on
+            if slow_run == stuck_min_steps:     # the stretch just became a stall: count it from its start
+                stuck_steps += slow_run
+                stuck_limb += slow_limb
+                if stuck_x is None:
+                    stuck_x = slow_x0
+            elif slow_run > stuck_min_steps:
+                stuck_steps += 1
+                stuck_limb += limb_on
+        else:
+            slow_run, slow_limb = 0, 0
         for i in range(4):
             if not info.contact[i]:
                 in_swing[i] = True
@@ -191,7 +222,7 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         vz2 += float(env.sensor("torso_global_linvel")[2]) ** 2
         energy += float(np.sum(np.abs(env.data.actuator_force * env.data.qvel[env.dof_idx])))
         if recorder is not None:
-            recorder.record((t + 1) * dt, env, info.applied_deg, info.contact, env.cmd)
+            recorder.record((t + 1) * dt, env, info.applied_deg, info.contact, env.cmd, limb_contact=info.limb_contact)
         if done:
             fell = True
             fall_time = (t + 1) * dt
@@ -211,6 +242,7 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         peak_joint_speed_rad_s=float(np.percentile(peak_arr, 99.5)), max_joint_speed_rad_s=float(peak_arr.max()),
         stall_fraction=stall_joint_steps / n_samples, stall_concurrent_max=int(stall_conc),
         travel_deg_max=float(travel.max()),
+        stuck_seconds=stuck_steps * dt, stuck_x=stuck_x, stuck_limb_steps=int(stuck_limb),
         seed=seed, seconds=n * dt, steps=n, cmd=[float(c) for c in command],
         distance_x=float(env.data.qpos[0] - x0), lateral_y=float(env.data.qpos[1] - y0), yaw_deg=yaw,
         fell=fell, fall_time=fall_time,
@@ -218,6 +250,13 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         smoothness_deg=smooth / max(n, 1), tilt_deg=tilt / max(n, 1), rms_vz=math.sqrt(vz2 / max(n, 1)),
         energy_w=energy / max(n, 1), mean_reward=rewards / max(n, 1),
     )
+
+
+def _stuck_limb_share(stats: list[EpisodeStats]) -> float | None:
+    stuck_steps = sum(s.stuck_seconds * s.steps / max(s.seconds, 1e-9) for s in stats)
+    if stuck_steps <= 0:
+        return None
+    return float(min(sum(s.stuck_limb_steps for s in stats) / stuck_steps, 1.0))
 
 
 def aggregate(stats: list[EpisodeStats], episode_seconds: float) -> dict[str, Any]:
@@ -258,6 +297,14 @@ def aggregate(stats: list[EpisodeStats], episode_seconds: float) -> dict[str, An
         "stall_fraction": float(np.max([s.stall_fraction for s in stats])),
         "stall_concurrent_max": int(np.max([s.stall_concurrent_max for s in stats])),
         "travel_deg_max": float(np.max([s.travel_deg_max for s in stats])),
+        # stuck diagnostics: how long, and where (x of the first stall, median over the episodes that stalled)
+        "stuck_seconds_p50": float(np.median([s.stuck_seconds for s in stats])),
+        "stuck_seconds_max": float(np.max([s.stuck_seconds for s in stats])),
+        "stuck_episode_rate": float(np.mean([s.stuck_x is not None for s in stats])),
+        "stuck_x_p50": (float(np.median([s.stuck_x for s in stats if s.stuck_x is not None]))
+                        if any(s.stuck_x is not None for s in stats) else None),
+        # share of stalled steps with a shank/thigh on the ground: 1.0 = every stall is an edge catch
+        "stuck_limb_share": _stuck_limb_share(stats),
     }
 
 

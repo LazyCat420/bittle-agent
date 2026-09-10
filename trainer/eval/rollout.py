@@ -18,9 +18,10 @@ class RolloutRecorder:
         self.frames: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
 
-    def record(self, t: float, env, applied_deg: np.ndarray, contact: np.ndarray, cmd: np.ndarray) -> None:
+    def record(self, t: float, env, applied_deg: np.ndarray, contact: np.ndarray, cmd: np.ndarray,
+               limb_contact: np.ndarray | None = None) -> None:
         base = env.base_state()
-        self.frames.append({
+        frame = {
             "t": round(float(t), 4),
             "angles_deg": [int(round(float(x))) for x in applied_deg],
             "measured_deg": [round(float(x), 1) for x in base["joint_deg"]],
@@ -29,7 +30,11 @@ class RolloutRecorder:
             "base_rpy_deg": [round(float(x), 2) for x in base["rpy_deg"]],
             "contacts": [int(bool(c)) for c in contact],
             "cmd": [round(float(x), 3) for x in cmd],
-        })
+        }
+        if limb_contact is not None:
+            # shank/thigh on the ground, per sensor (the "stumble" evidence: which limb caught the edge)
+            frame["limb_contacts"] = [int(bool(c)) for c in limb_contact]
+        self.frames.append(frame)
 
     def event(self, t: float, kind: str, **extra: Any) -> None:
         self.events.append({"t": round(float(t), 4), "type": kind, **extra})

@@ -55,7 +55,12 @@ TASKS: dict[str, Task] = {
         prerequisites=("slope_up",),
         config_keys=("terrain.box_height_m", "terrain.n_boxes", "reward.weights.foot_clearance",
                      "reward.weights.stumble", "reward.weights.base_height", "reward.weights.stall", "ppo.num_timesteps"),
-        config_patch={"task": "rough_walk", "terrain": {"level": 2}},
+        # the gait has to be RESHAPED (lift the swing foot 12 mm), not tuned: the terms that teach it are on
+        # by default (rescaled foot_clearance, stumble, a longer feet_air_time) and the budget is 30M, because
+        # 10-15M warm steps left r9/r10/h3 shuffling at ~1 mm swing clearance
+        config_patch={"task": "rough_walk", "terrain": {"level": 2},
+                      "reward": {"weights": {"foot_clearance": -2.0, "stumble": -0.5, "feet_air_time": 0.3, "stall": -0.05}},
+                      "ppo": {"num_timesteps": 30_000_000}},
     ),
     "house_walk": Task(
         name="house_walk",

@@ -278,15 +278,43 @@ class TrainingTools:
                          "parent": pg.get("parent"), "baseline_trot": pg.get("baseline_trot"),
                          "reward_term": pg.get("term"), "term_share_pct": pg.get("term_share_pct")})
         shares = ctx.get("reward_shares_pct") or {}
-        weak = [k for k, v in shares.items() if v is not None and v < 1.0]
+        weights = ctx.get("reward_weights") or {}
+        off = sorted(k for k, w in weights.items() if float(w) == 0.0 and any(r["reward_term"] == k and r["pass"] is False for r in rows))
+        weak = [k for k, v in shares.items() if v is not None and v < 1.0 and k not in off]
         notes = [ctx[k] for k in ("parent_note", "baseline_note") if ctx.get(k)]
+        bench_d = (rep.get("metrics") or {}).get("forward_distance_p50")
+        train_vs_bench = {k.replace("train_", ""): ctx[k] for k in ("train_distance_x", "train_bar_distance_x", "train_bar_distance_p50", "train_bar_fall_rate") if ctx.get(k) is not None}
+        if bench_d is not None:
+            train_vs_bench["bench_distance_p50"] = bench_d
+            if ctx.get("train_distance_x") is not None:
+                train_vs_bench["train_over_bench_ratio"] = round(float(ctx["train_distance_x"]) / max(float(bench_d), 1e-6), 2)
+        gap = ctx.get("terrain_gap") or {}
+        mismatch = bool(gap.get("easier_than_protocol")) and train_vs_bench.get("train_over_bench_ratio", 0) > 1.5
+        if mismatch:
+            advice = ("TRAIN/BENCH MISMATCH: the run trains on an easier field than the suite protocol (see terrain_gap) and its "
+                      "training curve walks far more than the benchmark. Raise terrain.box_height_m / terrain.n_boxes (or slope_deg) "
+                      "to cover the protocol first; reward weights cannot fix a field the optimiser never sees. A terrain or "
+                      "gait-shaping change needs ppo.num_timesteps 30M, not 10M.")
+        elif off:
+            advice = (f"The failing gates' reward terms are switched OFF ({', '.join(off)} = 0.0): set those weights first "
+                      "(the task's config_patch carries defaults), then train 30M -- a gait has to be reshaped.")
+        elif weak:
+            advice = (f"Terms with <1% reward share ({', '.join(weak)}) cannot steer the policy; a gate tied to one of them "
+                      "needs a 10-100x weight change. 10M warm steps suffice for a weight tweak; 30M when the gait must change.")
+        else:
+            advice = ("All reward terms carry weight. If a gate did not move vs the parent, the weight is not the lever: "
+                      "raise ppo.num_timesteps to 30M or the terrain difficulty; adjust thresholds' neighbours by 2-5x otherwise.")
+        stuck = {k: (rep.get("metrics") or {}).get(k) for k in ("stuck_episode_rate", "stuck_seconds_p50", "stuck_x_p50", "stuck_limb_share")
+                 if (rep.get("metrics") or {}).get(k) is not None}
         return {"ok": True, "run_id": run_id, "task": rep.get("task"), "suite": rep.get("suite"),
                 "suite_version": rep.get("suite_version"), "gates": rows,
                 "reward_shares_pct": shares, "parent_run_id": ctx.get("parent_run_id"),
+                **({"reward_terms_off": off} if off else {}),
+                **({"train_vs_bench": train_vs_bench} if train_vs_bench else {}),
+                **({"terrain_gap": gap} if gap else {}),
+                **({"stuck": stuck} if stuck else {}),
                 **({"notes": notes} if notes else {}),
-                "advice": (f"Terms with <1% reward share ({', '.join(weak)}) cannot steer the policy; a gate tied to one of them "
-                           "needs a 10-100x weight change. Runs with base_run_id warm-start from the parent, so ~10M steps is enough per cycle."
-                           if weak else "All reward terms carry weight; adjust thresholds' neighbours by 2-5x."),
+                "advice": advice,
                 "reflection": rep.get("reflection")}
 
     async def _list_runs(self, args):

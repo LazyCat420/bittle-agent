@@ -184,3 +184,20 @@ def test_foot_clearance_term_is_order_one_for_a_shuffling_swing():
     terms = spec.reward_terms(np, q, 0.01, 0.25, 0.048)
     per_foot = 1000.0 * spec.FOOT_CLEARANCE_TARGET ** 2
     assert abs(terms["foot_clearance"] - 2 * per_foot) < 1e-9 and 0.1 < per_foot < 0.2  # two feet in swing
+
+
+def test_foot_clearance_term_is_one_sided():
+    """Clearing the 12 mm target by a margin costs nothing; falling short costs the squared shortfall
+    (mm^2/1000). The gate is a per-swing PEAK >= 8 mm, so overshoot must never be penalised."""
+    base = {"up_world": np.array([0.0, 0.0, 1.0]), "terrain_h": 0.0, "torque_cap": np.full(8, 0.25),
+            "limb_contact": np.zeros(8), "uphill_xy": np.zeros(2), "cmd": np.array([0.1, 0.0, 0.0]),
+            "local_linvel": np.array([0.1, 0.0, 0.0]), "gyro": np.zeros(3), "global_linvel": np.array([0.1, 0.0, 0.0]),
+            "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
+            "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
+            "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
+            "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
+    high = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.020)), 0.01, 0.25, 0.048)["foot_clearance"]
+    exact = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.012)), 0.01, 0.25, 0.048)["foot_clearance"]
+    low = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.002)), 0.01, 0.25, 0.048)["foot_clearance"]
+    assert high == 0.0 and exact == 0.0
+    assert abs(low - 2 * 1000.0 * 0.010 ** 2) < 1e-9

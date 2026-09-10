@@ -63,7 +63,7 @@ def test_per_world_boxes_are_batched_under_warp():
     ids = tr.box_body_ids(env.mj_model)
     pos = np.asarray(model.body_pos)[:, ids]
     assert pos.shape == (8, tr.MAX_BOXES, 3)
-    assert (pos[:, :20, 2] > -0.1).all() and (pos[:, 20:, 2] < -0.5).all()
+    assert (pos[:, :24, 2] > -0.1).all() and (pos[:, 24:, 2] < -0.5).all()
     assert len({tuple(np.round(pos[i, 0], 4)) for i in range(8)}) == 8  # distinct per env
     st = jax.jit(wenv.reset)(keys)
     st = jax.jit(wenv.step)(st, jp.zeros((8, 8)))
@@ -122,3 +122,77 @@ def test_house_level_mixes_terrains_across_the_batch():
     assert combos == {(False, False), (True, False), (False, True), (True, True)}
     assert (g[:, 0] > 0.5).any(), "no downhill world in the batch"
     assert 0.3 < sloped.mean() < 0.9 and 0.3 < (live > 0).mean() < 0.9
+
+
+@pytest.mark.gpu
+def test_pinned_protocol_field_matches_the_cpu_terrain_height():
+    """dual-sim on rough: the GPU env pinned to the rough_v1 field reads the CPU field's height."""
+    from trainer.config import apply_patch
+    from trainer.env import terrain as tr
+    from trainer.env.gpu_env import BittleGpuEnv
+    from trainer.eval.gates import load_suite
+
+    proto = load_suite("rough_v1")["protocol"]["terrain"]
+    field = tr.field_from_protocol(proto)
+    cfg = apply_patch(None, {"terrain": {"level": 2}, "dr": {"enabled": False}})
+    env = BittleGpuEnv(cfg, num_envs=1)
+    assert float(env._terrain_h(field.box_pos[0][0], field.box_pos[0][1])) == 0.0  # parked before the pin
+    env.pin_terrain(field)
+    for i in range(int(proto["n_boxes"])):
+        x, y = field.box_pos[i][:2]
+        assert abs(float(env._terrain_h(x, y)) - float(tr.terrain_height(np, x, y, field.box_pos, field.box_half, field.box_yaw))) < 1e-6
+    assert abs(float(env._terrain_h(field.box_pos[0][0], field.box_pos[0][1])) - 0.012) < 1e-6
+
+
+def _foot_box_contacts(env, st) -> int:
+    """Foot-box contact count read from the warp contact table of a (possibly batched) state."""
+    impl = getattr(st.data, "_impl", st.data)
+    geom = np.asarray(impl.contact__geom).reshape(-1, 2)
+    n = int(np.asarray(impl.nacon).reshape(-1).sum())
+    box = set(int(i) for i in np.asarray(env._box_gids))
+    feet = set(int(i) for i in np.asarray(env._foot_gids))
+    return sum(1 for g1, g2 in geom[:n] if ({int(g1), int(g2)} & box) and ({int(g1), int(g2)} & feet))
+
+
+@pytest.mark.gpu
+def test_the_feet_actually_collide_with_the_boxes_under_warp():
+    """The engine, not the analytic height, must feel the rocks: a robot standing on the pinned rough_v1
+    field with a box under a foot reports a foot-box contact and the box geom sits where the field says
+    (before 2026-09-10 the static box geoms stayed parked at z=-1 in data: 0 contacts, feet through rocks)."""
+    from trainer.config import apply_patch
+    from trainer.env import terrain as tr
+    from trainer.env.gpu_env import BittleGpuEnv
+    from trainer.eval.gates import load_suite
+    import jax.numpy as jp
+
+    field = tr.field_from_protocol(load_suite("rough_v1")["protocol"]["terrain"])
+    # a wide 12 mm slab right under the spawn so the feet must land on it
+    field.box_pos[0] = [0.0, 0.0, tr.PLANE_Z + 0.012 - tr.BOX_HALF_Z]
+    field.box_half[0] = [0.12, 0.12, tr.BOX_HALF_Z]
+    field.box_yaw[0] = 0.0
+    cfg = apply_patch(None, {"terrain": {"level": 2, "spawn_jitter_m": 0.0}, "dr": {"enabled": False}})
+    env = BittleGpuEnv(cfg, num_envs=1)
+    env.pin_terrain(field)
+    st = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    gx = np.asarray(st.data.geom_xpos)[np.asarray(env._box_gids)[0]]
+    assert np.allclose(gx, field.box_pos[0], atol=1e-5), f"box geom parked at {gx}"
+    step = jax.jit(env.step)
+    hits = 0
+    for _ in range(25):  # half a second: the robot settles onto the slab
+        st = step(st, jp.zeros(8))
+        hits += _foot_box_contacts(env, st)
+    assert hits > 0, "no foot-box contact under warp: the rocks are phantoms"
+    torso_z = float(st.data.qpos[2])
+    assert torso_z > 0.012 + 0.03, f"torso at {torso_z:.3f} m: standing on the floor, not on the 12 mm slab"
+
+
+@pytest.mark.gpu
+def test_training_path_boxes_collide_per_env():
+    """The brax training path (wrapper + per-env randomizer): every env's own field is what the feet hit."""
+    cfg = apply_patch(None, {"terrain": {"level": 2}, "dr": {"enabled": False}})
+    env, wenv, keys, jp_ = _wrapped(cfg, 4)
+    st = jax.jit(wenv.reset)(keys)
+    ids = tr.box_geom_ids(env.mj_model)
+    gx = np.asarray(st.data.geom_xpos)[:, ids[:24], 2]
+    assert (gx > -0.1).all(), "box geoms parked in the batched data"
+    assert len({tuple(np.round(np.asarray(st.data.geom_xpos)[i, ids[0]], 4)) for i in range(4)}) == 4

@@ -204,3 +204,66 @@ def test_scene_names_must_be_unique_identifiers(tmp_path, monkeypatch):
     monkeypatch.setattr(gates_mod, "SUITES_DIR", tmp_path)
     with pytest.raises(ValueError):
         gates_mod.suite_scenes(load_suite("y_v1"))
+
+
+# ── 2026-09-10: the reflection tells "easier classroom than exam" from "the policy is stuck" ──
+
+def _rough_report(metrics_over: dict, ctx: dict):
+    from trainer.eval.gates import evaluate_gates, load_suite
+
+    base = {"fall_rate": 0.0, "forward_distance_p50": 0.31, "progress_ratio": 0.26, "vel_tracking_rmse": 0.12,
+            "stumble_rate": 0.0, "foot_clearance_p50_mm": 1.2, "body_clearance_min_mm": 30.0, "lateral_drift_m": 0.01,
+            "joint_saturation_pct": 0.1, "action_smoothness_deg": 1.1, "energy_proxy_w": 1.1, "peak_joint_speed_rad_s": 3.3,
+            "stall_fraction": 0.002, "stall_concurrent_max": 2, "n_episodes": 20, "episode_seconds": 10.0}
+    base.update(metrics_over)
+    return evaluate_gates(base, load_suite("rough_v1"), context=ctx)
+
+
+def test_reflection_names_the_train_bench_mismatch_and_the_terrain_gap():
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0, "foot_clearance": -1.2},
+           "reward_weights": {"foot_clearance": -10.0, "tracking_lin_vel": 1.5},
+           "train_distance_x": 0.90, "train_bar_distance_x": 0.30, "train_bar_fall_rate": 0.0,
+           "terrain_gap": {"train_kind": "rough", "protocol_kind": "rough", "protocol_box_height_m": 0.012,
+                           "train_box_height_m": [0.003, 0.012], "protocol_n_boxes": 24, "train_n_boxes": 20,
+                           "protocol_box_spacing_m": 0.10, "train_box_spacing_m": 0.12,
+                           "train_share_at_or_above_protocol_height": 0.0, "easier_than_protocol": True}}
+    refl = _rough_report({}, ctx)["reflection"]
+    assert "TRAIN/BENCH MISMATCH" in refl and "0.90 m" in refl and "0.31 m" in refl
+    assert "20 boxes of 3-12 mm" in refl and "raise terrain.box_height_m" in refl
+    assert "Bar eval" in refl and "the engines agree" in refl
+    # the terrain advice comes BEFORE any weight advice would be acted on: it is in the same reflection
+    assert refl.index("TRAIN/BENCH MISMATCH") > refl.index("FAIL forward_distance_p50")
+
+
+def test_reflection_says_a_zero_weight_term_is_off_not_weak():
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0}, "reward_weights": {"foot_clearance": 0.0, "stumble": 0.0}}
+    rep = _rough_report({}, ctx)
+    refl = rep["reflection"]
+    assert "'foot_clearance' term is switched OFF" in refl and "reward.weights.foot_clearance = 0.0" in refl
+    assert "multiply its weight" not in refl.split("switched OFF")[1].split("FAIL")[0]
+
+
+def test_reflection_calls_a_flat_gate_with_a_heavy_term_a_budget_problem():
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0, "foot_clearance": -40.0},
+           "reward_weights": {"foot_clearance": -2.0}, "parent_run_id": "p",
+           "parent_metrics": {"foot_clearance_p50_mm": 1.19}}
+    refl = _rough_report({"foot_clearance_p50_mm": 1.2}, ctx)["reflection"]
+    assert "already carries 5.4% of the reward" in refl and "ppo.num_timesteps 30M" in refl
+
+
+def test_reflection_bar_eval_flags_an_engine_disagreement():
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0}, "reward_weights": {},
+           "train_distance_x": 0.9, "train_bar_distance_x": 0.85,
+           "terrain_gap": {"train_kind": "rough", "protocol_kind": "rough", "easier_than_protocol": False}}
+    refl = _rough_report({}, ctx)["reflection"]
+    assert "the GPU and CPU engines disagree" in refl and "check dual_sim" in refl
+    assert "the training terrain covers the protocol" in refl
+
+
+def test_reflection_reports_where_it_got_stuck_and_whether_the_legs_caught():
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 700.0}, "reward_weights": {}}
+    m = {"stuck_episode_rate": 0.8, "stuck_seconds_p50": 6.5, "stuck_seconds_max": 9.0, "stuck_x_p50": 0.31, "stuck_limb_share": 0.05}
+    refl = _rough_report(m, ctx)["reflection"]
+    assert "STUCK: 80% of episodes stalled" in refl and "first stall at x = 0.31 m" in refl and "NOT catching edges" in refl
+    refl2 = _rough_report(dict(m, stuck_limb_share=0.6), ctx)["reflection"]
+    assert "the legs catch the edges" in refl2

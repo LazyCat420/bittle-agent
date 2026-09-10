@@ -307,6 +307,7 @@ export class TrainingDashboard {
       ${pct !== null && ['training'].includes(d.status) ? `<div class="td-progress"><div style="width:${pct}%"></div></div>` : ''}
       <div class="td-muted td-notes">${esc(d.notes || '')}</div>
       <canvas id="tdCurve" class="td-canvas"></canvas>
+      <canvas id="tdDistCurve" class="td-canvas"></canvas>
       ${bench ? `<div class="td-kv"><span><b>${esc(bench.suite)}@${esc(bench.suite_version)}</b></span><span class="${bench.passed ? 'td-ok' : 'td-warn'}"><b>${bench.gates_passed}/${bench.gates_total} gates</b> · score ${fmt(bench.score, 2)}</span>
           <span>${fmt(bench.metrics?.forward_distance_p50, 2)} m · falls ${fmt(bench.metrics?.fall_rate, 2)} · ${fmt(bench.metrics?.energy_proxy_w, 2)} W · peak joint ${fmt(bench.metrics?.peak_joint_speed_rad_s, 2)} rad/s</span></div>
         <canvas id="tdGateBars" class="td-canvas td-canvas-tall"></canvas>
@@ -330,6 +331,22 @@ export class TrainingDashboard {
       lineChart(c, [
         { label: 'eval reward', color: PALETTE[0], points: pts.map(p => [p.step / 1e6, p.reward]) },
       ], { title: 'training curve (eval episode reward vs env steps, M)', xfmt: v => fmt(v, 1) + 'M' });
+    }
+    const dc = this.root.querySelector('#tdDistCurve');
+    if (dc) {
+      const pts = d.curve || [];
+      const benchD = d.benchmark?.metrics?.forward_distance_p50;
+      const series = [
+        { label: 'train eval (random cmd, own terrain)', color: PALETTE[1], points: pts.map(p => [p.step / 1e6, p.distance_x]) },
+      ];
+      if (pts.some(p => Number.isFinite(p.bar_distance_x))) {
+        series.push({ label: 'bar eval (suite protocol)', color: PALETTE[2], points: pts.map(p => [p.step / 1e6, p.bar_distance_x]) });
+      }
+      if (Number.isFinite(benchD) && pts.length) {
+        const xs = pts.map(p => p.step / 1e6);
+        series.push({ label: 'benchmark p50', color: PALETTE[3], points: [[Math.min(...xs), benchD], [Math.max(...xs), benchD]] });
+      }
+      lineChart(dc, series, { title: 'distance per episode (m): a train line far above the benchmark = easier classroom than exam', xfmt: v => fmt(v, 1) + 'M', yZero: true });
     }
     const gb = this.root.querySelector('#tdGateBars');
     if (gb && d.benchmark) {

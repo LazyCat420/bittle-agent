@@ -207,9 +207,81 @@ def _context_view(context: dict[str, Any], report: dict[str, Any]) -> dict[str, 
             "term": g.get("term"),
             "term_share_pct": shares.get(g.get("term") or "", None),
         }
-    return {"per_gate": per_gate, "reward_breakdown": rb, "reward_shares_pct": shares,
-            "parent_run_id": context.get("parent_run_id"), "baseline": context.get("baseline_name"),
-            "baseline_note": context.get("baseline_note"), "parent_note": context.get("parent_note")}
+    out = {"per_gate": per_gate, "reward_breakdown": rb, "reward_shares_pct": shares,
+           "parent_run_id": context.get("parent_run_id"), "baseline": context.get("baseline_name"),
+           "baseline_note": context.get("baseline_note"), "parent_note": context.get("parent_note")}
+    # train-vs-bench: what the training curve said next to what the suite says (2026-09-10)
+    for key in ("train_distance_x", "train_bar_distance_x", "train_bar_distance_p50", "train_bar_fall_rate"):
+        if context.get(key) is not None:
+            out[key] = float(context[key])
+    if context.get("terrain_gap"):
+        out["terrain_gap"] = context["terrain_gap"]
+    if context.get("reward_weights"):
+        out["reward_weights"] = context["reward_weights"]
+    return out
+
+
+_DISTANCE_GATES = ("forward_distance_p50", "progress_ratio", "beats_baseline_trot_distance", "rough_progress",
+                   "progress_worst_scene", "rough_slope_progress")
+
+
+def _train_vs_bench_lines(ctx: dict[str, Any], metrics: dict[str, Any], failed: list[dict[str, Any]]) -> list[str]:
+    """The lines that tell "the classroom is easier than the exam" from "the policy is stuck": the training
+    curve's distance next to the suite's, the bar eval, the terrain gap, and the stuck diagnostics."""
+    out: list[str] = []
+    bench = metrics.get("forward_distance_p50")
+    train_d = ctx.get("train_distance_x")
+    bar_d = ctx.get("train_bar_distance_x")
+    gap = ctx.get("terrain_gap") or {}
+    distance_failed = any(r["gate"] in _DISTANCE_GATES for r in failed)
+    if bench is not None and train_d is not None and distance_failed and float(train_d) > 1.5 * max(float(bench), 1e-6):
+        line = (f"TRAIN/BENCH MISMATCH: the training curve walked {float(train_d):.2f} m per episode (random commands on the "
+                f"run's own terrain) but the suite reads {float(bench):.2f} m")
+        if gap.get("easier_than_protocol"):
+            if "protocol_box_height_m" in gap:
+                lo, hi = gap["train_box_height_m"]
+                line += (f"; the run trained on {gap['train_n_boxes']} boxes of {1000 * lo:.0f}-{1000 * hi:.0f} mm "
+                         f"({100 * gap['train_share_at_or_above_protocol_height']:.0f}% at or above the protocol's "
+                         f"{1000 * gap['protocol_box_height_m']:.0f} mm) vs the protocol's {gap['protocol_n_boxes']} boxes "
+                         f"all at {1000 * gap['protocol_box_height_m']:.0f} mm")
+            if "protocol_slope_deg" in gap:
+                line += (f"; the run trained on {gap['train_slope_deg'][0]:.0f}-{gap['train_slope_deg'][1]:.0f} deg vs the "
+                         f"protocol's {gap['protocol_slope_deg']:.0f} deg")
+            line += (". The optimiser solved an easier field than the exam: raise terrain.box_height_m / terrain.n_boxes "
+                     "(or terrain.slope_deg) to cover the protocol BEFORE touching reward weights.")
+        else:
+            line += ("; the training terrain covers the protocol, so the gap is the fixed command / nominal DR / the CPU "
+                     "sim, not the field -- read the bar eval and stuck diagnostics below.")
+        out.append(line)
+    if bar_d is not None:
+        line = f"Bar eval (the suite protocol's terrain and command, on the GPU, at the end of training): {float(bar_d):.2f} m"
+        if ctx.get("train_bar_fall_rate") is not None:
+            line += f", falls {100 * float(ctx['train_bar_fall_rate']):.0f}%"
+        if bench is not None:
+            ratio = float(bar_d) / max(float(bench), 1e-6)
+            if ratio > 1.5:
+                line += (f" vs {float(bench):.2f} m here: the GPU and CPU engines disagree on this terrain (ratio {ratio:.2f}) -- "
+                         "a sim gap, not a policy gap; check dual_sim before tuning anything")
+            elif ratio < 0.67:
+                line += f" vs {float(bench):.2f} m here (ratio {ratio:.2f}): the CPU benchmark is KINDER than the GPU protocol"
+            else:
+                line += f" vs {float(bench):.2f} m here: the engines agree; what the benchmark shows is what the policy learned"
+        out.append(line + ".")
+    if metrics.get("stuck_seconds_p50") is not None and metrics.get("stuck_episode_rate"):
+        rate = float(metrics["stuck_episode_rate"])
+        if rate > 0:
+            line = (f"STUCK: {100 * rate:.0f}% of episodes stalled (|vx| < 0.02 m/s for >= 0.5 s while commanded), median "
+                    f"{float(metrics['stuck_seconds_p50']):.1f} s per episode (worst {float(metrics['stuck_seconds_max']):.1f} s)")
+            if metrics.get("stuck_x_p50") is not None:
+                line += f", first stall at x = {float(metrics['stuck_x_p50']):.2f} m"
+            share = metrics.get("stuck_limb_share")
+            if share is not None:
+                line += (f"; a shank/thigh was on the ground for {100 * float(share):.0f}% of the stalled steps"
+                         + (" -- the legs catch the edges (foot_clearance / stumble)" if share >= 0.3 else
+                            " -- the feet are NOT catching edges: it drags without lifting (foot_clearance / feet_air_time), "
+                            "or the tracking term is saturated (tracking_sigma)"))
+            out.append(line + ".")
+    return out
 
 
 def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: dict[str, Any] | None = None) -> str:
@@ -245,13 +317,26 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
         if r["note"]:
             line += f" -> {r['note']}"
         share = pg.get("term_share_pct")
-        if share is not None and pg.get("term") and share < 1.0:
+        term = pg.get("term")
+        weight = (ctx.get("reward_weights") or {}).get(term) if term else None
+        parent_v = pg.get("parent")
+        flat_vs_parent = (parent_v is not None and r["value"] is not None
+                          and abs(float(r["value"]) - float(parent_v)) <= 0.05 * max(abs(float(parent_v)), 1e-9))
+        if term and weight is not None and float(weight) == 0.0:
+            line += (f". The '{term}' term is switched OFF (reward.weights.{term} = 0.0): the optimiser cannot see this gate "
+                     f"at all -- set the weight first (the task's defaults carry one), then judge its share.")
+        elif share is not None and term and share < 1.0:
             factor = max(2, int(round(2.0 / max(share, 1e-6))))
-            line += (f". The '{pg['term']}' term is only {share:.2f}% of the total reward, so the optimiser barely sees it: "
+            line += (f". The '{term}' term is only {share:.2f}% of the total reward, so the optimiser barely sees it: "
                      f"multiply its weight by ~{min(factor, 1000)}x (to ~2% share), not by 2-10x.")
+        elif share is not None and term and share >= 2.0 and flat_vs_parent:
+            line += (f". The '{term}' term already carries {share:.1f}% of the reward and the gate did not move vs the parent: "
+                     f"the weight is not the lever -- this needs a longer budget (ppo.num_timesteps 30M: a gait has to be "
+                     f"reshaped, not tuned) or a harder training terrain, not another weight change.")
         parts.append(line)
     if len(failed) > 4:
         parts.append(f"(+{len(failed) - 4} more failing gates in the table)")
+    parts.extend(_train_vs_bench_lines(ctx, metrics, failed))
     for key in ("parent_note", "baseline_note"):
         if ctx.get(key):
             parts.append(str(ctx[key]))

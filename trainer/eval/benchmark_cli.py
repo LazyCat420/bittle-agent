@@ -34,6 +34,28 @@ MIN_BASELINE_DISTANCE_M = 0.05
 MAX_BASELINE_FALL_RATE = 0.9
 
 
+
+def terrain_gap(cfg, proto: dict[str, Any]) -> dict[str, Any]:
+    """How the run's TRAINING terrain compares to the suite protocol it is judged on."""
+    pt = proto.get("terrain") or {"kind": "flat"}
+    t = cfg.terrain
+    gap: dict[str, Any] = {"train_kind": t.kind, "protocol_kind": pt.get("kind", "flat")}
+    if pt.get("kind", "flat") in ("rough", "rough_slope"):
+        h = float(pt.get("box_height_m", 0.0))
+        gap.update({"protocol_box_height_m": h, "train_box_height_m": [float(t.box_height_m[0]), float(t.box_height_m[1])],
+                    "protocol_n_boxes": int(pt.get("n_boxes", 0)), "train_n_boxes": int(t.n_boxes),
+                    "protocol_box_spacing_m": float(pt.get("box_spacing_m", 0.10)), "train_box_spacing_m": float(t.box_spacing_m),
+                    # the share of training boxes at least as tall as the protocol's (uniform sampling)
+                    "train_share_at_or_above_protocol_height": (0.0 if t.n_boxes == 0 or t.box_height_m[1] <= h else
+                                                                round(float((t.box_height_m[1] - max(h, t.box_height_m[0])) / max(t.box_height_m[1] - t.box_height_m[0], 1e-9)), 3))})
+        gap["easier_than_protocol"] = bool(t.n_boxes < int(pt.get("n_boxes", 0)) or t.box_height_m[1] < h
+                                           or gap["train_share_at_or_above_protocol_height"] < 0.25)
+    if pt.get("kind", "flat") in ("slope", "rough_slope"):
+        sd = float(pt.get("slope_deg", 0.0))
+        gap.update({"protocol_slope_deg": sd, "train_slope_deg": [float(t.slope_deg[0]), float(t.slope_deg[1])]})
+        gap["easier_than_protocol"] = bool(gap.get("easier_than_protocol", False) or t.slope_deg[1] < sd)
+    return gap
+
 def baseline_context(store: RunStore, suite_name: str, metrics: dict, gait: str = "opencat_trF") -> tuple[dict, bool]:
     """Ratio metrics vs the cached firmware gait ON THIS SUITE. Returns (context, group_enabled)."""
     context: dict = {}
@@ -136,17 +158,24 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
         last = curve[-1]
         context["reward_breakdown"] = {k.replace("reward/", ""): float(v) for k, v in last.items()
                                        if k.startswith("reward/") and not k.endswith("_std")}
+        # the training-side distances: brax's eval (random commands, the run's own terrain) and the bar
+        # eval (the suite protocol) -- what tells "easier classroom than exam" from "the policy is stuck"
+        for key in ("distance_x", "bar_distance_x", "bar_distance_p50", "bar_fall_rate"):
+            if last.get(key) is not None and np.isfinite(float(last[key])):
+                context[f"train_{key}"] = float(last[key])
+    context["reward_weights"] = {k: float(v) for k, v in cfg.reward.weights.model_dump().items()}
+    context["terrain_gap"] = terrain_gap(cfg, proto)
 
-    # 6. dual-sim consistency (GPU engine vs CPU, shared seeds) — flat protocols only: the GPU
-    #    replay has no fixed-terrain override yet
-    if dual_sim and not flat_protocol:
-        metrics["dual_sim_skipped"] = "dual_sim is only defined for flat protocols"
-    elif dual_sim:
+    # 6. dual-sim consistency (GPU engine vs CPU, shared seeds) on the protocol's fixed field (the GPU
+    #    replay pins the same TerrainField the CPU episodes ran on; scenes suites use the primary scene)
+    if dual_sim:
         try:
             from .dual_sim import gpu_distances
 
             groups.add("dual_sim")
-            gpu_d = gpu_distances(cfg, policy, seeds=list(range(seed0, seed0 + 5)), seconds=seconds, command_vx=cmd[0])
+            gpu_d = gpu_distances(cfg, policy, seeds=list(range(seed0, seed0 + 5)), seconds=seconds, command_vx=cmd[0],
+                                  terrain=None if flat_protocol else common["terrain"],
+                                  spawn_jitter_m=None if flat_protocol else common.get("spawn_jitter_m"))
             cpu_d = np.median([s.distance_x for s in stats if s.scene == proto.get("scene", "")][:5])
             metrics["dual_sim_gpu_distance_p50"] = float(np.median(gpu_d))
             metrics["dual_sim_distance_ratio"] = float(np.median(gpu_d) / max(cpu_d, 1e-6))

@@ -20,6 +20,7 @@ from mujoco_playground import wrapper
 from ..config import TrainConfig
 from ..env.gpu_env import PRIVILEGED_VERSION, BittleGpuEnv, make_domain_randomizer
 from ..policy.export import export_policy
+from .bar_eval import BarEval
 
 
 def parent_privileged_version(parent_dir: Path) -> int:
@@ -76,9 +77,33 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         policy_obs_key="state",
         value_obs_key="privileged_state",
     )
+    # the bar eval: the policy on its suite's protocol terrain + command, next to every curve point
+    try:
+        bar = BarEval(cfg, impl=impl, sim_dt=sim_dt)
+    except Exception as exc:  # a bar failure must never take the training run down
+        print(f"bar eval disabled: {exc!r}")
+        bar = None
     t0 = time.time()
     last = {"t": t0, "steps": 0}
     curve: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
+
+    def emit(point: dict[str, Any]) -> None:
+        if bar is not None and bar.latest:
+            point.update(bar.latest)
+        curve.append(point)
+        if progress:
+            progress(point)
+
+    def policy_params_fn(current_step: int, make_policy, params) -> None:
+        # brax calls this BEFORE the evaluation of the same params (and once right after progress_fn(0))
+        if bar is not None and bar.enabled:
+            try:
+                bar(current_step, make_policy, params)
+            except Exception as exc:  # pragma: no cover - GPU hiccup: keep training
+                print(f"bar eval failed at step {current_step}: {exc!r}")
+        while pending:
+            emit(pending.pop(0))
 
     def progress_fn(num_steps: int, metrics: dict[str, Any]) -> None:
         now = time.time()
@@ -95,9 +120,10 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         for k, v in metrics.items():
             if k.startswith("eval/episode_reward/"):
                 point[k.replace("eval/episode_", "")] = float(v)
-        curve.append(point)
-        if progress:
-            progress(point)
+        if num_steps == 0 and bar is not None and bar.enabled and not bar.latest:
+            pending.append(point)  # the initial bar rollout follows this call; pair them
+        else:
+            emit(point)
 
     train_fn = functools.partial(
         ppo.train,
@@ -123,9 +149,12 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         progress_fn=progress_fn,
         num_eval_envs=128,
         restore_params=restore_params,
+        policy_params_fn=policy_params_fn,
     )
     make_inference_fn, params, metrics = train_fn(environment=env, eval_env=eval_env)
     elapsed = time.time() - t0
+    while pending:
+        emit(pending.pop(0))
 
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "policy").mkdir(exist_ok=True)
@@ -145,6 +174,11 @@ def train_policy(cfg: TrainConfig, run_dir: Path, *, progress: Callable[[dict[st
         "reward_first": curve[0]["reward"] if curve else None,
         "reward_final": final.get("reward"),
         "distance_final": final.get("distance_x"),
+        # the policy on its suite's protocol (terrain + command) -- comparable to the benchmark, unlike distance_final
+        "bar_distance_final": final.get("bar_distance_x"),
+        "bar_distance_p50_final": final.get("bar_distance_p50"),
+        "bar_fall_rate_final": final.get("bar_fall_rate"),
+        "bar_protocol": bar.protocol if bar is not None else None,
         "episode_length_final": final.get("episode_length"),
         "impl": env.mjx_model.impl.value,
         "sim_dt": sim_dt,

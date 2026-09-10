@@ -332,20 +332,25 @@ STAGE_DEFAULTS: dict[int, dict[str, Any]] = {
 #: (downhill is where a small robot tips forward). Every level names every managed field so a
 #: level change moves them all (apply_stage_defaults indexes the base level's table).
 _TERRAIN_MIX_FLAT = {"terrain.slope_yaw_deg": (0.0, 0.0), "terrain.box_size_m": (0.02, 0.06),
-                     "terrain.slope_share": 1.0, "terrain.box_share": 1.0, "terrain.field_start_m": 0.15}
+                     "terrain.slope_share": 1.0, "terrain.box_share": 1.0, "terrain.field_start_m": 0.15,
+                     "terrain.box_spacing_m": 0.12}
 TERRAIN_DEFAULTS: dict[int, dict[str, Any]] = {
     0: {"terrain.kind": "flat", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 0,
         "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
     1: {"terrain.kind": "slope", "terrain.slope_deg": (0.0, 8.0), "terrain.n_boxes": 0,
         "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
-    2: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 20,
-        "terrain.box_height_m": (0.003, 0.012), "terrain.spawn_jitter_m": 0.05, **_TERRAIN_MIX_FLAT},
+    # level 2 covers the rough_v1 BAR (24 boxes, all 12 mm, 0.10 m apart): with uniform 3-12 mm boxes the
+    # median training rock was 7.5 mm and the eval curve read 0.9 m while the benchmark read 0.3 m (r9/r10,
+    # 2026-09-07) -- the optimiser was solving an easier field than the exam
+    2: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 24,
+        "terrain.box_height_m": (0.006, 0.015), "terrain.spawn_jitter_m": 0.05, **_TERRAIN_MIX_FLAT,
+        "terrain.box_size_m": (0.02, 0.05), "terrain.box_spacing_m": 0.10},
     3: {"terrain.kind": "rough_slope", "terrain.slope_deg": (0.0, 14.0), "terrain.n_boxes": 28,
         "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08, **_TERRAIN_MIX_FLAT},
     4: {"terrain.kind": "rough_slope", "terrain.slope_deg": (2.0, 10.0), "terrain.n_boxes": 28,
         "terrain.box_height_m": (0.003, 0.015), "terrain.spawn_jitter_m": 0.08,
         "terrain.slope_yaw_deg": (-180.0, 180.0), "terrain.box_size_m": (0.02, 0.06),
-        "terrain.slope_share": 0.6, "terrain.box_share": 0.6,
+        "terrain.slope_share": 0.6, "terrain.box_share": 0.6, "terrain.box_spacing_m": 0.12,
         # rocks from 1 m BEHIND the spawn to 1.9 m ahead: backward and sideways commands meet them too
         "terrain.field_start_m": -1.0},
 }
