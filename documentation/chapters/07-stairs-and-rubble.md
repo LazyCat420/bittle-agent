@@ -143,24 +143,96 @@ its benchmark above stands.
 physics on a denser one, and it announces itself only in stderr that nothing was reading. Any config
 knob that scales with obstacle count needs a test at the densest setting the config allows.
 
-### s2 and b1b (running)
+### s2 (curbs) and b1b (rubble, clean physics): the same verdict from both floors
 
-| run | id | change |
+| measure | s1 (18 mm flight) | s2 (trained on 6–14 mm curbs) | b1b (20 mm rubble) |
+|---|---|---|---|
+| gates | 11/15 | 11/15 | 11/15 |
+| highest level reached | 0.009 m | **0.032 m** | — |
+| episodes reaching the top | 0/20 | **2/20** | — |
+| distance | 0.193 m | **0.275 m** | 0.079 m |
+| swing clearance p50 | 0.11 mm | **1.30 mm** | 0.22 mm |
+| stalled seconds per episode | 6.5 s | **0.0 s** | 8.8 s |
+| fall rate | 0.00 | 0.10 | 0.00 |
+
+b1b reran the rubble with the corrected contact budget and **zero overflow lines over the whole 30M
+steps**, so its number is honest: 0.08 m of a 2.2 m field, stalled for 8.8 s of every 10 s episode,
+belly 38 mm clear, nothing stumbling — it simply stands there. s2 is the one real gain: training on
+curbs teaches it to get one to three of the three steps, and it never stalls. It still never descends,
+and its fall rate rose to 0.10, exactly the gate limit.
+
+**Both floors give the same verdict, and it is not about the obstacles.** The rubble reflection states
+the mechanism exactly: `foot_clearance` already carries **29.9 %** of the reward with `feet_air_time`
+and `feet_slip` pinned at their ±10 bounds, and the swing still does not come.
+
+## The swing terms cannot buy the first swing
+
+Every incentive to lift a foot is **conditional on a lift already happening**:
+
+| term | when it pays | what a dragging gait collects |
 |---|---|---|
-| s2-stairs-curbs-30M | `20260910-194856-06c1f5` | curbs: 1–2 steps, 6–14 mm risers; r13's swing weights kept at their bounds |
-| b1b-rubble-warm-30M | `20260910-194856-2285c5` | b1 rerun with the fixed contact budget, swing weights at their bounds |
+| `foot_clearance` | multiplied by a swing mask (airborne **and** foot moving) | nothing — the mask is 0 |
+| `feet_air_time` | at `first_contact`, proportional to time airborne | nothing — a foot that never left never lands |
+| `feet_slip` | penalises sliding **while in contact** | this one does fire, and it favours standing still |
 
-Results follow here and in the ledger (chapter 02) when the benchmarks land.
+That is a bootstrapping failure, not a tuning gap: the terms meant to teach the swing are all silent
+until the swing exists, so no value of them can produce the first one. It also explains why chapter
+06's clearance rescale (×1000) and the ±10 bounds bought only 0.5 mm.
+
+**Before adding anything, check the robot can physically do it.** Sweeping one leg's shoulder and knee
+over the policy envelope with the body at stand height:
+
+| measurement | result |
+|---|---|
+| kinematic ceiling of the foot above the plane | **116 mm** |
+| reached through the real actuators (kp 10, ±0.25 N·m) in 0.5 s | **74 mm** |
+
+The 12 mm target is not a physical limit — six times the requirement is available in half a second.
+The gradient was missing, not the capability.
+
+### `stance_timeout`
+
+A term that pays **before** a swing exists: for each foot, the seconds it has been planted beyond
+`STANCE_MAX_S` (0.3 s, one and a half firmware-trot stride periods) while the robot is **commanded to
+move**. It grows while the foot drags and stops the instant it lifts. It is exactly 0 for a gait that
+already swings, and exactly 0 under a zero command, so the statue task is untouched. Default weight
+0.0, so every existing config is unchanged and the flat golden fixture still passes.
+
+**The counted overdue time is capped at 0.5 s per foot**, and that cap is load-bearing.
+`weighted_reward` clips the weighted total at 0, so a penalty large enough to sink the sum yields a
+flat zero reward with **no gradient anywhere** — strictly worse than no term. Uncapped, a foot planted
+9 s of a 10 s episode scores 8.7 by itself and 34.8 over four feet, burying every positive term at any
+usable weight. Capped, the whole term is at most 2.0 per step, so −0.1 costs about a fifth of a
+typical step's reward.
+
+> **The general trap:** a reward term gated on the behaviour it is meant to teach cannot teach it, at
+> any weight. When a term's share is large and the behaviour is still absent, ask whether the term is
+> *reachable* from the current policy before touching its weight — and measure the mechanical ceiling
+> with an oracle before assuming the policy is at fault.
+
+### s3 and b2 (running)
+
+| run | id | change from its parent |
+|---|---|---|
+| s3-stairs-stance-30M | `20260910-202420-ebde89` | warm from s2; rung raised to 2–3 steps of 10–18 mm; `stance_timeout` −0.1 |
+| b2-rubble-stance-30M | `20260910-202421-f64892` | warm from b1b; **`stance_timeout` −0.1 and nothing else** |
+
+b2's config diff is a single line, so it is a clean single-variable test of the term.
 
 ## Open
 
 - stairs_v1 and rubble_v1 are uncalibrated 0.1.0: freeze the thresholds once a learned policy sets a
-  bar. The `climbs_the_flight` / `descends_the_flight` bars are course geometry, not a measured target.
+  bar. `climbs_the_flight` / `descends_the_flight` are course geometry, not measured targets.
 - **A task change re-applies the task's `config_patch` over the parent.** s1 lost r13's ±10 swing
   weights that way. The same-task guard from chapter 06 does not cover a cross-task warm start;
   decide whether reward weights should ever be reset by a task change, or only terrain and budget.
-- A curriculum rung between "curb" and "flight" may be needed: nothing yet shows the robot can lift
-  its body over an edge at all, only its front feet.
-- The trainer service loads the task catalogue at boot and was restarted on :8009 for this change.
+- `stance_timeout`'s weight is unvalidated: −0.1 is reasoned from the cap and a typical step reward,
+  not measured. If s3/b2 move the swing, sweep it.
+- Nothing yet descends a flight. Going down is a different problem from going up (pitch and vertical
+  speed rather than clearance) and may need its own rung with the `down` profile.
+- **Restarting the trainer service kills any job in flight.** s2's benchmark was orphaned that way; its
+  report was already complete on disk, so the run's state was restored rather than the benchmark rerun.
+  The service loads the config schema and task catalogue at boot, so a new reward field needs a
+  restart: check `/health` jobs first.
 - The NAS container (docs site and agent) is not redeployed: another session holds uncommitted
   GPU-lock changes in the primary checkout and the deploy guard refuses an unidentifiable tree.
