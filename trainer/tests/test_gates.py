@@ -278,3 +278,13 @@ def test_reflection_names_dragging_when_a_heavy_clearance_term_still_leaves_a_su
     refl = _rough_report({"foot_clearance_p50_mm": 0.66}, ctx)["reflection"]
     assert "DRAGGING its feet" in refl and "raise reward.weights.feet_air_time and reward.weights.feet_slip" in refl
     assert "feet_air_time 0.18%" in refl
+
+
+def test_reflection_stops_the_swing_loop_when_the_swing_weights_are_at_their_bounds():
+    """r13 (GLM cycle, 2026-09-10): feet_air_time 10 and feet_slip -10 (the bounds), swing 0.57 mm. Telling the
+    LLM to raise them again would be a loop; the reflection must say the gate needs a design change."""
+    ctx = {"reward_breakdown": {"tracking_lin_vel": 400.0, "foot_clearance": -100.0, "feet_air_time": 45.0, "feet_slip": -22.0},
+           "reward_weights": {"foot_clearance": -2.0, "feet_air_time": 10.0, "feet_slip": -10.0}}
+    refl = _rough_report({"foot_clearance_p50_mm": 0.57}, ctx)["reflection"]
+    assert "AT THEIR BOUNDS" in refl and "STOP spending cycles on this gate" in refl
+    assert "raise reward.weights.feet_air_time" not in refl

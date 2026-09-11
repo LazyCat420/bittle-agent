@@ -1,21 +1,9 @@
 {
-  "opencat_trF@backward_v1": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_backward_v1.gif"
-  },
   "opencat_trF@flat_v1": {
     "distance_m": 0.368,
     "fell": false,
     "frames": 63,
     "gif": "baseline_opencat_trot.gif"
-  },
-  "opencat_trF@house_v1": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1.gif"
   },
   "opencat_trF@rough_v1": {
     "distance_m": 0.255,
@@ -23,220 +11,22 @@
     "frames": 63,
     "gif": "baseline_opencat_trot_rough_v1.gif"
   },
-  "opencat_trF@slope_v1": {
-    "distance_m": 0.276,
+  "20260910-171039-9a4d1b": {
+    "distance_m": 0.377,
     "fell": false,
     "frames": 63,
-    "gif": "baseline_opencat_trot_slope_v1.gif"
+    "gif": "policy_r13-rough-swing-bound-30M.gif"
   },
-  "opencat_trF@spin_v1": {
-    "distance_m": 0.368,
+  "20260910-172154-94dafc": {
+    "distance_m": 0.117,
     "fell": false,
     "frames": 63,
-    "gif": "baseline_opencat_trot_spin_v1.gif"
+    "gif": "policy_r14-rough-budget-terrain-40M.gif"
   },
-  "opencat_trF@statue_v1": {
-    "distance_m": 0.353,
+  "20260910-173522-0d6bc6": {
+    "distance_m": 0.393,
     "fell": false,
     "frames": 63,
-    "gif": "baseline_opencat_trot_statue_v1.gif"
-  },
-  "20260907-135830-42943f": {
-    "distance_m": 0.515,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r1-defaults-40M.gif"
-  },
-  "20260907-142153-d17a72": {
-    "distance_m": 0.598,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r2-energy-fix-15M.gif"
-  },
-  "20260907-165840-e406b4": {
-    "distance_m": 0.553,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r3-energy-x100-warm-10M.gif"
-  },
-  "20260907-192026-85c9be": {
-    "distance_m": 0.505,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r4-flat-parent-critic-v2-40M.gif"
-  },
-  "20260907-193948-30a684": {
-    "distance_m": 0.416,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r5-slope-warm-10M.gif"
-  },
-  "20260907-194643-343fc2": {
-    "distance_m": 0.274,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r9-rough-warm-10M.gif"
-  },
-  "20260907-194644-ea153a": {
-    "distance_m": 0.006,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r7-statue-warm-10M.gif"
-  },
-  "20260907-194644-799782": {
-    "distance_m": 0.049,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r6-spin-warm-10M.gif"
-  },
-  "20260907-194644-907826": {
-    "distance_m": -0.442,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r8-backward-warm-10M.gif"
-  },
-  "20260907-204343-f10da8": {
-    "distance_m": 0.273,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_r10-rough-clearance-20x.gif"
-  },
-  "20260907-223545-768cee": {
-    "distance_m": 0.497,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h0-house-warm-15M.gif"
-  },
-  "20260907-225101-719350": {
-    "distance_m": 0.494,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h0b-house-warm-15M.gif"
-  },
-  "20260907-230139-5a293e": {
-    "distance_m": 0.54,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M.gif"
-  },
-  "20260907-230139-5a293e@flat": {
-    "distance_m": 0.54,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_flat.gif"
-  },
-  "20260907-230139-5a293e@slope_up": {
-    "distance_m": 0.381,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_slope_up.gif"
-  },
-  "20260907-230139-5a293e@slope_down": {
-    "distance_m": 0.4,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_slope_down.gif"
-  },
-  "20260907-230139-5a293e@rough": {
-    "distance_m": 0.28,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_rough.gif"
-  },
-  "20260907-230139-5a293e@rough_slope": {
-    "distance_m": 0.077,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_rough_slope.gif"
-  },
-  "20260907-230139-5a293e@pushed": {
-    "distance_m": 0.532,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_pushed.gif"
-  },
-  "20260907-230139-5a293e@turn": {
-    "distance_m": 0.317,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_turn.gif"
-  },
-  "20260907-230139-5a293e@backward_rough": {
-    "distance_m": -0.341,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_backward_rough.gif"
-  },
-  "20260907-230139-5a293e@statue_rough": {
-    "distance_m": -0.01,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h1-house-track-15M_statue_rough.gif"
-  },
-  "20260907-231254-05b9c3": {
-    "distance_m": 0.535,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h2-house-clearance-15M.gif"
-  },
-  "20260907-232614-ba7f65": {
-    "distance_m": 0.539,
-    "fell": false,
-    "frames": 63,
-    "gif": "policy_h3-house-clearance-rescaled-15M.gif"
-  },
-  "opencat_trF@house_v1/flat": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_flat.gif"
-  },
-  "opencat_trF@house_v1/slope_up": {
-    "distance_m": 0.276,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_slope_up.gif"
-  },
-  "opencat_trF@house_v1/slope_down": {
-    "distance_m": 0.503,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_slope_down.gif"
-  },
-  "opencat_trF@house_v1/rough": {
-    "distance_m": 0.255,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_rough.gif"
-  },
-  "opencat_trF@house_v1/rough_slope": {
-    "distance_m": 0.017,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_rough_slope.gif"
-  },
-  "opencat_trF@house_v1/pushed": {
-    "distance_m": 0.395,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_pushed.gif"
-  },
-  "opencat_trF@house_v1/turn": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_turn.gif"
-  },
-  "opencat_trF@house_v1/backward_rough": {
-    "distance_m": 0.368,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_backward_rough.gif"
-  },
-  "opencat_trF@house_v1/statue_rough": {
-    "distance_m": 0.064,
-    "fell": false,
-    "frames": 63,
-    "gif": "baseline_opencat_trot_house_v1_statue_rough.gif"
+    "gif": "policy_r15-rough-budget-40M-pinned.gif"
   }
 }

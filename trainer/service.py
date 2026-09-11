@@ -90,8 +90,13 @@ def _resolve(req: ValidateRequest) -> tuple[TrainConfig, dict[str, Any]]:
             raise HTTPException(422, {"errors": [f"unknown task {task!r}; known: {sorted(TASKS)}"]})
         if patch.get("task") not in (None, task):
             raise HTTPException(422, {"errors": [f"task_conflict: task={task!r} but config_patch.task={patch['task']!r}"]})
-        # the task's own patch (terrain level etc.) goes UNDER the caller's patch
-        patch = _deep_merge(TASKS[task].config_patch, patch)
+        # The task's own patch (terrain level, reward defaults, budget) goes UNDER the caller's patch --
+        # but ONLY when the base run is not already on this task. A same-task child inherits its parent's
+        # tuned values; re-applying the stock defaults silently reset feet_air_time 10 -> 0.3 on r14
+        # (2026-09-10, found by GLM), which is exactly the "invisible reset" a warm start must not have.
+        same_task = bool(base) and base.get("task") == task
+        task_patch = {"task": task} if same_task else TASKS[task].config_patch
+        patch = _deep_merge(task_patch, patch)
     try:
         cfg = apply_patch(base, patch)
     except ValidationError as exc:

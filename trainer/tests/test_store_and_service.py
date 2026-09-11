@@ -167,3 +167,28 @@ def test_service_tasks_catalogue_reports_prerequisites(client):
     assert t1["flat_walk"]["best_run"] == rid and t1["slope_up"]["suite_version"] == "1.0.0"
     assert t1["rough_walk"]["suite_version"].endswith("-uncalibrated")
     assert {"flat_v1", "rough_v1", "slope_v1", "spin_v1", "statue_v1", "backward_v1"} <= set(client.get("/health").json()["suites"])
+
+
+def test_same_task_child_inherits_the_parent_tuning_instead_of_the_task_defaults(client):
+    """r14 (2026-09-10): task="rough_walk" on a rough_walk parent re-applied the task's stock defaults over
+    the inherited config and silently reset feet_air_time 10 -> 0.3. A same-task warm start keeps the parent's
+    values; the task defaults still apply when the task CHANGES (the rung)."""
+    parent = client.post("/runs", json={"name": "p", "task": "rough_walk",
+                                       "config_patch": {"ppo": {"num_timesteps": 5000},
+                                                        "reward": {"weights": {"feet_air_time": 10.0, "feet_slip": -10.0}}}})
+    assert parent.status_code == 202, parent.text
+    pid = parent.json()["run_id"]
+    client.get(f"/runs/{pid}", params={"wait_s": 10, "until": "trained"})
+    child = client.post("/runs", json={"name": "c", "task": "rough_walk", "base_run_id": pid,
+                                      "config_patch": {"ppo": {"num_timesteps": 6000}}})
+    assert child.status_code == 202, child.text
+    cfg = client.get(f"/runs/{child.json()['run_id']}").json()["config"]
+    assert cfg["reward"]["weights"]["feet_air_time"] == 10.0 and cfg["reward"]["weights"]["feet_slip"] == -10.0
+    assert cfg["task"] == "rough_walk" and cfg["terrain"]["level"] == 2 and cfg["ppo"]["num_timesteps"] == 6000
+    assert not any(d["path"].startswith("reward.weights") for d in child.json()["diff"])
+    # a task CHANGE still lands the new task's defaults (its terrain level and reward switches)
+    rung = client.post("/runs", json={"name": "r", "task": "house_walk", "base_run_id": pid,
+                                     "config_patch": {"ppo": {"num_timesteps": 6000}}})
+    assert rung.status_code == 202, rung.text
+    rcfg = client.get(f"/runs/{rung.json()['run_id']}").json()["config"]
+    assert rcfg["task"] == "house_walk" and rcfg["terrain"]["level"] == 4 and rcfg["reward"]["weights"]["foot_clearance"] == -0.5

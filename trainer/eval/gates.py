@@ -332,11 +332,20 @@ def build_reflection(report: dict[str, Any], metrics: dict[str, Any], context: d
         elif (r["gate"] == "foot_clearance" and r["value"] is not None and float(r["value"]) < 2.0
               and share is not None and share >= 2.0):
             shares = ctx.get("reward_shares_pct") or {}
+            w = ctx.get("reward_weights") or {}
             line += (f". The '{term}' term already carries {share:.1f}% of the reward yet the swing stays under 2 mm: the "
                      f"policy is DRAGGING its feet instead of swinging them, and a term that only scores swings cannot "
-                     f"pay for a swing that never happens. The terms that make a real swing profitable are invisible "
-                     f"(feet_air_time {shares.get('feet_air_time', 0.0):.2f}%, feet_slip {shares.get('feet_slip', 0.0):.2f}%): "
-                     f"raise reward.weights.feet_air_time and reward.weights.feet_slip 10-40x, not foot_clearance again.")
+                     f"pay for a swing that never happens.")
+            at_bound = (float(w.get("feet_air_time", 0.0)) >= 10.0 - 1e-9 and float(w.get("feet_slip", 0.0)) <= -10.0 + 1e-9)
+            if at_bound:
+                line += (f" feet_air_time and feet_slip are already AT THEIR BOUNDS (+10 / -10; shares "
+                         f"{shares.get('feet_air_time', 0.0):.2f}% / {shares.get('feet_slip', 0.0):.2f}%) and the swing did not "
+                         f"come: no config patch can buy it. STOP spending cycles on this gate -- it needs a reward DESIGN "
+                         f"change (a per-swing peak bonus) or a calibrated threshold, which is an operator decision, not a weight.")
+            else:
+                line += (f" The terms that make a real swing profitable are invisible "
+                         f"(feet_air_time {shares.get('feet_air_time', 0.0):.2f}%, feet_slip {shares.get('feet_slip', 0.0):.2f}%): "
+                         f"raise reward.weights.feet_air_time and reward.weights.feet_slip 10-40x, not foot_clearance again.")
         elif share is not None and term and share >= 2.0 and flat_vs_parent:
             line += (f". The '{term}' term already carries {share:.1f}% of the reward and the gate did not move vs the parent: "
                      f"the weight is not the lever -- this needs a longer budget (ppo.num_timesteps 30M: a gait has to be "
