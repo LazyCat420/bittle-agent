@@ -97,21 +97,70 @@ Ranked by what the 50 Hz blind policy can learn from proprioception alone:
 
 ## Runs
 
-Both warm-started from r13 (`20260910-171039-9a4d1b`), 30M steps, task defaults; the task change put
-the swing terms back from r13's ±10 bound to 2 / −2.
+All warm-started from r13 (`20260910-171039-9a4d1b`), the rough_v1 champion, 30M steps each
+(~13 min at 37k steps/s).
 
-| run | id | task | result |
-|---|---|---|---|
-| s1-stairs-warm-30M | `20260910-192939-a61192` | stairs_walk, level 5 | training at the time of writing |
-| b1-rubble-warm-30M | `20260910-192939-ae201b` | rubble_walk, level 6 | queued |
+### s1: the first stairs run stops at the first riser
 
-Results, gate tables and clips follow in this chapter and the ledger (chapter 02) when the benchmarks land.
+| gate | s1 | bar |
+|---|---|---|
+| fall_rate | **0.00** | ≤ 0.10 |
+| climbs_the_flight | 0.009 m | ≥ 0.054 m |
+| descends_the_flight | 0.000 m | ≥ 0.054 m |
+| forward_distance_p50 | 0.193 m | ≥ 0.80 m |
+| progress_ratio | 0.161 | ≥ 0.50 |
+| stumble_rate | **0.00** | ≤ 0.30 |
+| body_clearance | **37 mm** | ≥ 10 mm |
+| servo safety (6 gates) | **all pass** (0.27 W, 3.0 rad/s p99.5, 0.0035 stall) | — |
+
+11/15. Read the per-episode numbers rather than the medians: `stuck_x` is 0.20–0.23 m in 19 of 20
+episodes, and the first riser stands at 0.15 m plus up to 40 mm of spawn jitter. The climb column is
+0.009 m in 13 episodes and 0.018 m in 7 — that is **one foot pair on step 1 with the rear pair still
+on the floor** (the support height is the mean under the four feet), and in the 0.018 cases all four
+feet made it up one step. The robot then stands there for 6.5 s of a 10 s episode.
+
+So the policy is not falling off the stairs or scraping its belly; it simply cannot lift its body over
+an 18 mm edge. That is the same 0.5 mm swing clearance chapter 06 ends on, met by a taller obstacle.
+Two things to change, and s2 changes both: the first ask is too big (18 mm against a 47 mm standing
+height), and the task's `config_patch` reset the parent's swing weights from their ±10 bound to 2 / −2
+when the task changed (the `_resolve` rule from chapter 06 only protects a **same-task** warm start).
+
+### b1: cancelled — the dense field overflowed the contact budget
+
+The first rubble run logged `broadphase overflow - please increase nconmax to 52` on every step it
+reported (4315 lines). The per-world contact budget was a flat 48 for any boxed terrain; 32 rocks at
+7 cm spacing, up to 8 cm across, need more. **Contacts that do not fit are dropped**, which is the
+phantom-rock failure of chapter 06 arriving by a different route — so the run was cancelled rather
+than allowed to finish and report a number.
+
+`gpu_env.contact_budget_per_world` now returns 96 for a dense field (more than 24 boxes, or spacing
+under 9 cm) and for stairs (full-width boxes can sit under all four legs at once), 48 for the
+rough_v1 class, 16 for flat ground; `njmax` follows. The test drives 128 worlds for 150 random-action
+steps on levels 5 and 6 and fails on any overflow line in the captured output. s1's log has none, so
+its benchmark above stands.
+
+**The lesson generalises past this repo:** a solver budget sized for one workload silently degrades
+physics on a denser one, and it announces itself only in stderr that nothing was reading. Any config
+knob that scales with obstacle count needs a test at the densest setting the config allows.
+
+### s2 and b1b (running)
+
+| run | id | change |
+|---|---|---|
+| s2-stairs-curbs-30M | `20260910-194856-06c1f5` | curbs: 1–2 steps, 6–14 mm risers; r13's swing weights kept at their bounds |
+| b1b-rubble-warm-30M | `20260910-194856-2285c5` | b1 rerun with the fixed contact budget, swing weights at their bounds |
+
+Results follow here and in the ledger (chapter 02) when the benchmarks land.
 
 ## Open
 
-- stairs_v1 and rubble_v1 are uncalibrated 0.1.0: freeze thresholds once a learned policy sets a bar.
-- A task change re-applies the task `config_patch` over the parent (s1/b1 lost r13's ±10 swing weights);
-  decide whether a cross-task warm start should keep the parent's tuned reward weights.
-- The trainer service loads tasks at boot; it was restarted on :8009 for this change.
-- The NAS container (docs site + agent) is not redeployed yet: another session holds uncommitted
+- stairs_v1 and rubble_v1 are uncalibrated 0.1.0: freeze the thresholds once a learned policy sets a
+  bar. The `climbs_the_flight` / `descends_the_flight` bars are course geometry, not a measured target.
+- **A task change re-applies the task's `config_patch` over the parent.** s1 lost r13's ±10 swing
+  weights that way. The same-task guard from chapter 06 does not cover a cross-task warm start;
+  decide whether reward weights should ever be reset by a task change, or only terrain and budget.
+- A curriculum rung between "curb" and "flight" may be needed: nothing yet shows the robot can lift
+  its body over an edge at all, only its front feet.
+- The trainer service loads the task catalogue at boot and was restarted on :8009 for this change.
+- The NAS container (docs site and agent) is not redeployed: another session holds uncommitted
   GPU-lock changes in the primary checkout and the deploy guard refuses an unidentifiable tree.
