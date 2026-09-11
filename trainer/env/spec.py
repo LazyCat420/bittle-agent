@@ -49,6 +49,13 @@ STANCE_MAX_S = 0.3
 #: zero reward with no gradient anywhere, which is worse than no term at all. Capped, the whole term is
 #: at most 4 x 0.5 = 2.0 per step, so a weight of -0.1 costs about a fifth of a typical step's reward.
 STANCE_OVERDUE_CAP_S = 0.5
+#: climb_progress is scaled so the ALLOWED weight range can express a useful reward share, the same
+#: problem the foot_clearance rescale fixed (chapter 06). The term sums rise/dt over an episode, which
+#: is total_height_gained / dt: climbing a whole stairs_v1 flight (3 x 18 mm) is only 2.7 m/s-units, so
+#: at the weight bound of 10 it reached 5.4 % of a ~470 episode reward -- and the FIRST measured run
+#: (s5, weight 5) collected 0.7 %, since a policy that climbs 13 mm earns a quarter of that. Scaled x10,
+#: a full flight is worth ~11 % of the episode at weight 2, and the useful weights sit mid-range.
+CLIMB_RATE_SCALE = 10.0
 #: A joint counts as stalled at >= 90% of its torque cap while barely moving.
 STALL_TORQUE_FRACTION = 0.9
 STALL_VEL_RAD_S = 0.1
@@ -188,7 +195,7 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         # 0 on stairs (a staircase is level ground at several heights), so it pays nothing for a climb that
         # is all vertical; this is its stairs twin: the rate the support surface under the feet rises.
         # Exactly 0 on flat ground and on a slope, where the support height never changes.
-        "climb_progress": xp.maximum(q["support_rise"], 0.0) / dt_ref * moving,
+        "climb_progress": xp.maximum(q["support_rise"], 0.0) / dt_ref * CLIMB_RATE_SCALE * moving,
         # joints pinned at the torque cap while not moving: a stalled servo (1.5 A each on the P1S)
         "stall": xp.sum(((q["torques"] >= STALL_TORQUE_FRACTION * q["torque_cap"]) & (xp.abs(q["joint_vel"]) < STALL_VEL_RAD_S)).astype(q["torques"].dtype)),
     }

@@ -404,7 +404,7 @@ def test_climb_progress_pays_for_a_staircase_and_is_zero_on_flat_and_slope():
     rise = 0.018
     q = _q_for_stance([0.1] * 4, [1] * 4)
     up = spec.reward_terms(np, dict(q, support_rise=rise), 0.25, 0.25, 0.047, dt_ref=0.02)
-    assert up["climb_progress"] == pytest.approx(rise / 0.02)      # 0.9 m/s while stepping up a riser
+    assert up["climb_progress"] == pytest.approx(rise / 0.02 * spec.CLIMB_RATE_SCALE)   # 0.9 m/s, scaled
     assert up["slope_progress"] == 0.0                              # the stairs are level: no gravity tilt
     # going DOWN pays nothing (it must never be cheaper to fall off the flight than to walk it)
     down = spec.reward_terms(np, dict(q, support_rise=-rise), 0.25, 0.25, 0.047, dt_ref=0.02)
@@ -440,3 +440,19 @@ def test_climb_progress_is_off_by_default_and_the_cpu_env_measures_a_real_step_u
     assert info.terms["climb_progress"] > 0.0, "the support surface rose but the term paid nothing"
     _, _, _, info2 = env.step(np.zeros(8))
     assert info2.terms["climb_progress"] == 0.0                       # it pays for the RISE, not for height
+
+
+def test_climb_progress_scale_lets_an_allowed_weight_buy_a_real_reward_share():
+    """The scale is a CALIBRATION, so pin what it buys rather than the constant. Climbing a whole
+    stairs_v1 flight (3 x 18 mm) over one episode must be worth roughly a tenth of a typical episode's
+    reward at a mid-range weight -- unscaled it was 2.8 % at weight 5 and could not exceed 5.4 % at the
+    bound, which is the same dead zone the foot_clearance rescale was written to escape."""
+    dt, flight, typical = 0.02, 3 * 0.018, 470.0
+    q = _q_for_stance([0.1] * 4, [1] * 4)
+    per_step = spec.reward_terms(np, dict(q, support_rise=0.018), 0.25, 0.25, 0.047, dt_ref=dt)["climb_progress"]
+    episode_sum = per_step * (flight / 0.018)          # the whole flight, one riser per control step
+    for weight, lo, hi in ((2.0, 0.07, 0.20), (10.0, 0.25, 0.60)):
+        share = episode_sum * weight / (typical + episode_sum * weight)
+        assert lo < share < hi, (weight, share)
+    # and a weight inside the bound must still be able to stay small: the term is linear in the weight
+    assert spec.reward_terms(np, dict(q, support_rise=0.018), 0.25, 0.25, 0.047)["climb_progress"] > 0
