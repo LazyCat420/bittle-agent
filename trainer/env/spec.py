@@ -129,7 +129,7 @@ def target_saturation(xp, target_deg, lo, hi):
 
 
 def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigma: float,
-                 base_height_target: float) -> dict[str, Any]:
+                 base_height_target: float, dt_ref: float = 0.02) -> dict[str, Any]:
     """Raw (unweighted) reward terms. Keys match ``RewardWeights`` fields.
 
     ``q`` keys: cmd(3), local_linvel(3), gyro(3), global_linvel(3), global_angvel(3),
@@ -137,6 +137,7 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
     four feet, so a stair edge is half a riser, not a step function], action(8), last_action(8), torques(8),
     joint_vel(8), torque_cap(8), target_norm(8) [0..1 saturation], target_deg(8),
     feet_air_time(4), feet_stance_time(4), first_contact(4), contact(4), feet_vel_xy(4,2), foot_clearance(4),
+    support_rise (m gained under the feet since the last control step),
     limb_contact(8), uphill_xy(2).
 
     Terrain-aware terms are exact no-ops on flat ground: ``terrain_h`` is 0,
@@ -183,6 +184,11 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         "stance_timeout": xp.sum(xp.clip(q["feet_stance_time"] - STANCE_MAX_S, 0.0, STANCE_OVERDUE_CAP_S)) * moving,
         # height gained per second up the slope; exactly 0 on flat ground
         "slope_progress": xp.maximum(xp.sum(q["global_linvel"][:2] * q["uphill_xy"]), 0.0) * moving,
+        # height gained per second up a STAIRCASE. slope_progress reads the gravity tilt, which is exactly
+        # 0 on stairs (a staircase is level ground at several heights), so it pays nothing for a climb that
+        # is all vertical; this is its stairs twin: the rate the support surface under the feet rises.
+        # Exactly 0 on flat ground and on a slope, where the support height never changes.
+        "climb_progress": xp.maximum(q["support_rise"], 0.0) / dt_ref * moving,
         # joints pinned at the torque cap while not moving: a stalled servo (1.5 A each on the P1S)
         "stall": xp.sum(((q["torques"] >= STALL_TORQUE_FRACTION * q["torque_cap"]) & (xp.abs(q["joint_vel"]) < STALL_VEL_RAD_S)).astype(q["torques"].dtype)),
     }

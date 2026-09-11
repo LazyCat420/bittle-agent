@@ -59,6 +59,9 @@ class RewardWeights(_Strict):
     #: penalty per second a foot stays planted past spec.STANCE_MAX_S while commanded to move; the one
     #: swing term that pays BEFORE a swing exists (see spec.reward_terms). 0.0 = off, flat runs unchanged.
     stance_timeout: float = Field(0.0, ge=-10.0, le=0.0)
+    #: reward per m/s the support surface under the feet RISES: slope_progress's twin for stairs, where
+    #: the gravity tilt (and so slope_progress) is exactly 0. 0.0 = off, flat and slope runs unchanged.
+    climb_progress: float = Field(0.0, ge=0.0, le=10.0)
 
 
 class RewardConfig(_Strict):

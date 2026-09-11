@@ -180,7 +180,7 @@ def test_foot_clearance_term_is_order_one_for_a_shuffling_swing():
          "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
          "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
          "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
-         "feet_stance_time": np.zeros(4),
+         "feet_stance_time": np.zeros(4), "support_rise": 0.0,
          "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
     terms = spec.reward_terms(np, q, 0.01, 0.25, 0.048)
     per_foot = 1000.0 * spec.FOOT_CLEARANCE_TARGET ** 2
@@ -196,7 +196,7 @@ def test_foot_clearance_term_is_one_sided():
             "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
             "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
             "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
-         "feet_stance_time": np.zeros(4),
+         "feet_stance_time": np.zeros(4), "support_rise": 0.0,
             "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
     high = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.020)), 0.01, 0.25, 0.048)["foot_clearance"]
     exact = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.012)), 0.01, 0.25, 0.048)["foot_clearance"]
@@ -328,7 +328,7 @@ def _q_for_stance(stance, contact, cmd=(0.12, 0.0, 0.0)):
             "global_angvel": np.zeros(3), "up_world": np.array([0.0, 0.0, 1.0]), "torso_z": 0.047, "terrain_h": 0.0,
             "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
             "torque_cap": np.ones(8), "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(),
-            "feet_air_time": np.zeros(4), "feet_stance_time": np.asarray(stance, dtype=float),
+            "feet_air_time": np.zeros(4), "feet_stance_time": np.asarray(stance, dtype=float), "support_rise": 0.0,
             "first_contact": np.zeros(4), "contact": np.asarray(contact, dtype=float),
             "feet_vel_xy": np.zeros((4, 2)), "foot_clearance": np.zeros(4), "limb_contact": np.zeros(8),
             "uphill_xy": np.zeros(2)}
@@ -395,3 +395,48 @@ def test_stance_timeout_is_capped_so_it_cannot_flatten_the_reward_to_the_clip_fl
     total = spec.weighted_reward(np, worst, {"stance_timeout": -0.1, "tracking_lin_vel": 1.5}, 0.02)
     assert 0.0 < float(total) < 1.5, float(total)
     assert float(spec.weighted_reward(np, worst, {"stance_timeout": -0.1}, 0.02)) == 0.0  # alone it clips
+
+
+def test_climb_progress_pays_for_a_staircase_and_is_zero_on_flat_and_slope():
+    """slope_progress reads the gravity tilt, which is exactly 0 on stairs -- a staircase is level ground
+    at several heights -- so a climb earns nothing from it. climb_progress is its stairs twin: the RATE
+    the support surface under the feet rises, positive only, and only while commanded to move."""
+    rise = 0.018
+    q = _q_for_stance([0.1] * 4, [1] * 4)
+    up = spec.reward_terms(np, dict(q, support_rise=rise), 0.25, 0.25, 0.047, dt_ref=0.02)
+    assert up["climb_progress"] == pytest.approx(rise / 0.02)      # 0.9 m/s while stepping up a riser
+    assert up["slope_progress"] == 0.0                              # the stairs are level: no gravity tilt
+    # going DOWN pays nothing (it must never be cheaper to fall off the flight than to walk it)
+    down = spec.reward_terms(np, dict(q, support_rise=-rise), 0.25, 0.25, 0.047, dt_ref=0.02)
+    assert down["climb_progress"] == 0.0
+    # flat ground and a standing robot are exact no-ops
+    assert spec.reward_terms(np, q, 0.25, 0.25, 0.047)["climb_progress"] == 0.0
+    still = _q_for_stance([0.1] * 4, [1] * 4, cmd=(0.0, 0.0, 0.0))
+    assert spec.reward_terms(np, dict(still, support_rise=rise), 0.25, 0.25, 0.047)["climb_progress"] == 0.0
+    # the rate is per SECOND: the same riser crossed at 25 Hz scores half as much per step
+    slow = spec.reward_terms(np, dict(q, support_rise=rise), 0.25, 0.25, 0.047, dt_ref=0.04)
+    assert slow["climb_progress"] == pytest.approx(up["climb_progress"] / 2)
+
+
+def test_climb_progress_is_off_by_default_and_the_cpu_env_measures_a_real_step_up():
+    """Default weight 0 keeps every existing config unchanged; and the support_rise the term reads is real
+    bookkeeping: a robot lifted onto a stair platform between two steps reports a positive rise once."""
+    from trainer.config import RewardWeights, apply_patch
+    from trainer.env.cpu_env import BittleCpuEnv
+
+    assert RewardWeights().climb_progress == 0.0
+    env = BittleCpuEnv(apply_patch(None, {"terrain": {"level": 5, "stair_steps": [3, 3], "stair_rise_m": [0.018, 0.018],
+                                                      "stair_profile": "up", "spawn_jitter_m": 0.0},
+                                          "dr": {"enabled": False}}), envelope_tier="tested", seed=0)
+    env.reset(command=np.array([0.12, 0.0, 0.0]))
+    rises = []
+    for _ in range(5):
+        _, _, _, info = env.step(np.zeros(8))
+        rises.append(info.terms["climb_progress"])
+    assert all(r == 0.0 for r in rises)                              # standing on the runway: no rise
+    env.data.qpos[0] += 0.19                                          # teleport the whole robot onto step 1
+    env.data.qpos[2] += 0.018
+    _, _, _, info = env.step(np.zeros(8))
+    assert info.terms["climb_progress"] > 0.0, "the support surface rose but the term paid nothing"
+    _, _, _, info2 = env.step(np.zeros(8))
+    assert info2.terms["climb_progress"] == 0.0                       # it pays for the RISE, not for height

@@ -140,6 +140,7 @@ class BittleCpuEnv:
         self.action = np.zeros(8)
         self.feet_air_time = np.zeros(4)
         self.feet_stance_time = np.zeros(4)
+        self.prev_support_h = 0.0
         self.last_contact = np.zeros(4, dtype=bool)
         self.body_contact_steps = 0
         self.t = 0
@@ -195,7 +196,7 @@ class BittleCpuEnv:
 
         q = self._quantities(torques, contact, first_contact)
         terms = spec.reward_terms(np, q, self.cfg.reward.tracking_sigma, self.cfg.reward.ang_tracking_sigma,
-                                  self.cfg.reward.base_height_target)
+                                  self.cfg.reward.base_height_target, dt_ref=self.cfg.control_dt)
         weights = self.cfg.reward.weights.model_dump()
         reward = float(spec.weighted_reward(np, terms, weights, self.cfg.control_dt))
         done = bool(spec.termination(np, q["up_z"], q["torso_z"], self.body_contact_steps, q["terrain_h"]))
@@ -247,6 +248,11 @@ class BittleCpuEnv:
         feet_pos = d.geom_xpos[self.foot_geom_ids]
         boxes = self._boxes()
         limb = np.array([float(self.sensor(n)[0] > 0) for n in self.limb_found]) if self.limb_found else np.zeros(8)
+        # the support surface under the feet, and how far it rose since the last control step (climb_progress).
+        # _quantities runs exactly once per step, so advancing the clock here is safe.
+        support_h = float(tr.support_height(np, feet_pos, *boxes))
+        support_rise = support_h - self.prev_support_h
+        self.prev_support_h = support_h
         return {
             "up_world": self.sensor("torso_upvector"),
             # the torso's height reference: mean terrain height under the FEET (continuous across a stair edge)
@@ -271,6 +277,7 @@ class BittleCpuEnv:
             "target_deg": self.target_deg,
             "feet_air_time": self.feet_air_time,
             "feet_stance_time": self.feet_stance_time,
+            "support_rise": support_rise,
             "first_contact": first_contact.astype(np.float64),
             "contact": contact.astype(np.float64),
             "feet_vel_xy": feet_vel[:, :2],

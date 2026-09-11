@@ -226,6 +226,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "act": jp.zeros(8),
             "feet_air_time": jp.zeros(4),
             "feet_stance_time": jp.zeros(4),
+            "prev_support_h": jp.float32(0.0),
             "last_contact": jp.zeros(4, dtype=bool),
             "body_contact_steps": jp.int32(0),
             "step": jp.int32(0),
@@ -298,12 +299,13 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "target_deg": target,
             "feet_air_time": feet_air_time,
             "feet_stance_time": feet_stance_time,
+            "support_rise": tr.support_height(jp, feet_pos, *boxes) - info["prev_support_h"],
             "first_contact": first_contact.astype(jp.float32),
             "contact": contact.astype(jp.float32),
             "feet_vel_xy": data.sensordata[self._foot_vel][:, :2],
         }
         terms = spec.reward_terms(jp, q, self.cfg.reward.tracking_sigma, self.cfg.reward.ang_tracking_sigma,
-                                  self.cfg.reward.base_height_target)
+                                  self.cfg.reward.base_height_target, dt_ref=self.dt)
         reward = spec.weighted_reward(jp, terms, self._weights, self.dt)
         done = spec.termination(jp, q["up_z"], q["torso_z"], body_steps, q["terrain_h"])
 
@@ -318,6 +320,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         info["act"] = act
         info["feet_air_time"] = feet_air_time * (~contact)
         info["feet_stance_time"] = feet_stance_time * contact
+        info["prev_support_h"] = tr.support_height(jp, feet_pos, *boxes)
         info["last_contact"] = contact
         info["body_contact_steps"] = body_steps
         info["step"] = info["step"] + 1
