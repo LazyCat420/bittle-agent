@@ -1,6 +1,11 @@
 # Stairs suite: a fixed flight of 3 steps UP (18 mm risers -- the app's mini-stairs preset -- 80 mm treads),
 # a 0.30 m landing, then 3 steps DOWN, 0.60 m wide, level gravity, first riser 0.15 m ahead of the spawn.
-# The whole course is 0.78 m long; 10 s at 0.12 m/s is 1.2 m, so a policy that climbs it has runway left.
+# The whole course is 0.78 m long. MEASURED 2026-09-10 (s5b): a policy that climbs the flight is still on
+# the landing when a 10 s episode ends -- every one of the 9 episodes that reached the top ran out of time
+# between x = 0.40 and 0.60 m, with the descent starting at 0.69 m. Climbing costs time, so 0.78 m at a
+# commanded 0.12 m/s does not fit in 10 s, and `descends_the_flight` was unreachable for reasons that had
+# nothing to do with the policy -- the same defect as an uncalibrated threshold that fails the winner
+# (chapter 03). 20 s covers the course with runway to spare (2.4 m of commanded travel).
 # Seeds differ only in the spawn offset along the runway (spawn_jitter_m), so 20 episodes hit the first
 # riser at different points in the gait cycle. Standing height is 47 mm: three 18 mm risers total 54 mm,
 # more than the body height, and the stance is 105 mm front-to-rear, so mid-flight the front and rear feet
@@ -10,12 +15,12 @@
 # climb / descent bars are the course geometry; distance and progress are design targets; freeze at 1.0.0
 # once a learned policy shows what is achievable.
 suite: stairs_v1
-version: 0.1.0-uncalibrated
+version: 0.2.0-uncalibrated
 include: [_servo_safety]
 protocol:
   n_episodes: 20
   seed_start: 0
-  episode_seconds: 10.0
+  episode_seconds: 20.0
   command: [0.12, 0.0, 0.0]
   model: bittle_cpu_terrain.xml
   dr: nominal
@@ -50,14 +55,14 @@ gates:
     threshold: 0.054
     unit: m
     term: base_height
-    hint: "median height descended after the landing; 0 means it never reached the top or stopped on the landing; a partial value means it fell or froze on the way down (orientation / lin_vel_z)"
+    hint: "median height descended after the landing; 0 means it never reached the top or stopped on the landing (check climb_max_p50_m and the per-episode distance: before 0.2.0 the episode ended while the robot was still on the landing); a partial value means it fell or froze on the way down (orientation / lin_vel_z)"
   - name: forward_distance_p50
     metric: forward_distance_p50
     op: ">="
     threshold: 0.80
     unit: m
     term: tracking_lin_vel
-    hint: "the course is 0.78 m long: this bar means it walked OFF the far end; ideal is 1.2 m at 0.12 m/s for 10 s"
+    hint: "the course is 0.78 m long: this bar means it walked OFF the far end; ideal is 2.4 m at 0.12 m/s for 20 s"
   - name: progress_ratio
     metric: progress_ratio
     op: ">="
