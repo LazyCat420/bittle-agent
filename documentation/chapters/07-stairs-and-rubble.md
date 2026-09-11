@@ -210,29 +210,75 @@ typical step's reward.
 > *reachable* from the current policy before touching its weight — and measure the mechanical ceiling
 > with an oracle before assuming the policy is at fault.
 
-### s3 and b2 (running)
+### What the term actually did: five runs, one variable at a time
+
+The first two attempts were not clean tests and are recorded as such. **s3** raised the terrain rung
+*and* switched the term on, so its regression (0.11 m against s2's 0.275 m) cannot be attributed to
+either; setting it up as a controlled test was an error. **s3 and b2 were also dosed far too low** —
+the training curve shows `stance_timeout` collecting −10.7 per episode against a total reward of 453,
+a **2.4 % share**, and the trainer's own rule is that anything under ~2 % is invisible to the
+optimiser. b2, a genuinely single-variable run at −0.1, changed nothing measurable:
+
+| rubble arm | distance | swing clearance | stalled / episode | falls | gates |
+|---|---|---|---|---|---|
+| b1b — no term | 0.079 m | 0.222 mm | 8.8 s | 0.00 | 11/15 |
+| b2 — −0.1 (2.7 % share) | 0.088 m | 0.181 mm | 7.7 s | 0.00 | 11/15 |
+| **b3 — −0.5** | **0.188 m** | **0.743 mm** | **0.0 s** | 0.25 | 10/15 |
+
+At −0.5 the term reaches a 9 % share and the behaviour changes: **2.4× the distance, 3.3× the swing
+clearance, and the stalls disappear entirely** — 8.8 s of standing still per episode becomes 0.0 s.
+The energy proxy rises from 0.16 W to 1.18 W, which is the honest signature of a robot that has
+started doing work instead of standing on a rock. It now also falls in a quarter of episodes, which
+costs it a gate: having stopped freezing, it meets the 20 mm rubble at speed and goes over.
+
+On stairs, with s2's terrain held **exactly** fixed and only the weight changed:
+
+| stairs arm | distance | climb p50 | worst episode's climb | reached the top | falls |
+|---|---|---|---|---|---|
+| s2 — no term | 0.275 m | 0.032 m | 0.004 m | 2/20 | 0.10 |
+| **s4 — −0.5** | 0.292 m | 0.034 m | **0.027 m** | **4/20** | **0.00** |
+
+The medians barely move; the **floor** rises sharply. Every episode now clears at least a step and a
+half instead of some barely leaving the ground, the top is reached twice as often, and the falls are
+gone. `stance_timeout` buys consistency and safety on stairs, and buys motion itself on rubble.
+
+> **The dose is the experiment.** The same term at −0.1 and at −0.5 is not a weak and a strong version
+> of one result — it is a null and a positive. Read a term's reward *share* from the training curve
+> before concluding anything from a run that carries it.
+
+## Nothing was paying for the climb
+
+`slope_progress` rewards height gained by projecting velocity onto the uphill direction, which it
+derives from the **gravity tilt**. A staircase is level ground at several heights: its gravity points
+straight down, `uphill_xy` is exactly 0, and the term is identically 0 on every stairs protocol. The
+task asks the robot to climb and **no term in the reward paid for climbing**.
+
+`climb_progress` is the missing twin: the rate at which the support surface under the four feet rises,
+positive only (falling off the flight must never pay), only while commanded to move, and expressed per
+second so 25 Hz and 50 Hz agree. It is exactly 0 on flat ground and on a slope, where the support
+height never changes, and its default weight is 0.
+
+### Running
 
 | run | id | change from its parent |
 |---|---|---|
-| s3-stairs-stance-30M | `20260910-202420-ebde89` | warm from s2; rung raised to 2–3 steps of 10–18 mm; `stance_timeout` −0.1 |
-| b2-rubble-stance-30M | `20260910-202421-f64892` | warm from b1b; **`stance_timeout` −0.1 and nothing else** |
-
-b2's config diff is a single line, so it is a clean single-variable test of the term.
+| s5-stairs-climb-progress-30M | queued | warm from s4; `climb_progress` 5.0 and nothing else |
 
 ## Open
 
-- stairs_v1 and rubble_v1 are uncalibrated 0.1.0: freeze the thresholds once a learned policy sets a
-  bar. `climbs_the_flight` / `descends_the_flight` are course geometry, not measured targets.
-- **A task change re-applies the task's `config_patch` over the parent.** s1 lost r13's ±10 swing
-  weights that way. The same-task guard from chapter 06 does not cover a cross-task warm start;
-  decide whether reward weights should ever be reset by a task change, or only terrain and budget.
-- `stance_timeout`'s weight is unvalidated: −0.1 is reasoned from the cap and a typical step reward,
-  not measured. If s3/b2 move the swing, sweep it.
+- **b3 trades stalling for falling** (0.00 → 0.25 fall rate on 20 mm rubble). That is the next rung's
+  problem, not a reason to back the weight off: a robot that moves and sometimes falls is a better
+  starting point than one that never moves. Raise `orientation` / `base_height` from b3.
+- stairs_v1 and rubble_v1 remain uncalibrated 0.1.0; `climbs_the_flight` / `descends_the_flight` are
+  course geometry, not measured targets.
 - Nothing yet descends a flight. Going down is a different problem from going up (pitch and vertical
-  speed rather than clearance) and may need its own rung with the `down` profile.
-- **Restarting the trainer service kills any job in flight.** s2's benchmark was orphaned that way; its
-  report was already complete on disk, so the run's state was restored rather than the benchmark rerun.
-  The service loads the config schema and task catalogue at boot, so a new reward field needs a
-  restart: check `/health` jobs first.
-- The NAS container (docs site and agent) is not redeployed: another session holds uncommitted
-  GPU-lock changes in the primary checkout and the deploy guard refuses an unidentifiable tree.
+  speed rather than clearance) and likely needs its own rung with the `down` profile.
+- `climb_progress` at 5.0 is reasoned, not measured: one 18 mm riser crossed in a control step scores
+  0.9 m/s, so 5.0 makes a real climb worth a few steps of tracking. Read its share from the curve.
+- **A task change re-applies the task's `config_patch` over the parent** (s1 lost r13's ±10 swing
+  weights). The same-task guard from chapter 06 does not cover a cross-task warm start.
+- **Restarting the trainer service kills any job in flight**; s2's benchmark was orphaned that way and
+  its state restored by hand from a complete report. A new reward field needs a restart, so wait for
+  `/health` to show no running or queued jobs first.
+- The NAS container is not redeployed: another session holds uncommitted GPU-lock changes in the
+  primary checkout and the deploy guard refuses an unidentifiable tree.
