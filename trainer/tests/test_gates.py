@@ -302,3 +302,26 @@ def test_best_episode_seed_prefers_the_longest_non_fallen_primary_episode():
     assert best_episode_seed(rep) == 2
     assert best_episode_seed({"episodes": []}) is None
     assert best_episode_seed({"episodes": [{"seed": 7, "distance_x": 0.1, "fell": True}]}) == 7
+
+
+def test_no_gate_threshold_sits_at_a_ceiling_its_own_protocol_makes_unreachable():
+    """A threshold set to the exact maximum a protocol allows cannot be passed by a robot that does the
+    task perfectly: 3 x 0.018 is 0.05399999999999999 in binary floating point, so a 0.054 bar failed a
+    policy that climbed the whole flight (and descended it) in every episode. Derive each ceiling from
+    the protocol geometry and require the bar to sit strictly below it, with room for float error."""
+    for name in list_suites():
+        s = load_suite(name)
+        for proto in (s.get("scenes") or [suite_protocol(s)]):
+            t = {**(suite_protocol(s).get("terrain") or {}), **(proto.get("terrain") or {})}
+            if t.get("kind") != "stairs":
+                continue
+            ceiling = int(t["stair_steps"]) * float(t["stair_rise_m"])
+            for g in s["gates"]:
+                if g["metric"] not in ("climb_max_p50_m", "descent_p50_m"):
+                    continue
+                assert g["op"] == ">=", (name, g["name"])
+                assert g["threshold"] <= ceiling - 1e-9, (
+                    f"{name}/{g['name']}: bar {g['threshold']} is at or above the geometric ceiling {ceiling!r}")
+                # and it must still MEAN the whole flight: one step short has to fail it
+                one_short = (int(t["stair_steps"]) - 1) * float(t["stair_rise_m"])
+                assert g["threshold"] > one_short, (name, g["name"], one_short)

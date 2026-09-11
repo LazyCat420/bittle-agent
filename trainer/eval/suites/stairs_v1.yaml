@@ -14,8 +14,14 @@
 # riser; replay it with `python -m trainer.eval.baselines --suite stairs_v1` and read runs/baselines/). The
 # climb / descent bars are the course geometry; distance and progress are design targets; freeze at 1.0.0
 # once a learned policy shows what is achievable.
+# 0.2.1: the climb / descent thresholds were the EXACT geometric ceiling (3 x 18 mm), and 3 * 0.018 in
+# binary floating point is 0.05399999999999999 -- just under the 0.054 written here. s5b climbed the whole
+# flight in 19 of 20 episodes and descended it in 20 of 20, and both gates read FAIL by 1e-17. A threshold
+# set to the exact maximum a task allows cannot be passed by a robot that does the task perfectly, so both
+# now sit one float-safe notch below the ceiling: 0.053 still means "the whole flight" (missing one step
+# lands at 0.036).
 suite: stairs_v1
-version: 0.2.0-uncalibrated
+version: 0.2.1-uncalibrated
 include: [_servo_safety]
 protocol:
   n_episodes: 20
@@ -45,14 +51,14 @@ gates:
   - name: climbs_the_flight
     metric: climb_max_p50_m
     op: ">="
-    threshold: 0.054
+    threshold: 0.053
     unit: m
     term: foot_clearance
-    hint: "median highest level reached; 3 x 18 mm = 0.054 m is the top landing. Stuck below one riser (0.018): the swing foot never clears the edge -- raise foot_clearance / feet_air_time; stuck at 0.036: the rear legs cannot follow"
+    hint: "median highest level reached; 3 x 18 mm = 0.054 m is the top landing and 0.053 is the float-safe bar for it. Stuck below one riser (0.018): the swing foot never clears the edge -- raise foot_clearance / feet_air_time; stuck at 0.036: the rear legs cannot follow"
   - name: descends_the_flight
     metric: descent_p50_m
     op: ">="
-    threshold: 0.054
+    threshold: 0.053
     unit: m
     term: base_height
     hint: "median height descended after the landing; 0 means it never reached the top or stopped on the landing (check climb_max_p50_m and the per-episode distance: before 0.2.0 the episode ended while the robot was still on the landing); a partial value means it fell or froze on the way down (orientation / lin_vel_z)"
