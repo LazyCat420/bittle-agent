@@ -208,3 +208,40 @@ def test_rollout_best_seed_and_field_are_served(client):
     assert len(body["source"]["field"]["boxes"]) == 24 and "best" in body["source"]
     assert client.get(f"/runs/{rid}/rollout", params={"seed": "0"}).status_code == 200
     assert client.get(f"/runs/{rid}/rollout", params={"seed": "x"}).status_code == 422
+
+
+def test_list_runs_sorted_by_when_they_finished(store):
+    """The dashboard's default order. Newest FINISHED first, with anything still in flight pinned above
+    the finished runs: a queued run is the one an operator is waiting on, and a 'done' run from an hour
+    ago must never outrank the one that landed a minute ago just because it scored better."""
+    ids = []
+    for i in range(3):
+        rid = store.create({}, name=f"r{i}", notes=f"attempt {i}")
+        store.update_state(rid, status="done")
+        store.write_benchmark(rid, "flat_v1", "1.0.0", {"score": 10 - i, "gates_passed": 1, "gates_total": 2,
+                                                        "suite_version": "1.0.0", "metrics": {}})
+        ids.append(rid)
+    # three runs finishing inside the same second must still come back newest-first: the stamps carry
+    # milliseconds for exactly this reason (a run id's suffix is random, so it cannot order them)
+    rows = store.list_runs(sort="finished")
+    newest_first = [r["run_id"] for r in rows]
+    assert newest_first == ids[::-1], newest_first
+    assert len({r["finished"][:19] for r in rows}) == 1, "no longer the same-second case this pins"
+    assert len({r["finished"] for r in rows}) == 3, "the finish stamps must be distinguishable"
+    # the score order is the opposite here, so the two sorts are genuinely different
+    assert [r["run_id"] for r in store.list_runs(sort="score")] == ids
+    # a run still training outranks every finished one, whenever it was submitted
+    live = store.create({}, name="live")
+    store.update_state(live, status="training")
+    assert store.list_runs(sort="finished")[0]["run_id"] == live
+    # every row carries the finish stamp and the note saying what the run was trying
+    row = next(r for r in store.list_runs(sort="finished") if r["run_id"] == ids[0])
+    assert row["finished"] and row["notes"] == "attempt 0"
+
+
+def test_summary_carries_the_attempt_note_and_finish_time(store):
+    rid = store.create({}, name="n", notes="raise the swing weight and see if the gait lifts")
+    assert store.summary(rid)["notes"].startswith("raise the swing")
+    assert store.summary(rid)["finished"] is None          # not finished yet: the dashboard shows it in flight
+    store.update_state(rid, status="done")
+    assert store.summary(rid)["finished"]

@@ -223,7 +223,7 @@ def list_tasks() -> dict[str, Any]:
 
 
 @app.get("/runs")
-def list_runs(sort: Literal["created", "score"] = "created", limit: int = Query(20, ge=1, le=200),
+def list_runs(sort: Literal["created", "score", "finished"] = "created", limit: int = Query(20, ge=1, le=200),
               suite: str | None = None) -> dict[str, Any]:
     rows = store.list_runs(sort=sort, limit=limit, suite=suite)
     bsuite = suite or "flat_v1"

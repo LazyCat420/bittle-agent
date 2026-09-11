@@ -593,6 +593,29 @@
   .td-ok { color: var(--sim); } .td-bad { color: var(--real); } .td-warn { color: var(--warn); } .td-busy { color: var(--accent); }
   .td-live { color: var(--warn); font-weight: 700; }
   .td-tasks { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* "what the trainer is doing right now" strip: the GPU runs one job at a time, so a queued run is
+     waiting its turn rather than stuck -- the strip says whose turn it is and what is next. */
+  .td-now { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 2px; font-size: 12px; }
+  .td-now:empty { display: none; }
+  .td-now span { border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; background: var(--panel-sub); }
+  .td-now .td-now-run { border-color: var(--warn); color: var(--warn); animation: tdPulse 1.6s infinite; }
+  .td-now .td-now-next { color: var(--muted); }
+  .td-now .td-now-idle { color: var(--muted); }
+  .td-now .td-muted { border: none; background: none; padding: 0; }
+  /* the hypothesis behind a run: its submit note, else the task goal. Truncated in the table (full text
+     in the title attribute), shown in full in the detail pane. */
+  .td-attempt { color: var(--muted); font-size: 11.5px; line-height: 1.45; margin-top: 3px; max-width: 52ch;
+                display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .td-attempt-k { color: var(--text); opacity: .75; font-weight: 600; margin-right: 5px; }
+  .td-attempt-full { max-width: none; margin: 6px 0; padding: 7px 10px; background: var(--panel-sub);
+                     border-left: 2px solid var(--border-highlight); border-radius: 4px;
+                     display: block; -webkit-line-clamp: none; overflow: visible; }
+  .td-attempt-full .td-attempt-k { display: block; margin: 0 0 3px; font-size: 10.5px; letter-spacing: .04em;
+                                   text-transform: uppercase; }
+  .td-ord { text-align: right; font-variant-numeric: tabular-nums; width: 2.2em; }
+  .td-when { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .td-newest { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--sim);
+               border: 1px solid var(--sim); border-radius: 999px; padding: 0 5px; margin-left: 5px; }
   .td-task { background: var(--panel-sub); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 6px 10px; font-size: 12px; cursor: pointer; min-width: 180px; }
   .td-task:hover { border-color: var(--border-highlight); }
   .td-task-blocked { opacity: .7; }

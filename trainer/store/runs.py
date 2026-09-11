@@ -34,7 +34,11 @@ STATUSES = ("queued", "training", "trained", "benchmarking", "done", "failed", "
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    """MILLISECOND resolution on purpose: the dashboard orders runs by when they finished, and two runs
+    that finish inside the same second are otherwise tied with nothing meaningful to break the tie (a
+    run id's suffix is random, not a sequence). ISO-8601 still sorts lexicographically, and a stamp
+    written at the old second resolution sorts first within its second, which is harmless."""
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def new_run_id() -> str:
@@ -213,6 +217,10 @@ class RunStore:
             "name": st.get("name"),
             "status": st.get("status"),
             "created": st.get("created"),
+            # when the run actually FINISHED (its benchmark landed), and the operator's own note saying
+            # what this run was trying to find out -- both are what the dashboard orders and explains by
+            "finished": st.get("finished"),
+            "notes": st.get("notes") or "",
             "parent": st.get("parent"),
             "task": self.run_task(run_id),
             "suite": suite,
@@ -226,9 +234,16 @@ class RunStore:
             "error": st.get("error"),
         }
 
+    #: sort=finished puts the most recently COMPLETED run first and keeps anything still running or
+    #: queued at the very top (they have no finish time yet but are the runs an operator is watching).
+    SORTS = ("created", "score", "finished")
+
     def list_runs(self, *, sort: str = "created", limit: int = 20, suite: str | None = None) -> list[dict[str, Any]]:
         """``suite`` filters to runs judged on that suite. Scores from different suites are NOT
-        comparable, so a score sort without a suite groups by (suite, version) first."""
+        comparable, so a score sort without a suite groups by (suite, version) first.
+
+        ``sort``: ``created`` (newest submitted), ``score`` (the leaderboard), ``finished`` (newest
+        completed first, with in-flight runs pinned above them)."""
         rows = []
         for d in self.root.iterdir():
             if d.is_dir() and (d / "state.json").is_file():
@@ -241,6 +256,13 @@ class RunStore:
         if sort == "score":
             rows.sort(key=lambda r: (r["suite"] or "", r["suite_version"] or "", (r["gates_passed"] or 0),
                                      (r["score"] or -1e9), (r["dist_p50"] or 0)), reverse=True)
+        elif sort == "finished":
+            busy = {"queued", "training", "benchmarking", "trained"}
+            # the timestamps have SECOND resolution, so two runs finishing in the same second tie; the
+            # run id starts with its creation timestamp, which breaks the tie as "newer run first"
+            # rather than leaving the order to however the directory happened to be read
+            rows.sort(key=lambda r: (r["status"] in busy, r["finished"] or r["created"] or "", r["run_id"]),
+                      reverse=True)
         else:
             rows.sort(key=lambda r: r["created"] or "", reverse=True)
         if not suite:

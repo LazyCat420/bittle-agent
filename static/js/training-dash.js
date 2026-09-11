@@ -9,6 +9,35 @@
 
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? '—' : Number(v).toFixed(d);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** "4 min ago" / "2 h ago" / "yesterday" — the leaderboard is ordered by this, so it has to be readable. */
+function ago(iso) {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return `${Math.round(s)}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)} min ago`;
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} d ago`;
+}
+
+/** What a run was TRYING to do, in one line: its own note, else its task goal, else nothing.
+ *  The note is written when the run is submitted and is the only record of the hypothesis. */
+function attempt(run, tasks) {
+  if (run.notes) return run.notes;
+  const t = (tasks || []).find(x => x.task === run.task);
+  return t ? t.goal : '';
+}
+
+/** First sentence (or first 150 chars) of the attempt note, for the collapsed row. */
+function attemptShort(text, max = 150) {
+  const one = String(text || '').replace(/\s+/g, ' ').trim();
+  if (one.length <= max) return one;
+  const cut = one.slice(0, max);
+  const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '));
+  return (stop > 60 ? cut.slice(0, stop + 1) : cut.trimEnd() + '…');
+}
 const PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#a78bfa', '#22d3ee', '#f472b6', '#84cc16', '#fb923c', '#e879f9'];
 
 async function getJSON(url, opts) {
@@ -131,7 +160,9 @@ export class TrainingDashboard {
     this.root = typeof opts.root === 'string' ? document.querySelector(opts.root) : opts.root;
     this.viewer = opts.viewer || null;
     this.suite = null;
+    this.sort = 'finished';     // newest FINISHED first; 'score' is the ranked leaderboard
     this.runs = [];
+    this.jobs = null;           // trainer queue: what is training now and what is next
     this.bestBySuite = {};
     this.tasks = [];
     this.selected = null;       // run id shown in detail
@@ -156,9 +187,15 @@ export class TrainingDashboard {
         <span class="td-chip" id="tdTrainer">trainer: …</span>
         <span class="td-chip" id="tdLive">no live GLM session</span>
         <label class="td-chip">suite <select id="tdSuite"></select></label>
+        <label class="td-chip">order <select id="tdSort">
+          <option value="finished">newest finished</option>
+          <option value="score">best score</option>
+          <option value="created">newest submitted</option>
+        </select></label>
         <button class="vbtn td-small" id="tdRefresh">↻ refresh</button>
         <span class="td-muted" id="tdUpdated"></span>
       </div>
+      <div class="td-now" id="tdNow"></div>
       <div class="td-tasks" id="tdTasks"></div>
       <div class="td-grid">
         <section class="td-card td-span2">
@@ -184,6 +221,7 @@ export class TrainingDashboard {
       </div>`;
     this.root.querySelector('#tdRefresh').onclick = () => this.refresh();
     this.root.querySelector('#tdSuite').onchange = (e) => { this.suite = e.target.value; this.refresh(); };
+    this.root.querySelector('#tdSort').onchange = (e) => { this.sort = e.target.value; this.refresh(); };
     this.root.querySelector('#tdSessionPick').onchange = (e) => this.loadSession(e.target.value);
   }
 
@@ -197,7 +235,7 @@ export class TrainingDashboard {
   async refresh() {
     const q = this.suite ? `&suite=${encodeURIComponent(this.suite)}` : '';
     const [runsRes, tasksRes, health] = await Promise.all([
-      getJSON(`/api/training/runs?sort=score&limit=60${q}`).catch(e => ({ error: e.message })),
+      getJSON(`/api/training/runs?sort=${encodeURIComponent(this.sort)}&limit=60${q}`).catch(e => ({ error: e.message })),
       getJSON('/api/training/tasks').catch(() => null),
       getJSON('/api/training/health').catch(() => ({ ok: false })),
     ]);
@@ -210,7 +248,9 @@ export class TrainingDashboard {
     this.baselines = runsRes.baselines || {};
     this.baselinesSuite = runsRes.baselines_suite;
     if (tasksRes) this.tasks = tasksRes.tasks || [];
+    this.jobs = health.health?.jobs || null;
     this.renderSuites();
+    this.renderNow();
     this.renderTasks();
     this.renderRuns();
     this.root.querySelector('#tdUpdated').textContent = `updated ${new Date().toLocaleTimeString()}`;
@@ -220,7 +260,29 @@ export class TrainingDashboard {
     if (!this.sessions.length) await this.loadSessions();
   }
 
+  /** One line answering "what is the trainer doing, and what is next": the GPU runs ONE job at a time,
+   *  so a queued run is not stalled -- it is waiting its turn, and the strip says whose turn it is. */
+  renderNow() {
+    const el = this.root.querySelector('#tdNow');
+    if (!el) return;
+    const j = this.jobs;
+    const byId = (id) => this.runs.find(r => r.run_id === id);
+    const label = (id) => { const r = byId(id); return r ? `${esc(r.name)} <span class="td-muted">(${esc(r.task || '')})</span>` : `<code>${esc(String(id).slice(-6))}</code>`; };
+    if (!j) { el.innerHTML = ''; return; }
+    const running = j.running || [], queued = j.train_queue || [], benching = j.bench_queue || [];
+    if (!running.length && !queued.length && !benching.length) {
+      el.innerHTML = `<span class="td-now-idle">⏸ trainer idle — no run training or queued</span>`;
+      return;
+    }
+    const parts = [];
+    if (running.length) parts.push(`<span class="td-now-run">▶ training now: ${running.map(label).join(', ')}</span>`);
+    queued.forEach((id, i) => parts.push(`<span class="td-now-next">⏳ next up${queued.length > 1 ? ` #${i + 1}` : ''}: ${label(id)}</span>`));
+    if (benching.length) parts.push(`<span class="td-now-next">📋 benchmarking: ${benching.map(label).join(', ')}</span>`);
+    el.innerHTML = parts.join('') + `<span class="td-muted td-tiny">the GPU runs one job at a time, so a queued run is waiting its turn, not stuck</span>`;
+  }
+
   renderSuites() {
+    this.root.querySelector('#tdSort').value = this.sort;
     const sel = this.root.querySelector('#tdSuite');
     const suites = new Set([...Object.keys(this.bestBySuite), ...this.tasks.map(t => t.suite), ...this.runs.map(r => r.suite).filter(Boolean)]);
     const cur = this.suite || '';
@@ -245,16 +307,25 @@ export class TrainingDashboard {
   renderRuns() {
     const t = this.root.querySelector('#tdRuns');
     if (!this.runs.length) { t.innerHTML = '<tr><td class="td-muted">no runs yet</td></tr>'; return; }
-    const head = `<tr><th></th><th>run</th><th>task / suite</th><th>status</th><th>gates</th><th>score</th><th>dist p50</th><th>falls</th><th>parent</th></tr>`;
-    t.innerHTML = head + this.runs.map(r => {
+    const ordered = this.sort === 'score' ? 'ranked best first' : (this.sort === 'created' ? 'newest submitted first' : 'newest finished first');
+    const head = `<tr><th title="position in the current order (${esc(ordered)})">#</th><th></th><th>run</th><th>${this.sort === 'created' ? 'submitted' : 'finished'}</th><th>task / suite</th><th>status</th><th>gates</th><th>score</th><th>dist p50</th><th>falls</th><th>parent</th></tr>`;
+    t.innerHTML = head + this.runs.map((r, i) => {
       const busy = ['queued', 'training', 'benchmarking'].includes(r.status);
       const best = this.bestBySuite[r.suite]?.run_id === r.run_id ? ' 🥇' : '';
       const gates = r.gates_total ? `${r.gates_passed}/${r.gates_total}` : '—';
       const gcls = r.gates_total ? (r.gates_passed === r.gates_total ? 'td-ok' : 'td-warn') : '';
       const playing = r.run_id === this.playingRun ? ' <span class="td-playing" title="replaying in the viewer">▶ in viewer</span>' : '';
+      // what this run was TRYING: its submitted note, else the task goal. Without it a leaderboard is
+      // a list of names and numbers with no record of the hypothesis behind any of them.
+      const tried = attempt(r, this.tasks);
+      const when = this.sort === 'created' ? r.created : (r.finished || r.created);
+      const newest = i === 0 && this.sort !== 'score' ? ' <span class="td-newest">newest</span>' : '';
       return `<tr data-run="${esc(r.run_id)}" class="${r.run_id === this.selected ? 'td-row-sel' : ''}">
+        <td class="td-muted td-ord">${i + 1}</td>
         <td><input type="checkbox" data-cmp="${esc(r.run_id)}" ${this.compare.has(r.run_id) ? 'checked' : ''}></td>
-        <td><div class="td-runname">${esc(r.name)}${best}${playing}</div><code class="td-muted">${esc(r.run_id)}</code></td>
+        <td><div class="td-runname">${esc(r.name)}${best}${playing}${newest}</div><code class="td-muted">${esc(r.run_id)}</code>
+            ${tried ? `<div class="td-attempt" title="${esc(tried)}"><span class="td-attempt-k">tried:</span> ${esc(attemptShort(tried))}</div>` : ''}</td>
+        <td class="td-when" title="${esc(when || '')}">${busy ? '<span class="td-busy">in flight</span>' : esc(ago(when)) || '—'}</td>
         <td>${esc(r.task || 'flat_walk')}<br><span class="td-muted">${esc(r.suite || 'flat_v1')}${r.suite_version ? '@' + esc(r.suite_version) : ''}</span></td>
         <td class="${busy ? 'td-busy' : (r.status === 'failed' ? 'td-bad' : '')}">${esc(r.status)}${r.error ? `<div class="td-bad td-tiny">${esc(String(r.error).slice(0, 80))}</div>` : ''}</td>
         <td class="${gcls}">${gates}</td><td>${fmt(r.score, 2)}</td><td>${fmt(r.dist_p50, 2)} m</td><td>${fmt(r.fall_rate, 2)}</td>
@@ -288,7 +359,8 @@ export class TrainingDashboard {
     if (!runs.length) { el.innerHTML = '<span class="td-muted">no benchmarked runs</span>'; return; }
     el.innerHTML = runs.map(r => `<figure class="td-clip-card ${r.run_id === this.selected ? 'td-clip-sel' : ''}" data-run="${esc(r.run_id)}">
         <img loading="lazy" alt="${esc(r.name)}" src="/api/training/artifact/${encodeURIComponent(r.run_id)}/benchmark/${encodeURIComponent(r.suite + '@' + r.suite_version)}/best.gif" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'td-clip-missing',textContent:'no clip'}))">
-        <figcaption><b>${esc(r.name)}</b><br><span class="td-muted">${esc(r.suite)} · ${r.gates_passed}/${r.gates_total} · ${fmt(r.dist_p50, 2)} m</span></figcaption></figure>`).join('');
+        <figcaption><b>${esc(r.name)}</b><br><span class="td-muted">${esc(r.suite)} · ${r.gates_passed}/${r.gates_total} · ${fmt(r.dist_p50, 2)} m · ${esc(ago(r.finished || r.created))}</span>
+          ${attempt(r, this.tasks) ? `<div class="td-attempt td-tiny" title="${esc(attempt(r, this.tasks))}">${esc(attemptShort(attempt(r, this.tasks), 90))}</div>` : ''}</figcaption></figure>`).join('');
     el.querySelectorAll('.td-clip-card').forEach(c => c.onclick = () => { this.loadDetail(c.dataset.run); this.replay(c.dataset.run, this.runs.find(x => x.run_id === c.dataset.run)?.suite); });
   }
 
@@ -301,6 +373,7 @@ export class TrainingDashboard {
     }
     this.lastDetail = d;
     const el = this.root.querySelector('#tdDetail');
+    const goal = (this.tasks.find(t => t.task === d.task) || {}).goal || '';
     this.root.querySelector('#tdDetailTitle').textContent = `${d.name || runId} · ${d.task || 'flat_walk'} / ${d.suite || 'flat_v1'}`;
     const prog = d.progress || {};
     const pct = prog.total ? Math.round(100 * (prog.step || 0) / prog.total) : null;
@@ -316,9 +389,11 @@ export class TrainingDashboard {
         <span><b>start</b> ${warm.used ? 'warm from ' + esc((warm.parent || '').slice(-6)) : (warm.reason ? 'cold (' + esc(warm.reason) + ')' : 'from scratch')}</span>
         <span><b>train</b> ${m.elapsed_s ? fmt(m.elapsed_s / 60, 1) + ' min · ' + fmt(m.steps_per_s_mean, 0) + ' steps/s' : '—'}</span>
         <span><b>eval reward</b> ${fmt(m.reward_first, 0)} → ${fmt(m.reward_final, 0)}</span>
+        <span><b>${d.status === 'done' ? 'finished' : 'updated'}</b> ${esc(ago(d.finished || d.updated || d.created)) || '—'}</span>
       </div>
       ${pct !== null && ['training'].includes(d.status) ? `<div class="td-progress"><div style="width:${pct}%"></div></div>` : ''}
-      <div class="td-muted td-notes">${esc(d.notes || '')}</div>
+      ${d.notes ? `<div class="td-attempt td-attempt-full"><span class="td-attempt-k">what this run was trying</span>${esc(d.notes)}</div>`
+                : (goal ? `<div class="td-attempt td-attempt-full"><span class="td-attempt-k">task goal</span>${esc(goal)}</div>` : '')}
       <canvas id="tdCurve" class="td-canvas"></canvas>
       <canvas id="tdDistCurve" class="td-canvas"></canvas>
       ${bench ? `<div class="td-kv"><span><b>${esc(bench.suite)}@${esc(bench.suite_version)}</b></span><span class="${bench.passed ? 'td-ok' : 'td-warn'}"><b>${bench.gates_passed}/${bench.gates_total} gates</b> · score ${fmt(bench.score, 2)}</span>
