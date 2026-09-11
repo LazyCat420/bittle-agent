@@ -56,6 +56,9 @@ class RewardWeights(_Strict):
     slope_progress: float = Field(0.0, ge=0.0, le=10.0)
     #: joints pinned at the torque cap while not moving (a stalled servo draws 1.5 A)
     stall: float = Field(0.0, ge=-10.0, le=0.0)
+    #: penalty per second a foot stays planted past spec.STANCE_MAX_S while commanded to move; the one
+    #: swing term that pays BEFORE a swing exists (see spec.reward_terms). 0.0 = off, flat runs unchanged.
+    stance_timeout: float = Field(0.0, ge=-10.0, le=0.0)
 
 
 class RewardConfig(_Strict):

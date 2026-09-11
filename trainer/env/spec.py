@@ -40,6 +40,9 @@ ZERO_CMD_EPS = 0.02
 #: Swing-foot height target above the local terrain (m); gaits clear 15-25 mm on flat ground.
 FOOT_CLEARANCE_TARGET = 0.012
 SWING_VEL_MIN = 0.02
+#: A foot planted longer than this while the robot is commanded to move is overdue to swing.
+#: 0.3 s is one and a half stride periods of the firmware trot (0.2 s); a healthy gait never reaches it.
+STANCE_MAX_S = 0.3
 #: A joint counts as stalled at >= 90% of its torque cap while barely moving.
 STALL_TORQUE_FRACTION = 0.9
 STALL_VEL_RAD_S = 0.1
@@ -127,7 +130,7 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
     gravity(3), up_world(3), torso_z, terrain_h [= support height: mean terrain height under the
     four feet, so a stair edge is half a riser, not a step function], action(8), last_action(8), torques(8),
     joint_vel(8), torque_cap(8), target_norm(8) [0..1 saturation], target_deg(8),
-    feet_air_time(4), first_contact(4), contact(4), feet_vel_xy(4,2), foot_clearance(4),
+    feet_air_time(4), feet_stance_time(4), first_contact(4), contact(4), feet_vel_xy(4,2), foot_clearance(4),
     limb_contact(8), uphill_xy(2).
 
     Terrain-aware terms are exact no-ops on flat ground: ``terrain_h`` is 0,
@@ -165,6 +168,13 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         "foot_clearance": xp.sum(xp.square(xp.maximum(FOOT_CLEARANCE_TARGET - q["foot_clearance"], 0.0)) * swing) * 1000.0,
         # shank / thigh touching the ground: the edge-collision ("stumble") penalty
         "stumble": xp.sum(q["limb_contact"]),
+        # seconds each foot has been planted BEYOND STANCE_MAX_S while commanded to move. Unlike
+        # foot_clearance and feet_air_time -- which only pay once a swing already exists, and so cannot
+        # buy the first one (measured 2026-09-10: foot_clearance at 29.9 % of the reward with the swing
+        # still under 0.3 mm, both other terms at their bounds) -- this one grows while the foot DRAGS
+        # and stops the moment it lifts. The leg can reach 74 mm through the real actuators in 0.5 s,
+        # so the behaviour is available; it was the gradient that was missing.
+        "stance_timeout": xp.sum(xp.maximum(q["feet_stance_time"] - STANCE_MAX_S, 0.0)) * moving,
         # height gained per second up the slope; exactly 0 on flat ground
         "slope_progress": xp.maximum(xp.sum(q["global_linvel"][:2] * q["uphill_xy"]), 0.0) * moving,
         # joints pinned at the torque cap while not moving: a stalled servo (1.5 A each on the P1S)

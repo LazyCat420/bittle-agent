@@ -180,6 +180,7 @@ def test_foot_clearance_term_is_order_one_for_a_shuffling_swing():
          "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
          "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
          "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
+         "feet_stance_time": np.zeros(4),
          "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
     terms = spec.reward_terms(np, q, 0.01, 0.25, 0.048)
     per_foot = 1000.0 * spec.FOOT_CLEARANCE_TARGET ** 2
@@ -195,6 +196,7 @@ def test_foot_clearance_term_is_one_sided():
             "global_angvel": np.zeros(3), "gravity": np.array([0.0, 0.0, -1.0]), "up_z": 1.0, "torso_z": 0.048,
             "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
             "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(), "feet_air_time": np.full(4, 0.1),
+         "feet_stance_time": np.zeros(4),
             "first_contact": np.zeros(4), "contact": np.array([0.0, 1.0, 1.0, 0.0]), "feet_vel_xy": np.full((4, 2), 0.05)}
     high = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.020)), 0.01, 0.25, 0.048)["foot_clearance"]
     exact = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.012)), 0.01, 0.25, 0.048)["foot_clearance"]
@@ -317,3 +319,64 @@ def test_stairs_variant_and_kind_registry():
     assert tr.has_boxes("stairs") and tr.has_stairs("stairs") and not tr.has_slope("stairs")
     assert tr.variant_for("stairs", "cpu") == "cpu_terrain" and tr.variant_for("stairs", "gpu") == "gpu_terrain"
     assert "stairs" in tr.KINDS and 2 * tr.MAX_STAIR_STEPS + 1 <= tr.MAX_BOXES
+
+
+# ── stance_timeout: the swing term that pays before a swing exists (2026-09-10) ──
+
+def _q_for_stance(stance, contact, cmd=(0.12, 0.0, 0.0)):
+    return {"cmd": np.array(cmd), "local_linvel": np.zeros(3), "gyro": np.zeros(3), "global_linvel": np.zeros(3),
+            "global_angvel": np.zeros(3), "up_world": np.array([0.0, 0.0, 1.0]), "torso_z": 0.047, "terrain_h": 0.0,
+            "action": np.zeros(8), "last_action": np.zeros(8), "torques": np.zeros(8), "joint_vel": np.zeros(8),
+            "torque_cap": np.ones(8), "target_norm": np.zeros(8), "target_deg": spec.STAND_DEG.copy(),
+            "feet_air_time": np.zeros(4), "feet_stance_time": np.asarray(stance, dtype=float),
+            "first_contact": np.zeros(4), "contact": np.asarray(contact, dtype=float),
+            "feet_vel_xy": np.zeros((4, 2)), "foot_clearance": np.zeros(4), "limb_contact": np.zeros(8),
+            "uphill_xy": np.zeros(2)}
+
+
+def test_stance_timeout_grows_while_a_foot_drags_and_is_zero_for_a_healthy_gait():
+    """The term the dragging gait needed: it pays BEFORE a swing exists. A trot-like gait (every foot
+    planted less than STANCE_MAX_S) earns exactly 0, a robot with all four feet planted for a second
+    earns 4 x (1.0 - 0.3), and lifting a foot zeroes that foot's contribution immediately."""
+    t = spec.STANCE_MAX_S
+    healthy = spec.reward_terms(np, _q_for_stance([0.1, 0.2, 0.0, 0.15], [1, 1, 0, 1]), 0.25, 0.25, 0.047)
+    assert healthy["stance_timeout"] == 0.0
+    dragging = spec.reward_terms(np, _q_for_stance([1.0] * 4, [1] * 4), 0.25, 0.25, 0.047)
+    assert dragging["stance_timeout"] == pytest.approx(4 * (1.0 - t))
+    # exactly at the threshold: still free; one foot lifts (its clock reset by the env): its share goes
+    at = spec.reward_terms(np, _q_for_stance([t] * 4, [1] * 4), 0.25, 0.25, 0.047)
+    assert at["stance_timeout"] == 0.0
+    lifted = spec.reward_terms(np, _q_for_stance([1.0, 1.0, 0.0, 1.0], [1, 1, 0, 1]), 0.25, 0.25, 0.047)
+    assert lifted["stance_timeout"] == pytest.approx(3 * (1.0 - t))
+    # a ZERO command must never ask the robot to pick its feet up (statue task)
+    still = spec.reward_terms(np, _q_for_stance([9.0] * 4, [1] * 4, cmd=(0.0, 0.0, 0.0)), 0.25, 0.25, 0.047)
+    assert still["stance_timeout"] == 0.0
+
+
+def test_stance_timeout_is_off_by_default_and_bounded():
+    from trainer.config import RewardWeights, TrainConfig
+
+    assert RewardWeights().stance_timeout == 0.0
+    assert TrainConfig().reward.weights.stance_timeout == 0.0
+    f = RewardWeights.model_fields["stance_timeout"]
+    assert [m for m in f.metadata if getattr(m, "le", None) == 0.0] and [m for m in f.metadata if getattr(m, "ge", None) == -10.0]
+
+
+def test_the_cpu_env_stance_clock_counts_contact_and_resets_on_lift():
+    """The clock the term reads is real bookkeeping, not a constant: standing still it rises on every
+    foot; the air-time and stance clocks are complementary (a foot is either planted or flying)."""
+    from trainer.config import apply_patch
+
+    env = BittleCpuEnv(apply_patch(None, {"dr": {"enabled": False}}), envelope_tier="tested", seed=0)
+    env.reset(command=np.array([0.0, 0.0, 0.0]))
+    for _ in range(40):
+        _, _, _, info = env.step(np.zeros(8))
+    assert (env.feet_stance_time > 0.5).all()                      # 0.8 s of standing
+    assert np.allclose(env.feet_air_time[env.feet_stance_time > 0], 0.0)
+    planted = env.feet_stance_time.copy()
+    # drive the left-front leg up hard: its stance clock must reset while the others keep counting
+    act = np.zeros(8)
+    act[0], act[4] = 1.0, 1.0
+    for _ in range(25):
+        env.step(act)
+    assert env.feet_stance_time[1] < planted[1], (env.feet_stance_time, planted)

@@ -225,6 +225,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "last_act": jp.zeros(8),
             "act": jp.zeros(8),
             "feet_air_time": jp.zeros(4),
+            "feet_stance_time": jp.zeros(4),
             "last_contact": jp.zeros(4, dtype=bool),
             "body_contact_steps": jp.int32(0),
             "step": jp.int32(0),
@@ -264,6 +265,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         contact_filt = contact | info["last_contact"]
         first_contact = (info["feet_air_time"] > 0.0) & contact_filt
         feet_air_time = info["feet_air_time"] + self.dt
+        feet_stance_time = info["feet_stance_time"] + self.dt
         body_contact = jp.any(jp.array([data.sensordata[a] > 0 for a in self._body_found])) if self._body_found else jp.bool_(False)
         body_steps = jp.where(body_contact, info["body_contact_steps"] + 1, 0)
 
@@ -295,6 +297,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "target_norm": spec.target_saturation(jp, target, self._lo, self._hi),
             "target_deg": target,
             "feet_air_time": feet_air_time,
+            "feet_stance_time": feet_stance_time,
             "first_contact": first_contact.astype(jp.float32),
             "contact": contact.astype(jp.float32),
             "feet_vel_xy": data.sensordata[self._foot_vel][:, :2],
@@ -314,6 +317,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         info["last_act"] = info["act"]
         info["act"] = act
         info["feet_air_time"] = feet_air_time * (~contact)
+        info["feet_stance_time"] = feet_stance_time * contact
         info["last_contact"] = contact
         info["body_contact_steps"] = body_steps
         info["step"] = info["step"] + 1

@@ -139,6 +139,7 @@ class BittleCpuEnv:
         self.last_action = np.zeros(8)
         self.action = np.zeros(8)
         self.feet_air_time = np.zeros(4)
+        self.feet_stance_time = np.zeros(4)
         self.last_contact = np.zeros(4, dtype=bool)
         self.body_contact_steps = 0
         self.t = 0
@@ -188,6 +189,7 @@ class BittleCpuEnv:
         contact_filt = contact | self.last_contact
         first_contact = (self.feet_air_time > 0) & contact_filt
         self.feet_air_time += self.cfg.control_dt
+        self.feet_stance_time += self.cfg.control_dt
         body_contact = any(self.sensor(n)[0] > 0 for n in self.body_found)
         self.body_contact_steps = self.body_contact_steps + 1 if body_contact else 0
 
@@ -199,6 +201,7 @@ class BittleCpuEnv:
         done = bool(spec.termination(np, q["up_z"], q["torso_z"], self.body_contact_steps, q["terrain_h"]))
 
         self.feet_air_time *= ~contact
+        self.feet_stance_time *= contact
         self.last_contact = contact
         if self.fixed_command is None:
             self.steps_until_cmd -= 1
@@ -267,6 +270,7 @@ class BittleCpuEnv:
             "target_norm": spec.target_saturation(np, self.target_deg, self.lo, self.hi),
             "target_deg": self.target_deg,
             "feet_air_time": self.feet_air_time,
+            "feet_stance_time": self.feet_stance_time,
             "first_contact": first_contact.astype(np.float64),
             "contact": contact.astype(np.float64),
             "feet_vel_xy": feet_vel[:, :2],
