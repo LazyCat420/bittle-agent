@@ -1,6 +1,6 @@
 ---
 part: RL walking trainer
-status: in progress
+status: in-progress
 updated: 2026-09-10
 ---
 
