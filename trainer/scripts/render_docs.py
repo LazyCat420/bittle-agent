@@ -300,7 +300,7 @@ def ledger(runs_dir: Path, out_md: Path, media_rel: str = "media/rl-training") -
         t = proto["terrain"]
         ground = {"flat": "flat ground", "slope": f"a {t.get('slope_deg', 0)} deg incline (tilted world)",
                   "rough": f"{t.get('n_boxes', 0)} x {1000 * float(t.get('box_height_m', 0)):.0f} mm boxes (seed {t.get('field_seed', 0)}, spawn jitter {t.get('spawn_jitter_m', 0)} m)",
-                  "rough_slope": "boxes on an incline"}[t.get("kind", "flat")]
+                  "rough_slope": "boxes on an incline", "stairs": "a staircase"}[t.get("kind", "flat")]
         protocol = (f"Protocol `{suite}@{s.get('version')}`: {proto['n_episodes']} seeded episodes, {proto['episode_seconds']:.0f} s, "
                     f"command {proto['command']}, {ground}, CPU MuJoCo on the mesh model; "
                     f"{len(s['gates'])} gates incl. the servo-safety fragment.")

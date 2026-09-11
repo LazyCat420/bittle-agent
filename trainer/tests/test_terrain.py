@@ -216,3 +216,104 @@ def test_field_to_json_carries_the_enabled_boxes_and_the_incline():
     js = tr.field_to_json(slope)
     assert abs(js["slope_deg"] - 8.0) < 1e-3 and js["boxes"] == []
     assert tr.field_to_json(tr.flat_field())["boxes"] == []
+
+
+# ── stairs (2026-09-10) ──────────────────────────────────────────────────────
+
+def _stairs(n=3, rise=0.018, tread=0.08, profile="up_down", seed=0, **kw):
+    tcfg = TerrainConfig(kind="stairs", stair_steps=(n, n), stair_rise_m=(rise, rise), stair_tread_m=(tread, tread),
+                         stair_profile=profile, **kw)
+    return tr.sample_field_numpy(np.random.default_rng(seed), tcfg)
+
+
+def test_stairs_geometry_up_landing_down():
+    """3 x 18 mm up, a 0.30 m landing, 3 down: tops rise by one riser per tread, every box bottom is buried,
+    nothing exceeds the baked parked size, the rest of the 32 slots stay parked. The last step DOWN is the
+    floor itself, so a flight of n needs n - 1 descent boxes: 2n live boxes in all."""
+    f = _stairs()
+    live = f.box_pos[:, 2] > -0.5
+    assert live.sum() == 6 and f.n_boxes == 6
+    tops = f.box_pos[:, 2] + f.box_half[:, 2] - tr.PLANE_Z
+    bottoms = f.box_pos[:, 2] - f.box_half[:, 2]
+    assert np.allclose(tops[:3], [0.018, 0.036, 0.054])                       # flight up
+    assert tops[tr.STAIR_LANDING_SLOT] == pytest.approx(0.054)                 # landing at the top
+    assert np.allclose(tops[tr.STAIR_LANDING_SLOT + 1: tr.STAIR_LANDING_SLOT + 3], [0.036, 0.018])
+    assert not live[tr.STAIR_LANDING_SLOT + 3]                                 # the floor is the last step down
+    assert np.allclose(bottoms[live], tr.PLANE_Z - tr.STAIR_BURY)              # no gap under any tread
+    assert (f.box_half[live] <= tr.PARKED_HALF + 1e-9).all()                   # never grows past the compiled size
+    # x layout: risers every 80 mm from field_start, the landing right after the flight, the descent after it
+    xs = f.box_pos[:, 0]
+    assert np.allclose(xs[:3], 0.15 + np.array([0.04, 0.12, 0.20]))
+    assert xs[tr.STAIR_LANDING_SLOT] == pytest.approx(0.15 + 0.24 + 0.15)
+    assert xs[tr.STAIR_LANDING_SLOT + 1] == pytest.approx(0.15 + 0.24 + 0.30 + 0.04)
+    assert (f.box_yaw == 0).all() and np.allclose(f.gravity, [0, 0, -tr.G])
+
+
+def test_stairs_height_profile_is_a_staircase():
+    """terrain_height along the centre line reads 0, 18, 36, 54 (landing), 36, 18, 0 mm."""
+    f = _stairs()
+    h = lambda x: tr.terrain_height(np, x, 0.0, f.box_pos, f.box_half, f.box_yaw)
+    assert h(0.0) == 0.0 and h(0.14) == 0.0
+    assert h(0.19) == pytest.approx(0.018) and h(0.27) == pytest.approx(0.036) and h(0.35) == pytest.approx(0.054)
+    assert h(0.55) == pytest.approx(0.054)                       # on the landing
+    assert h(0.73) == pytest.approx(0.036) and h(0.81) == pytest.approx(0.018)
+    assert h(0.87) == 0.0 and h(0.95) == 0.0                     # the third step down is the floor
+    assert h(0.35, ) == h(0.35) and tr.terrain_height(np, 0.35, 0.29, f.box_pos, f.box_half, f.box_yaw) == pytest.approx(0.054)
+    assert tr.terrain_height(np, 0.35, 0.31, f.box_pos, f.box_half, f.box_yaw) == 0.0   # 0.60 m wide
+
+
+def test_stairs_profiles_up_only_and_down_platform():
+    up = _stairs(profile="up")
+    assert up.n_boxes == 4 and (up.box_pos[tr.STAIR_LANDING_SLOT + 1:, 2] < -0.5).all()
+    down = _stairs(profile="down")
+    assert down.n_boxes == 3 and (down.box_pos[:tr.STAIR_LANDING_SLOT, 2] < -0.5).all()   # platform + 2 steps
+    # the platform sits BEHIND field_start, under the spawn, at the top level; the flight descends from field_start
+    h = lambda x: tr.terrain_height(np, x, 0.0, down.box_pos, down.box_half, down.box_yaw)
+    assert h(0.0) == pytest.approx(0.054) and h(-0.14) == pytest.approx(0.054) and h(-0.16) == 0.0
+    assert h(0.19) == pytest.approx(0.036) and h(0.27) == pytest.approx(0.018) and h(0.35) == pytest.approx(0.0)
+
+
+def test_stairs_sampled_ranges_and_box_share():
+    tcfg = TerrainConfig(kind="stairs", stair_steps=(1, 4), stair_rise_m=(0.006, 0.022), stair_tread_m=(0.06, 0.12))
+    ns, rises = set(), []
+    for seed in range(60):
+        f = tr.sample_field_numpy(np.random.default_rng(seed), tcfg)
+        n = int((f.box_pos[:tr.STAIR_LANDING_SLOT, 2] > -0.5).sum())
+        ns.add(n)
+        assert f.n_boxes == 2 * n
+        rises.append(f.box_pos[0, 2] + f.box_half[0, 2] - tr.PLANE_Z)
+    assert ns == {1, 2, 3, 4}
+    assert min(rises) >= 0.006 - 1e-9 and max(rises) <= 0.022 + 1e-9 and max(rises) - min(rises) > 0.008
+    mixed = TerrainConfig(kind="stairs", box_share=0.5)
+    counts = [tr.sample_field_numpy(np.random.default_rng(s), mixed).n_boxes for s in range(40)]
+    assert 0 in counts and 6 in counts and set(counts) <= {0, 6}
+
+
+def test_support_height_is_the_mean_under_the_feet():
+    f = _stairs()
+    # front pair on step 1 (18 mm), rear pair on the runway: half a riser
+    feet = np.array([[0.19, 0.047, 0.05], [0.19, -0.047, 0.05], [0.085, 0.047, 0.03], [0.085, -0.047, 0.03]])
+    assert tr.support_height(np, feet, f.box_pos, f.box_half, f.box_yaw) == pytest.approx(0.009)
+    # all four on the landing: the full height; all on the runway: 0; parked field: 0 anywhere
+    assert tr.support_height(np, feet + [0.35, 0, 0], f.box_pos, f.box_half, f.box_yaw) == pytest.approx(0.054)
+    assert tr.support_height(np, feet - [0.10, 0, 0], f.box_pos, f.box_half, f.box_yaw) == 0.0
+    flat = tr.flat_field()
+    assert tr.support_height(np, feet, flat.box_pos, flat.box_half, flat.box_yaw) == 0.0
+
+
+def test_stairs_protocol_field_is_deterministic_and_draws_in_the_viewer():
+    proto = {"kind": "stairs", "stair_steps": 3, "stair_rise_m": 0.018, "stair_tread_m": 0.08,
+             "stair_profile": "up_down", "field_start_m": 0.15}
+    a, b = tr.field_from_protocol(proto), tr.field_from_protocol(proto)
+    assert np.array_equal(a.box_pos, b.box_pos) and a.n_boxes == 6
+    js = tr.field_to_json(a)
+    assert len(js["boxes"]) == 6 and js["slope_deg"] == 0.0
+    tops = sorted(round(bx["pos"][2] + bx["half"][2] - js["plane_z"], 4) for bx in js["boxes"])
+    assert tops == [0.018, 0.018, 0.036, 0.036, 0.054, 0.054]
+    assert all(bx["half"][1] == 0.3 for bx in js["boxes"])
+
+
+def test_stairs_variant_and_kind_registry():
+    assert tr.has_boxes("stairs") and tr.has_stairs("stairs") and not tr.has_slope("stairs")
+    assert tr.variant_for("stairs", "cpu") == "cpu_terrain" and tr.variant_for("stairs", "gpu") == "gpu_terrain"
+    assert "stairs" in tr.KINDS and 2 * tr.MAX_STAIR_STEPS + 1 <= tr.MAX_BOXES

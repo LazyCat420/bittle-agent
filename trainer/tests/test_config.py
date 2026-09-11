@@ -109,7 +109,7 @@ def test_house_terrain_level_and_the_way_back_down():
     c = apply_patch(apply_patch(None, {"terrain": {"level": 4, "box_share": 0.9}}), {"terrain": {"level": 3}})
     assert c.terrain.box_share == 0.9 and c.terrain.slope_share == 1.0
     with pytest.raises(ValidationError):
-        apply_patch(None, {"terrain": {"level": 5}})
+        apply_patch(None, {"terrain": {"level": 7}})
     with pytest.raises(ValidationError):
         apply_patch(None, {"terrain": {"box_share": 1.5}})
     # the house task's own patch resolves to level 4 + the full command box + pushes
@@ -133,3 +133,25 @@ def test_level_2_covers_the_rough_v1_bar():
     assert c2.terrain.box_size_m[0] <= proto["box_size_m"] <= c2.terrain.box_size_m[1]
     c0 = apply_patch(c2, {"terrain": {"level": 0}})
     assert c0.terrain.box_spacing_m == 0.12 and c0.terrain.n_boxes == 0
+
+
+def test_stairs_and_rubble_levels_and_their_bounds():
+    s = apply_patch(None, {"terrain": {"level": 5}})
+    assert s.terrain.kind == "stairs" and s.terrain.n_boxes == 0 and s.terrain.stair_steps == (1, 4)
+    assert s.terrain.stair_rise_m == (0.006, 0.022) and s.terrain.stair_profile == "up_down"
+    r = apply_patch(None, {"terrain": {"level": 6}})
+    assert r.terrain.kind == "rough" and r.terrain.n_boxes == 32 and r.terrain.box_height_m == (0.010, 0.025)
+    assert r.terrain.box_yaw_deg == (-90.0, 90.0) and r.terrain.box_spacing_m == 0.07
+    # stepping from stairs back to rocks resets every stair knob; from rubble to rough resets the yaw and width
+    back = apply_patch(s, {"terrain": {"level": 2}})
+    assert back.terrain.kind == "rough" and back.terrain.stair_steps == (3, 3) and back.terrain.stair_rise_m == (0.012, 0.012)
+    back2 = apply_patch(r, {"terrain": {"level": 2}})
+    assert back2.terrain.box_yaw_deg == (-45.0, 45.0) and back2.terrain.field_width_m == 0.40 and back2.terrain.n_boxes == 24
+    # an explicit stair knob survives a level change
+    keep = apply_patch(apply_patch(None, {"terrain": {"level": 5, "stair_rise_m": [0.02, 0.03]}}), {"terrain": {"level": 5}})
+    assert keep.terrain.stair_rise_m == (0.02, 0.03)
+    for bad in ({"stair_steps": [0, 3]}, {"stair_steps": [2, 7]}, {"stair_steps": [4, 2]},
+                {"stair_rise_m": [0.0, 0.04]}, {"stair_tread_m": [0.02, 0.08]}, {"stair_profile": "sideways"},
+                {"stair_width_m": 0.9}, {"stair_landing_m": 0.5}):
+        with pytest.raises(ValidationError):
+            apply_patch(None, {"terrain": {"level": 5, **bad}})

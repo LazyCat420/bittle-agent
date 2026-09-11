@@ -75,100 +75,100 @@
     <body name="terrain">
       <geom name="floor" type="plane" size="0 0 0.1" pos="0 0 -0.01" material="grid" contype="1" conaffinity="1" />
       <body name="terrain_box_00" pos="0 0 -1">
-        <geom name="terrain_box_00" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_00" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_01" pos="0 0 -1">
-        <geom name="terrain_box_01" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_01" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_02" pos="0 0 -1">
-        <geom name="terrain_box_02" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_02" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_03" pos="0 0 -1">
-        <geom name="terrain_box_03" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_03" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_04" pos="0 0 -1">
-        <geom name="terrain_box_04" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_04" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_05" pos="0 0 -1">
-        <geom name="terrain_box_05" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_05" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_06" pos="0 0 -1">
-        <geom name="terrain_box_06" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_06" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_07" pos="0 0 -1">
-        <geom name="terrain_box_07" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_07" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_08" pos="0 0 -1">
-        <geom name="terrain_box_08" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_08" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_09" pos="0 0 -1">
-        <geom name="terrain_box_09" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_09" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_10" pos="0 0 -1">
-        <geom name="terrain_box_10" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_10" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_11" pos="0 0 -1">
-        <geom name="terrain_box_11" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_11" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_12" pos="0 0 -1">
-        <geom name="terrain_box_12" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_12" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_13" pos="0 0 -1">
-        <geom name="terrain_box_13" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_13" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_14" pos="0 0 -1">
-        <geom name="terrain_box_14" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_14" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_15" pos="0 0 -1">
-        <geom name="terrain_box_15" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_15" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_16" pos="0 0 -1">
-        <geom name="terrain_box_16" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_16" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_17" pos="0 0 -1">
-        <geom name="terrain_box_17" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_17" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_18" pos="0 0 -1">
-        <geom name="terrain_box_18" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_18" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_19" pos="0 0 -1">
-        <geom name="terrain_box_19" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_19" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_20" pos="0 0 -1">
-        <geom name="terrain_box_20" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_20" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_21" pos="0 0 -1">
-        <geom name="terrain_box_21" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_21" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_22" pos="0 0 -1">
-        <geom name="terrain_box_22" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_22" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_23" pos="0 0 -1">
-        <geom name="terrain_box_23" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_23" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_24" pos="0 0 -1">
-        <geom name="terrain_box_24" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_24" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_25" pos="0 0 -1">
-        <geom name="terrain_box_25" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_25" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_26" pos="0 0 -1">
-        <geom name="terrain_box_26" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_26" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_27" pos="0 0 -1">
-        <geom name="terrain_box_27" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_27" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_28" pos="0 0 -1">
-        <geom name="terrain_box_28" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_28" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_29" pos="0 0 -1">
-        <geom name="terrain_box_29" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_29" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_30" pos="0 0 -1">
-        <geom name="terrain_box_30" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_30" class="terrain" size="0.15 0.30 0.10" />
       </body>
       <body name="terrain_box_31" pos="0 0 -1">
-        <geom name="terrain_box_31" class="terrain" size="0.15 0.15 0.02" />
+        <geom name="terrain_box_31" class="terrain" size="0.15 0.30 0.10" />
       </body>
     </body>
     <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" />

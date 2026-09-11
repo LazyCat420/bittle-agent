@@ -1,6 +1,7 @@
 import pytest
 
 from trainer.config import RewardWeights
+from trainer.env import terrain as tr
 from trainer.eval.gates import SUITES_DIR, build_reflection, evaluate_gates, list_suites, load_suite, suite_hash, suite_protocol
 
 GOOD = {"fall_rate": 0.0, "forward_distance_p50": 0.9, "vel_tracking_rmse": 0.02, "heading_yaw_deg": 3.0,
@@ -38,7 +39,7 @@ def test_all_suites_load_include_servo_safety_and_name_real_terms():
             assert "term" in g, (name, g["name"])  # null allowed, missing is a defect
             assert g["term"] is None or g["term"] in fields, (name, g["name"], g["term"])
         proto = suite_protocol(s)
-        assert len(proto["command"]) == 3 and proto["terrain"]["kind"] in ("flat", "slope", "rough", "rough_slope")
+        assert len(proto["command"]) == 3 and proto["terrain"]["kind"] in tr.KINDS
         if not s["version"].endswith("-uncalibrated"):
             assert name in ("flat_v1", "slope_v1", "statue_v1", "backward_v1"), name  # only baseline-calibrated suites carry a release version
 

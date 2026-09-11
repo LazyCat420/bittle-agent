@@ -64,12 +64,13 @@ CHASSIS_BODIES = ("torso", "front__1", "rear__1", "cover_1", "battery_1")
 LEG_TUCK_BODIES = tuple(LEG_KNEE_BODY[leg] for leg in LEGS) + tuple(f"shank_{leg}_1" for leg in LEGS)
 TERRAIN_MAX_BOXES = 32
 TERRAIN_PARKED_POS = "0 0 -1"
-#: Parked boxes are baked at the LARGEST size a config may ask for (TerrainConfig.box_size_m <= 0.15,
-#: half-height 0.02): MuJoCo computes each geom's bounding radius / AABB at compile time and the
+#: Parked boxes are baked at the LARGEST size a config may ask for (TerrainConfig.box_size_m <= 0.15 half x,
+#: a stair step 0.60 m wide, six 35 mm risers + the 20 mm burial = 0.10 half z; must equal
+#: terrain.PARKED_HALF): MuJoCo computes each geom's bounding radius / AABB at compile time and the
 #: broadphase never revisits it, so a box grown at run time beyond its compiled size is silently
 #: skipped by collision detection (measured: zero foot-box contacts with 1 mm parked boxes). Shrinking
 #: is always safe. Parked 1 m below the floor they cannot touch anything at any size.
-TERRAIN_PARKED_SIZE = "0.15 0.15 0.02"
+TERRAIN_PARKED_SIZE = "0.15 0.30 0.10"
 
 
 # ── helpers ────────────────────────────────────────────────────────────────

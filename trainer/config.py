@@ -189,9 +189,10 @@ class TerrainConfig(_Strict):
     meets flat, sloped, rocky and rocky-sloped ground in the same batch and forgets none of them.
     """
 
-    kind: Literal["flat", "slope", "rough", "rough_slope"] = "flat"
-    #: 0 = flat, 1 = gentle slope, 2 = rocks/edges, 3 = rocks on a slope, 4 = the house mixture.
-    level: int = Field(0, ge=0, le=4)
+    kind: Literal["flat", "slope", "rough", "rough_slope", "stairs"] = "flat"
+    #: 0 = flat, 1 = gentle slope, 2 = rocks/edges, 3 = rocks on a slope, 4 = the house mixture,
+    #: 5 = stairs (curbs to a 4-step flight, up and down), 6 = rubble (dense 10-25 mm rocks).
+    level: int = Field(0, ge=0, le=6)
     slope_deg: Range = (0.0, 0.0)
     slope_yaw_deg: Range = (0.0, 0.0)
     #: probability an env has a (non-zero) slope at all; 1.0 = every env (kinds with a slope only)
@@ -212,6 +213,19 @@ class TerrainConfig(_Strict):
     field_width_m: float = Field(0.40, ge=0.10, le=2.0)
     #: per-episode xy spawn offset so different episodes meet different boxes
     spawn_jitter_m: float = Field(0.0, ge=0.0, le=0.20)
+    # ── stairs (kind == "stairs"; see terrain.sample_stairs) ──
+    #: steps per flight, drawn per env as an integer in [lo, hi]; 1 = a single curb
+    stair_steps: tuple[int, int] = (3, 3)
+    #: riser height (m): the app's mini-stairs use 18 mm; standing height is 47 mm
+    stair_rise_m: Range = (0.012, 0.012)
+    #: tread depth (m): the stance is 0.105 m front-to-rear foot
+    stair_tread_m: Range = (0.08, 0.08)
+    #: up = flight + landing; down = spawn on a platform, descend; up_down = both in one field
+    stair_profile: Literal["up", "down", "up_down"] = "up_down"
+    #: landing / platform length along x (m); the baked box allows 0.30
+    stair_landing_m: float = Field(0.30, ge=0.10, le=0.30)
+    #: step width across y (m); the baked box allows 0.60
+    stair_width_m: float = Field(0.60, ge=0.15, le=0.60)
 
     @field_validator("slope_deg")
     @classmethod
@@ -233,6 +247,27 @@ class TerrainConfig(_Strict):
     @classmethod
     def _bs(cls, v: Range) -> Range:
         return _check_range(v, 0.010, 0.150, "terrain.box_size_m")
+
+    @field_validator("stair_steps")
+    @classmethod
+    def _steps(cls, v: tuple[int, int]) -> tuple[int, int]:
+        a, b = int(v[0]), int(v[1])
+        if a > b:
+            raise ValueError(f"terrain.stair_steps: lower bound {a} > upper bound {b}")
+        if a < 1 or b > 6:
+            raise ValueError(f"terrain.stair_steps: [{a}, {b}] outside allowed [1, 6]")
+        return (a, b)
+
+    @field_validator("stair_rise_m")
+    @classmethod
+    def _rise(cls, v: Range) -> Range:
+        # 6 x 35 mm + the 20 mm burial fits the baked 0.10 m half-height
+        return _check_range(v, 0.0, 0.035, "terrain.stair_rise_m")
+
+    @field_validator("stair_tread_m")
+    @classmethod
+    def _tread(cls, v: Range) -> Range:
+        return _check_range(v, 0.04, 0.30, "terrain.stair_tread_m")
 
     @field_validator("box_yaw_deg")
     @classmethod
@@ -334,25 +369,47 @@ STAGE_DEFAULTS: dict[int, dict[str, Any]] = {
 _TERRAIN_MIX_FLAT = {"terrain.slope_yaw_deg": (0.0, 0.0), "terrain.box_size_m": (0.02, 0.06),
                      "terrain.slope_share": 1.0, "terrain.box_share": 1.0, "terrain.field_start_m": 0.15,
                      "terrain.box_spacing_m": 0.12}
+#: the stair knobs at their (inert) defaults on every non-stairs level, so a level change resets them
+_TERRAIN_STAIRS_OFF = {"terrain.stair_steps": (3, 3), "terrain.stair_rise_m": (0.012, 0.012),
+                       "terrain.stair_tread_m": (0.08, 0.08), "terrain.stair_profile": "up_down"}
+#: rock knobs not covered by the flat mix, at their defaults
+_TERRAIN_ROCKS_DEFAULT = {"terrain.box_yaw_deg": (-45.0, 45.0), "terrain.field_width_m": 0.40}
 TERRAIN_DEFAULTS: dict[int, dict[str, Any]] = {
     0: {"terrain.kind": "flat", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 0,
-        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT,
+        **_TERRAIN_STAIRS_OFF, **_TERRAIN_ROCKS_DEFAULT},
     1: {"terrain.kind": "slope", "terrain.slope_deg": (0.0, 8.0), "terrain.n_boxes": 0,
-        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT},
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.0, **_TERRAIN_MIX_FLAT,
+        **_TERRAIN_STAIRS_OFF, **_TERRAIN_ROCKS_DEFAULT},
     # level 2 covers the rough_v1 BAR (24 boxes, all 12 mm, 0.10 m apart): with uniform 3-12 mm boxes the
     # median training rock was 7.5 mm and the eval curve read 0.9 m while the benchmark read 0.3 m (r9/r10,
     # 2026-09-07) -- the optimiser was solving an easier field than the exam
     2: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 24,
         "terrain.box_height_m": (0.006, 0.015), "terrain.spawn_jitter_m": 0.05, **_TERRAIN_MIX_FLAT,
+        **_TERRAIN_STAIRS_OFF, **_TERRAIN_ROCKS_DEFAULT,
         "terrain.box_size_m": (0.02, 0.05), "terrain.box_spacing_m": 0.10},
     3: {"terrain.kind": "rough_slope", "terrain.slope_deg": (0.0, 14.0), "terrain.n_boxes": 28,
-        "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08, **_TERRAIN_MIX_FLAT},
+        "terrain.box_height_m": (0.004, 0.020), "terrain.spawn_jitter_m": 0.08, **_TERRAIN_MIX_FLAT,
+        **_TERRAIN_STAIRS_OFF, **_TERRAIN_ROCKS_DEFAULT},
     4: {"terrain.kind": "rough_slope", "terrain.slope_deg": (2.0, 10.0), "terrain.n_boxes": 28,
         "terrain.box_height_m": (0.003, 0.015), "terrain.spawn_jitter_m": 0.08,
         "terrain.slope_yaw_deg": (-180.0, 180.0), "terrain.box_size_m": (0.02, 0.06),
         "terrain.slope_share": 0.6, "terrain.box_share": 0.6, "terrain.box_spacing_m": 0.12,
         # rocks from 1 m BEHIND the spawn to 1.9 m ahead: backward and sideways commands meet them too
-        "terrain.field_start_m": -1.0},
+        "terrain.field_start_m": -1.0, **_TERRAIN_STAIRS_OFF, **_TERRAIN_ROCKS_DEFAULT},
+    # level 5: stairs. One curb to a four-step flight, risers 6-22 mm (the stairs_v1 bar is 3 x 18 mm),
+    # treads 6-12 cm, up AND down in the same field so one episode meets both edges; the spawn jitters
+    # along the runway. No rocks, level gravity.
+    5: {"terrain.kind": "stairs", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 0,
+        "terrain.box_height_m": (0.0, 0.0), "terrain.spawn_jitter_m": 0.05, **_TERRAIN_MIX_FLAT, **_TERRAIN_ROCKS_DEFAULT,
+        "terrain.stair_steps": (1, 4), "terrain.stair_rise_m": (0.006, 0.022), "terrain.stair_tread_m": (0.06, 0.12),
+        "terrain.stair_profile": "up_down"},
+    # level 6: rubble. Every one of the 32 boxes live, 10-25 mm tall, 2-8 cm across, 7 cm apart, any yaw,
+    # on a 0.5 m wide field: rocks the feet cannot step between, so the swing has to clear them
+    6: {"terrain.kind": "rough", "terrain.slope_deg": (0.0, 0.0), "terrain.n_boxes": 32,
+        "terrain.box_height_m": (0.010, 0.025), "terrain.spawn_jitter_m": 0.06, **_TERRAIN_MIX_FLAT, **_TERRAIN_STAIRS_OFF,
+        "terrain.box_size_m": (0.02, 0.08), "terrain.box_spacing_m": 0.07, "terrain.box_yaw_deg": (-90.0, 90.0),
+        "terrain.field_width_m": 0.50},
 }
 
 #: The curriculum axes: (field path of the level, its defaults table).

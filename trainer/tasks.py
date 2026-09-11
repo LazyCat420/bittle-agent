@@ -84,6 +84,41 @@ TASKS: dict[str, Task] = {
                              "push_interval_s": [3.0, 6.0]},
                       "reward": {"weights": {"foot_clearance": -0.5, "stumble": -0.5, "energy": -0.05, "stall": -0.05}}},
     ),
+    "stairs_walk": Task(
+        name="stairs_walk",
+        goal="climb a flight of three 18 mm steps (80 mm treads), cross the landing and walk down the other side "
+             "at 0.12 m/s without falling (stairs_v1)",
+        suite="stairs_v1",
+        aliases=("stairs", "stair", "staircase", "steps", "step up", "curb", "kerb", "climb stairs", "doorstep", "ledge"),
+        prerequisites=("rough_walk",),
+        config_keys=("terrain.stair_rise_m", "terrain.stair_steps", "terrain.stair_tread_m", "terrain.stair_profile",
+                     "reward.weights.foot_clearance", "reward.weights.feet_air_time", "reward.weights.stumble",
+                     "reward.weights.base_height", "reward.weights.orientation", "reward.weights.lin_vel_z",
+                     "reward.weights.stall", "ppo.num_timesteps"),
+        # level 5 = 1-4 steps of 6-22 mm, up and down; the rough champion's swing terms carry over (a same-task
+        # warm start keeps the parent's values -- these are the cold-start defaults). Terrain-relative base_height
+        # reads the MEAN level under the feet, so the torso is asked to climb half a riser at a time.
+        config_patch={"task": "stairs_walk", "terrain": {"level": 5},
+                      "reward": {"weights": {"foot_clearance": -2.0, "stumble": -0.5, "feet_air_time": 2.0,
+                                             "feet_slip": -2.0, "base_height": -2.0, "stall": -0.05}},
+                      "ppo": {"num_timesteps": 30_000_000}},
+    ),
+    "rubble_walk": Task(
+        name="rubble_walk",
+        goal="walk over a dense field of 20 mm rocks (32 boxes, 7 cm apart, any yaw, no bare floor between them) "
+             "at 0.12 m/s without stumbling or falling (rubble_v1)",
+        suite="rubble_v1",
+        aliases=("rubble", "boulders", "more rocks", "harder rocks", "dense rocks", "big rocks", "gravel", "scree"),
+        prerequisites=("rough_walk",),
+        config_keys=("terrain.box_height_m", "terrain.n_boxes", "terrain.box_spacing_m", "terrain.box_size_m",
+                     "reward.weights.foot_clearance", "reward.weights.feet_air_time", "reward.weights.stumble",
+                     "reward.weights.base_height", "reward.weights.stall", "ppo.num_timesteps"),
+        # level 6 = every box live, 10-25 mm; the swing terms that lifted the rough gait (r12/r13) are the defaults
+        config_patch={"task": "rubble_walk", "terrain": {"level": 6},
+                      "reward": {"weights": {"foot_clearance": -2.0, "stumble": -0.5, "feet_air_time": 2.0,
+                                             "feet_slip": -2.0, "stall": -0.05}},
+                      "ppo": {"num_timesteps": 30_000_000}},
+    ),
     # ── fun moves (config + suite only; the servo-safety fragment guards every one) ──
     "spin": Task(
         name="spin",

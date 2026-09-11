@@ -124,7 +124,8 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
     """Raw (unweighted) reward terms. Keys match ``RewardWeights`` fields.
 
     ``q`` keys: cmd(3), local_linvel(3), gyro(3), global_linvel(3), global_angvel(3),
-    gravity(3), up_world(3), torso_z, terrain_h, action(8), last_action(8), torques(8),
+    gravity(3), up_world(3), torso_z, terrain_h [= support height: mean terrain height under the
+    four feet, so a stair edge is half a riser, not a step function], action(8), last_action(8), torques(8),
     joint_vel(8), torque_cap(8), target_norm(8) [0..1 saturation], target_deg(8),
     feet_air_time(4), first_contact(4), contact(4), feet_vel_xy(4,2), foot_clearance(4),
     limb_contact(8), uphill_xy(2).

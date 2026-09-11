@@ -1,0 +1,96 @@
+# Stairs suite: a fixed flight of 3 steps UP (18 mm risers -- the app's mini-stairs preset -- 80 mm treads),
+# a 0.30 m landing, then 3 steps DOWN, 0.60 m wide, level gravity, first riser 0.15 m ahead of the spawn.
+# The whole course is 0.78 m long; 10 s at 0.12 m/s is 1.2 m, so a policy that climbs it has runway left.
+# Seeds differ only in the spawn offset along the runway (spawn_jitter_m), so 20 episodes hit the first
+# riser at different points in the gait cycle. Standing height is 47 mm: three 18 mm risers total 54 mm,
+# more than the body height, and the stance is 105 mm front-to-rear, so mid-flight the front and rear feet
+# are always on different steps.
+# UNCALIBRATED (0.1.0): nothing in the firmware climbs a step (opencat_trF is expected to stop at the first
+# riser; replay it with `python -m trainer.eval.baselines --suite stairs_v1` and read runs/baselines/). The
+# climb / descent bars are the course geometry; distance and progress are design targets; freeze at 1.0.0
+# once a learned policy shows what is achievable.
+suite: stairs_v1
+version: 0.1.0-uncalibrated
+include: [_servo_safety]
+protocol:
+  n_episodes: 20
+  seed_start: 0
+  episode_seconds: 10.0
+  command: [0.12, 0.0, 0.0]
+  model: bittle_cpu_terrain.xml
+  dr: nominal
+  terrain:
+    kind: stairs
+    stair_steps: 3
+    stair_rise_m: 0.018
+    stair_tread_m: 0.08
+    stair_profile: up_down
+    stair_landing_m: 0.30
+    stair_width_m: 0.60
+    field_start_m: 0.15
+    spawn_jitter_m: 0.04
+gates:
+  - name: fall_rate
+    metric: fall_rate
+    op: "<="
+    threshold: 0.10
+    unit: fraction
+    term: orientation
+    hint: "falling off a step: raise orientation / base_height penalties; lower stair_rise_m and warm-start again"
+  - name: climbs_the_flight
+    metric: climb_max_p50_m
+    op: ">="
+    threshold: 0.054
+    unit: m
+    term: foot_clearance
+    hint: "median highest level reached; 3 x 18 mm = 0.054 m is the top landing. Stuck below one riser (0.018): the swing foot never clears the edge -- raise foot_clearance / feet_air_time; stuck at 0.036: the rear legs cannot follow"
+  - name: descends_the_flight
+    metric: descent_p50_m
+    op: ">="
+    threshold: 0.054
+    unit: m
+    term: base_height
+    hint: "median height descended after the landing; 0 means it never reached the top or stopped on the landing; a partial value means it fell or froze on the way down (orientation / lin_vel_z)"
+  - name: forward_distance_p50
+    metric: forward_distance_p50
+    op: ">="
+    threshold: 0.80
+    unit: m
+    term: tracking_lin_vel
+    hint: "the course is 0.78 m long: this bar means it walked OFF the far end; ideal is 1.2 m at 0.12 m/s for 10 s"
+  - name: progress_ratio
+    metric: progress_ratio
+    op: ">="
+    threshold: 0.50
+    unit: ratio
+    term: tracking_lin_vel
+    hint: "distance / (commanded speed x seconds); the robot is stuck on a riser (read stuck_x)"
+  - name: stumble_rate
+    metric: stumble_rate
+    op: "<="
+    threshold: 0.30
+    unit: fraction
+    term: stumble
+    hint: "fraction of steps with a shank/thigh on a riser or tread; some shank contact is normal on stairs, a value near 1 means it is dragging its legs up the risers"
+  - name: body_clearance
+    metric: body_clearance_min_mm
+    op: ">="
+    threshold: 10.0
+    unit: mm
+    term: base_height
+    hint: "minimum torso height above the mean level under the feet; the belly is scraping the step edge"
+  - name: heading_drift_lateral
+    metric: lateral_drift_m
+    op: "<="
+    threshold: 0.20
+    unit: m
+    term: tracking_lin_vel
+    hint: "the steps are 0.60 m wide; walking off the side is a heading problem (tracking_lin_vel with vy=0)"
+  - name: beats_baseline_trot_distance
+    metric: baseline_distance_ratio
+    op: ">="
+    threshold: 1.1
+    unit: ratio
+    group: baseline
+    term: tracking_lin_vel
+    hint: "the firmware trot replayed on the same stairs is the bar (skipped when the trot cannot climb the first riser)"

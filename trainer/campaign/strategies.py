@@ -79,5 +79,25 @@ HOUSE_V1_RUNG3: list[dict[str, Any]] = [
               "at the weight bound); weight -1.0 under the new scale + feet_air_time 0.3, warm from h1", "stop_on_pass": True},
 ]
 
+#: stairs_v1: the rocks champion warm-started onto level-5 stairs (curbs to four-step flights, up and down),
+#: then a rung with the flight-only profile at the bar's riser height if the mixture stalls on the descent.
+STAIRS_V1: list[dict[str, Any]] = [
+    {"name": "s1-stairs-warm-30M", "task": "stairs_walk", "base": "best_of:rough_walk",
+     "patch": {"ppo": {"num_timesteps": 30_000_000}},
+     "notes": "rough champion onto stairs level 5 (1-4 steps, 6-22 mm risers, up and down)"},
+    {"name": "s2-stairs-tall-30M", "task": "stairs_walk", "base": "best",
+     "patch": {"terrain": {"stair_rise_m": [0.012, 0.024], "stair_steps": [2, 4]},
+               "reward": {"weights": {"orientation": -4.0, "lin_vel_z": -1.0}}, "ppo": {"num_timesteps": 30_000_000}},
+     "notes": "taller risers, calmer pitch on the way down", "stop_on_pass": True},
+]
+
+#: rubble_v1: the rocks champion warm-started onto level-6 rubble (32 live boxes, 10-25 mm).
+RUBBLE_V1: list[dict[str, Any]] = [
+    {"name": "b1-rubble-warm-30M", "task": "rubble_walk", "base": "best_of:rough_walk",
+     "patch": {"ppo": {"num_timesteps": 30_000_000}},
+     "notes": "rough champion onto dense 10-25 mm rocks", "stop_on_pass": True},
+]
+
 STRATEGIES = {"scripted_v1": SCRIPTED_V1, "terrain_ladder_v1": TERRAIN_LADDER_V1, "house_v1": HOUSE_V1,
-              "house_v1_rung2": HOUSE_V1_RUNG2, "house_v1_rung3": HOUSE_V1_RUNG3}
+              "house_v1_rung2": HOUSE_V1_RUNG2, "house_v1_rung3": HOUSE_V1_RUNG3,
+              "stairs_v1": STAIRS_V1, "rubble_v1": RUBBLE_V1}

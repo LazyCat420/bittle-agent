@@ -190,11 +190,13 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         qpos = self._init_q.at[self._qpos_idx].set(rad)
         roll, pitch = ep["init_tilt"][0], ep["init_tilt"][1]
         qpos = qpos.at[3:7].set(_rpy_to_quat(roll, pitch, 0.0))
-        if self._spawn_jitter > 0:  # never spawn inside a box
+        if self._spawn_jitter > 0:  # never jitter onto a different level (a rock edge, a stair riser)
             rng, k_jit = jax.random.split(rng)
             jit = jax.random.uniform(k_jit, (2,), minval=-self._spawn_jitter, maxval=self._spawn_jitter)
-            clear = self._terrain_h(qpos[0] + jit[0], qpos[1] + jit[1]) == 0.0
-            qpos = qpos.at[0:2].add(jp.where(clear, jit, 0.0))
+            same_level = self._terrain_h(qpos[0] + jit[0], qpos[1] + jit[1]) == self._terrain_h(qpos[0], qpos[1])
+            qpos = qpos.at[0:2].add(jp.where(same_level, jit, 0.0))
+        # stand ON the terrain under the spawn (the stairs "down" profile spawns on a platform); 0 on flat
+        qpos = qpos.at[2].add(self._terrain_h(qpos[0], qpos[1]))
         ctrl = self._deg_to_ctrl(target)
         data = mjx_env.make_data(self.mj_model, qpos=qpos, qvel=jp.zeros(self.mjx_model.nv), ctrl=ctrl,
                                  impl=self.mjx_model.impl.value, naconmax=self._config.naconmax, njmax=self._config.njmax)
@@ -258,7 +260,8 @@ class BittleGpuEnv(mjx_env.MjxEnv):
                 if self._limb_found else jp.zeros(8))
         q = {
             "up_world": self._sensor(data, "torso_upvector"),
-            "terrain_h": tr.terrain_height(jp, data.qpos[0], data.qpos[1], *boxes),
+            # the torso's height reference: mean terrain height under the FEET (continuous across a stair edge)
+            "terrain_h": tr.support_height(jp, feet_pos, *boxes),
             "torque_cap": self.mjx_model.actuator_forcerange[:, 1],
             "foot_clearance": tr.foot_clearance(jp, feet_pos, *boxes),
             "limb_contact": limb,

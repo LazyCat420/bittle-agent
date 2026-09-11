@@ -118,11 +118,13 @@ class BittleCpuEnv:
                                          box_geom_ids=self.box_ids, box_body_ids=self.box_body_ids)
         mujoco.mj_setConst(m, d)
         mujoco.mj_resetDataKeyframe(m, d, 0)
-        # per-episode spawn offset so different episodes meet different boxes; never inside a box
+        # per-episode spawn offset so different episodes meet different boxes; never onto a different level
         if self.spawn_jitter_m > 0:
             jit = self.rng.uniform(-self.spawn_jitter_m, self.spawn_jitter_m, 2)
-            if self._terrain_h(d.qpos[0] + jit[0], d.qpos[1] + jit[1]) == 0.0:
+            if self._terrain_h(d.qpos[0] + jit[0], d.qpos[1] + jit[1]) == self._terrain_h(d.qpos[0], d.qpos[1]):
                 d.qpos[0:2] += jit
+        # stand ON the terrain under the spawn (the stairs "down" profile spawns on a platform); 0 on flat
+        d.qpos[2] += self._terrain_h(d.qpos[0], d.qpos[1])
         # initial pose noise
         self.target_deg = self.stand_deg + self.ep.init_joint_noise_deg
         self.target_deg = np.clip(np.round(self.target_deg), self.lo, self.hi)
@@ -244,7 +246,8 @@ class BittleCpuEnv:
         limb = np.array([float(self.sensor(n)[0] > 0) for n in self.limb_found]) if self.limb_found else np.zeros(8)
         return {
             "up_world": self.sensor("torso_upvector"),
-            "terrain_h": tr.terrain_height(np, d.qpos[0], d.qpos[1], *boxes),
+            # the torso's height reference: mean terrain height under the FEET (continuous across a stair edge)
+            "terrain_h": float(tr.support_height(np, feet_pos, *boxes)),
             "torque_cap": m.actuator_forcerange[:, 1],
             "foot_clearance": tr.foot_clearance(np, feet_pos, *boxes),
             "limb_contact": limb,

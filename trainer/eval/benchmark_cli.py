@@ -50,6 +50,16 @@ def terrain_gap(cfg, proto: dict[str, Any]) -> dict[str, Any]:
                                                                 round(float((t.box_height_m[1] - max(h, t.box_height_m[0])) / max(t.box_height_m[1] - t.box_height_m[0], 1e-9)), 3))})
         gap["easier_than_protocol"] = bool(t.n_boxes < int(pt.get("n_boxes", 0)) or t.box_height_m[1] < h
                                            or gap["train_share_at_or_above_protocol_height"] < 0.25)
+    if pt.get("kind", "flat") == "stairs":
+        rise, steps = float(pt.get("stair_rise_m", 0.0)), int(pt.get("stair_steps", 0))
+        gap.update({"protocol_stair_rise_m": rise, "protocol_stair_steps": steps,
+                    "train_stair_rise_m": [float(t.stair_rise_m[0]), float(t.stair_rise_m[1])],
+                    "train_stair_steps": [int(t.stair_steps[0]), int(t.stair_steps[1])],
+                    "train_share_at_or_above_protocol_rise": (0.0 if t.kind != "stairs" or t.stair_rise_m[1] <= rise else
+                                                              round(float((t.stair_rise_m[1] - max(rise, t.stair_rise_m[0]))
+                                                                          / max(t.stair_rise_m[1] - t.stair_rise_m[0], 1e-9)), 3))})
+        gap["easier_than_protocol"] = bool(t.kind != "stairs" or t.stair_rise_m[1] < rise or t.stair_steps[1] < steps
+                                           or gap["train_share_at_or_above_protocol_rise"] < 0.25)
     if pt.get("kind", "flat") in ("slope", "rough_slope"):
         sd = float(pt.get("slope_deg", 0.0))
         gap.update({"protocol_slope_deg": sd, "train_slope_deg": [float(t.slope_deg[0]), float(t.slope_deg[1])]})

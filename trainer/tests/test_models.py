@@ -80,7 +80,9 @@ def test_terrain_variant_has_parked_boxes_in_one_body_and_body_keyed_sensors(eng
     assert m.geom_bodyid[m.geom("floor").id] == terrain_body
     # one static child body per box (placed via body_pos, so its compile-time BVH stays valid), parked 1 m down
     assert all(m.body_parentid[b] == terrain_body and m.body_weldid[b] == 0 for b in bids)
-    assert (m.body_pos[bids][:, 2] < -0.5).all() and (m.geom_size[ids] == [0.15, 0.15, 0.02]).all()
+    # baked at the LARGEST size any config may request (a 0.60 m wide, 0.20 m tall stair step): the broadphase
+    # keeps the compile-time bounding radius, so a box may shrink at run time but never grow past this
+    assert (m.body_pos[bids][:, 2] < -0.5).all() and np.allclose(m.geom_size[ids], tr.PARKED_HALF)
     for i in range(m.nsensor):
         if m.sensor(i).name.endswith("_floor_found"):
             assert m.sensor_reftype[i] == mujoco.mjtObj.mjOBJ_XBODY and m.sensor_refid[i] == terrain_body

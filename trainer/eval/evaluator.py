@@ -53,6 +53,8 @@ class EpisodeStats:
     stumble_rate: float = 0.0          # fraction of steps with a shank/thigh on the ground
     foot_clearance_p50_mm: float = 0.0  # median swing-foot height above the local terrain
     body_clearance_min_mm: float = 0.0  # min torso height above the local terrain
+    climb_max_m: float = 0.0           # highest support height reached (stairs: risers x steps climbed)
+    descent_m: float = 0.0             # climb_max - final support height (stairs: how far it came back down)
     peak_joint_speed_rad_s: float = 0.0  # p99.5 of substep |qvel| over (step, joint)
     max_joint_speed_rad_s: float = 0.0
     stall_fraction: float = 0.0        # (control step, joint) pairs stalled for the whole step / all pairs
@@ -150,6 +152,7 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
     swing_cur = np.full(4, -math.inf)  # running max while a foot is off the ground
     in_swing = np.zeros(4, dtype=bool)
     body_clear_min = math.inf
+    support_max, support_last = 0.0, 0.0
     peaks: list[np.ndarray] = []
     stall_joint_steps = 0
     stall_conc = 0
@@ -213,6 +216,8 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
                 swing_peaks.append(swing_cur[i])
                 in_swing[i], swing_cur[i] = False, -math.inf
         body_clear_min = min(body_clear_min, float(env.data.qpos[2]) - info.terrain_h)
+        support_max = max(support_max, info.terrain_h)
+        support_last = info.terrain_h
         peaks.append(info.peak_qvel)
         n_st = int(info.stalled.sum())
         stall_joint_steps += n_st
@@ -239,6 +244,7 @@ def run_episode(env: BittleCpuEnv, controller, *, seed: int, seconds: float, com
         climb_height=float(np.dot(disp, uphill)), stumble_rate=stumbles / max(n, 1),
         foot_clearance_p50_mm=1000.0 * float(np.median(swing_peaks)) if swing_peaks else 0.0,
         body_clearance_min_mm=1000.0 * (body_clear_min if math.isfinite(body_clear_min) else 0.0),
+        climb_max_m=float(support_max), descent_m=float(max(support_max - support_last, 0.0)),
         peak_joint_speed_rad_s=float(np.percentile(peak_arr, 99.5)), max_joint_speed_rad_s=float(peak_arr.max()),
         stall_fraction=stall_joint_steps / n_samples, stall_concurrent_max=int(stall_conc),
         travel_deg_max=float(travel.max()),
@@ -291,6 +297,9 @@ def aggregate(stats: list[EpisodeStats], episode_seconds: float) -> dict[str, An
         "stumble_rate": float(np.mean([s.stumble_rate for s in stats])),
         "foot_clearance_p50_mm": float(np.median([s.foot_clearance_p50_mm for s in stats])),
         "body_clearance_min_mm": float(np.min([s.body_clearance_min_mm for s in stats])),
+        # stairs: median over episodes of the highest level reached, and of how far it descended again
+        "climb_max_p50_m": float(np.median([s.climb_max_m for s in stats])),
+        "descent_p50_m": float(np.median([s.descent_m for s in stats])),
         # servo safety: the WORST episode, not the mean — one bad episode is one broken servo
         "peak_joint_speed_rad_s": float(np.max([s.peak_joint_speed_rad_s for s in stats])),
         "max_joint_speed_rad_s": float(np.max([s.max_joint_speed_rad_s for s in stats])),

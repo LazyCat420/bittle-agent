@@ -12,6 +12,18 @@ Warp batches per world (``opt.gravity``, ``geom_pos/size/quat``):
   ``*_terrain.xml`` variants and moved into place per env. Yaw-only keeps the
   analytic ``terrain_height`` exact; half-buried means there is never a gap
   under a box.
+* **Stairs = the same boxes, full width, one per step**, tops rising by ``rise``
+  every ``tread`` along +x: a flight up, a landing, a flight down (or either half).
+  Every step box is buried STAIR_BURY below the plane so there is never a gap under
+  a tread, whatever its height; the parked box is baked tall enough for six 30 mm
+  steps. The robot may spawn ON a step (the ``down`` profile), so both engines lift
+  the spawn by the terrain height under it.
+
+The reference height for the torso (``support_height``) is the MEAN terrain height
+under the four feet, not the height under the torso point: on a staircase the point
+height jumps a full riser the instant the torso centre crosses an edge, which turned
+``base_height`` into a step function and tripped FALL_Z_MIN for any riser over 25 mm.
+Bit-identical on flat ground (every height is 0).
 
 Every function takes ``xp`` (numpy or jax.numpy) and touches no simulator.
 """
@@ -28,14 +40,22 @@ PLANE_Z = -0.01
 #: Boxes baked into the terrain XML variants; a config may enable up to this many.
 MAX_BOXES = 32
 #: Parked (disabled) box: 1 m below the floor — cannot touch anything. Its half-extents are the
-#: LARGEST a config may request (box_size_m <= 0.15): MuJoCo fixes each geom's bounding radius at
-#: compile time, so a box may shrink at run time but never grow past its compiled size.
+#: LARGEST a config may request (box_size_m <= 0.15 half x; a stair step is up to 0.60 m wide and
+#: 6 x 30 mm + STAIR_BURY tall): MuJoCo fixes each geom's bounding radius at compile time, so a box
+#: may shrink at run time but never grow past its compiled size. Must match
+#: build_models.TERRAIN_PARKED_SIZE.
 PARKED_POS = np.array([0.0, 0.0, -1.0])
-PARKED_HALF = np.array([0.15, 0.15, 0.02])
-#: Half height of an enabled box; the box top sits at PLANE_Z + protrusion.
+PARKED_HALF = np.array([0.15, 0.30, 0.10])
+#: Half height of an enabled ROCK; the box top sits at PLANE_Z + protrusion.
 BOX_HALF_Z = 0.02
+#: A stair step's box bottom sits this far BELOW the plane (no gap under any tread).
+STAIR_BURY = 0.02
+#: Steps per flight a config may ask for; the field holds up + landing + down = 2 * MAX + 1 slots.
+MAX_STAIR_STEPS = 6
+STAIR_LANDING_SLOT = MAX_STAIR_STEPS
+STAIR_PROFILES = ("up", "down", "up_down")
 G = 9.81
-KINDS = ("flat", "slope", "rough", "rough_slope")
+KINDS = ("flat", "slope", "rough", "rough_slope", "stairs")
 #: Body-frame (x, y) offsets of the critic's 3x3 height scan.
 SCAN_OFFSETS = np.array([(dx, dy) for dx in (-0.06, 0.0, 0.06) for dy in (-0.06, 0.0, 0.06)])
 #: Size of the critic-only terrain block appended to ``privileged_state``.
@@ -43,7 +63,11 @@ PRIVILEGED_TERRAIN_DIM = len(SCAN_OFFSETS) + 4 + 3
 
 
 def has_boxes(kind: str) -> bool:
-    return kind in ("rough", "rough_slope")
+    return kind in ("rough", "rough_slope", "stairs")
+
+
+def has_stairs(kind: str) -> bool:
+    return kind == "stairs"
 
 
 def has_slope(kind: str) -> bool:
@@ -138,6 +162,15 @@ def foot_clearance(xp, foot_geom_pos, box_pos, box_half, box_yaw):
                      for i in range(foot_geom_pos.shape[0])])
 
 
+def support_height(xp, foot_geom_pos, box_pos, box_half, box_yaw):
+    """Mean terrain height under the four feet: the torso's height reference for ``base_height``,
+    fall termination and body clearance. Continuous across a stair edge (front feet on the step
+    above, rear feet below -> half a riser), exactly 0 on flat ground and where every box is parked."""
+    hs = [terrain_height(xp, foot_geom_pos[i, 0], foot_geom_pos[i, 1], box_pos, box_half, box_yaw)
+          for i in range(foot_geom_pos.shape[0])]
+    return sum(hs) / len(hs)
+
+
 # ── per-env field ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -189,6 +222,8 @@ def sample_field(xp, u, tcfg: Any, k: int = MAX_BOXES):
 
     Returns (gravity, box_pos, box_half, box_yaw) as ``xp`` arrays.
     """
+    if has_stairs(tcfg.kind):
+        return sample_stairs(xp, u, tcfg, k)
     if has_slope(tcfg.kind):
         slope = u(np.radians(tcfg.slope_deg[0]), np.radians(tcfg.slope_deg[1]), ())
         yaw = u(np.radians(tcfg.slope_yaw_deg[0]), np.radians(tcfg.slope_yaw_deg[1]), ())
@@ -220,6 +255,69 @@ def sample_field(xp, u, tcfg: Any, k: int = MAX_BOXES):
     return gravity, box_pos, box_half, box_yaw
 
 
+def sample_stairs(xp, u, tcfg: Any, k: int = MAX_BOXES):
+    """A staircase along +x from ``field_start_m``: ``n`` steps up (slots 0..MAX-1), a landing (slot MAX),
+    ``n`` steps down (slots MAX+1..2*MAX), the rest parked. ``n``, rise and tread are drawn per env from
+    ``stair_steps`` / ``stair_rise_m`` / ``stair_tread_m``; the profile is static:
+
+    * ``up``       — the flight up and the landing (the robot ends on top)
+    * ``down``     — the landing is a PLATFORM ending at ``field_start_m`` (the robot spawns on it) and the
+                     flight descends from there
+    * ``up_down``  — up, landing, down (the default: one episode teaches both)
+
+    Slot layout is fixed so the jax path is vmappable; ``box_share`` < 1 parks the whole staircase for
+    a 1 - share fraction of envs (a stairs/flat mixture). Gravity is flat: stairs are level.
+    """
+    assert k >= 2 * MAX_STAIR_STEPS + 1
+    lo_n, hi_n = int(tcfg.stair_steps[0]), int(tcfg.stair_steps[1])
+    n = xp.floor(u(float(lo_n), float(hi_n) + 1.0 - 1e-6, ()))
+    n = xp.clip(n, lo_n, hi_n)
+    rise = u(tcfg.stair_rise_m[0], tcfg.stair_rise_m[1], ())
+    tread = u(tcfg.stair_tread_m[0], tcfg.stair_tread_m[1], ())
+    landing = float(tcfg.stair_landing_m)
+    half_w = float(tcfg.stair_width_m) / 2.0
+    profile = str(tcfg.stair_profile)
+    start = float(tcfg.field_start_m)
+    idx = xp.arange(k)
+    slot = idx * 1.0
+    # ── tops and x-centres per slot ──
+    up_i = slot                                   # slots 0..MAX-1: step i (0-based)
+    down_j = slot - (MAX_STAIR_STEPS + 1)          # slots MAX+1..: step j of the descent
+    if profile == "down":
+        flight_x0 = start                          # the descent starts at field_start
+        land_c = start - landing / 2.0             # the platform sits BEHIND field_start (under the spawn)
+        up_on = xp.zeros((k,), dtype=bool)
+    else:
+        flight_x0 = start + n * tread + landing    # descent starts after the flight up + landing
+        land_c = start + n * tread + landing / 2.0
+        up_on = idx < n
+    land_on = idx == STAIR_LANDING_SLOT
+    down_on = (idx > STAIR_LANDING_SLOT) & (down_j < n) if profile != "up" else xp.zeros((k,), dtype=bool)
+    top = xp.where(up_on, (up_i + 1.0) * rise,
+                   xp.where(land_on, n * rise,
+                            xp.where(down_on, (n - 1.0 - down_j) * rise, 0.0)))
+    cx = xp.where(up_on, start + (up_i + 0.5) * tread,
+                  xp.where(land_on, land_c,
+                           xp.where(down_on, flight_x0 + (down_j + 0.5) * tread, 0.0)))
+    hx = xp.where(land_on, landing / 2.0, tread / 2.0)
+    enabled = up_on | land_on | down_on
+    enabled = enabled & (top > 1e-6)              # a 0-step flight has no boxes at all
+    box_share = float(getattr(tcfg, "box_share", 1.0))
+    if box_share < 1.0:
+        enabled = enabled & (u(0.0, 1.0, ()) < box_share)
+    half_z = (top + STAIR_BURY) / 2.0             # bottom at PLANE_Z - STAIR_BURY, whatever the top
+    cz = PLANE_Z + top - half_z
+    pos = xp.stack([cx, xp.zeros((k,)), cz], axis=-1)
+    half = xp.stack([hx, xp.full((k,), half_w), half_z], axis=-1)
+    parked_pos = xp.asarray(PARKED_POS) * xp.ones((k, 1))
+    parked_half = xp.asarray(PARKED_HALF) * xp.ones((k, 1))
+    box_pos = xp.where(enabled[:, None], pos, parked_pos)
+    box_half = xp.where(enabled[:, None], half, parked_half)
+    box_yaw = xp.zeros((k,))
+    gravity = xp.asarray([0.0, 0.0, -G])
+    return gravity, box_pos, box_half, box_yaw
+
+
 def sample_field_numpy(rng: np.random.Generator, tcfg: Any, k: int = MAX_BOXES) -> TerrainField:
     g, p, hh, yw = sample_field(np, lambda lo, hi, shape: rng.uniform(lo, hi, shape), tcfg, k)
     return TerrainField(gravity=np.asarray(g, dtype=np.float64), box_pos=np.asarray(p, dtype=np.float64),
@@ -235,6 +333,20 @@ def field_from_protocol(proto: dict[str, Any], k: int = MAX_BOXES) -> TerrainFie
     if has_slope(kind):
         f.gravity = np.asarray(gravity_for_slope(np, np.radians(float(proto.get("slope_deg", 0.0))),
                                                  np.radians(float(proto.get("slope_yaw_deg", 0.0)))))
+    if has_stairs(kind):
+        from ..config import TerrainConfig  # local import: config imports nothing from here
+
+        n = int(proto.get("stair_steps", 3))
+        tcfg = TerrainConfig(kind="stairs", stair_steps=(n, n),
+                             stair_rise_m=(float(proto["stair_rise_m"]), float(proto["stair_rise_m"])),
+                             stair_tread_m=(float(proto.get("stair_tread_m", 0.08)), float(proto.get("stair_tread_m", 0.08))),
+                             stair_profile=str(proto.get("stair_profile", "up_down")),
+                             stair_landing_m=float(proto.get("stair_landing_m", 0.30)),
+                             stair_width_m=float(proto.get("stair_width_m", 0.60)),
+                             field_start_m=float(proto.get("field_start_m", 0.15)))
+        stairs = sample_field_numpy(np.random.default_rng(int(proto.get("field_seed", 0))), tcfg, k)
+        f.box_pos, f.box_half, f.box_yaw = stairs.box_pos, stairs.box_half, stairs.box_yaw
+        return f
     if has_boxes(kind):
         from ..config import TerrainConfig  # local import: config imports nothing from here
 

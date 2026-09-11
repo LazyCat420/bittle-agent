@@ -165,7 +165,10 @@ def test_walks_over_a_single_step_edge():
 
     env.step = step2
     st = run_episode(env, GaitController.from_opencat("trF"), seed=0, seconds=6.0, command=np.array([0.12, 0, 0]))
-    assert max(seen) == 0.010, "the torso never passed over the box"
+    # terrain_h is the SUPPORT height (mean under the four feet): a 60 mm slab under a 105 mm stance holds at
+    # most one pair of feet at a time, so the reference rises by exactly half the slab, never the whole 10 mm
+    assert max(seen) == pytest.approx(0.005), "the feet never stood on the box"
+    assert max(seen) < 0.010
     # the physics must FEEL the edge: a runtime-resized box with a stale compiled bounding radius is
     # invisible to the broadphase (zero contacts) even though the analytic height sees it
     assert len(box_hits) > 0, "no foot-box contact: the box is not colliding"
@@ -209,3 +212,91 @@ def test_stuck_diagnostics_see_a_robot_that_never_moves_and_a_rollout_carries_li
     # a zero command is never "stuck"
     st0 = run_episode(env, Hold(), seed=0, seconds=1.0, command=np.array([0.0, 0.0, 0.0]))
     assert st0.stuck_seconds == 0.0 and st0.stuck_x is None
+
+
+# ── stairs (2026-09-10) ──────────────────────────────────────────────────────
+
+def _stairs_env(profile="up_down", spawn_jitter=0.0, seed=0, **terrain):
+    from trainer.config import apply_patch
+
+    cfg = apply_patch(None, {"terrain": {"level": 5, "stair_steps": [3, 3], "stair_rise_m": [0.018, 0.018],
+                                         "stair_tread_m": [0.08, 0.08], "stair_profile": profile, **terrain},
+                             "dr": {"enabled": False}})
+    return BittleCpuEnv(cfg, spawn_jitter_m=spawn_jitter, envelope_tier="tested", seed=seed)
+
+
+def test_stairs_down_profile_spawns_standing_on_the_platform():
+    """The 'down' profile spawns the robot ON a 54 mm platform: it is lifted by the platform height, its feet
+    touch the platform box (not the floor), and holding STAND for 2 s it neither falls nor sinks."""
+    env = _stairs_env(profile="down")
+    env.reset(command=np.zeros(3))
+    m, d = env.model, env.data
+    plat = tr_box_ids(env)[tr_landing_slot()]
+    assert d.qpos[2] > 0.047 + 0.054 - 0.005, d.qpos[2]   # standing height ON the platform
+    feet = {m.geom(f"{leg}_foot").id for leg in ("rf", "lf", "rr", "lr")}
+    z0 = float(d.qpos[2])
+    plat_hits, floor_hits = 0, 0
+    floor = m.geom("floor").id
+    for _ in range(100):
+        _, _, done, info = env.step(np.zeros(8))
+        assert not done
+        for c in d.contact[: d.ncon]:
+            pair = (c.geom1, c.geom2)
+            if plat in pair and (c.geom1 in feet or c.geom2 in feet):
+                plat_hits += 1
+            if floor in pair and (c.geom1 in feet or c.geom2 in feet):
+                floor_hits += 1
+    assert plat_hits > 200 and floor_hits == 0, (plat_hits, floor_hits)
+    assert abs(float(d.qpos[2]) - z0) < 0.01                    # did not sink through or hop off
+    assert info.terrain_h == pytest.approx(0.054, abs=1e-6)     # support height reads the platform
+
+
+def test_stairs_up_the_trot_meets_the_first_riser_and_the_feet_collide_with_it():
+    """The firmware trot walked into a 3 x 18 mm flight: the FEET strike the step boxes (a contact count, not a
+    height query), the support height rises off zero, and the episode neither falls nor terminates spuriously
+    from the terrain-relative height check while the torso crosses the first edge."""
+    from trainer.eval.evaluator import GaitController, run_episode
+
+    env = _stairs_env()
+    m = env.model
+    steps = set(tr_box_ids(env)[:3])
+    feet = {m.geom(f"{leg}_foot").id for leg in ("rf", "lf", "rr", "lr")}
+    hits, support = [], []
+    orig = env.step
+
+    def step(*a, **kw):
+        out = orig(*a, **kw)
+        hits.extend(1 for c in env.data.contact[: env.data.ncon]
+                    if (c.geom1 in steps or c.geom2 in steps) and (c.geom1 in feet or c.geom2 in feet))
+        support.append(out[3].terrain_h)
+        return out
+
+    env.step = step
+    st = run_episode(env, GaitController.from_opencat("trF"), seed=0, seconds=8.0, command=np.array([0.12, 0, 0]))
+    assert len(hits) > 0, "no foot-step contact: the stair boxes are not colliding"
+    # the open-loop trot swings 0.7 mm: it is STOPPED by an 18 mm riser (never reaches the landing), which is
+    # exactly the degenerate baseline the stairs_v1 ratio gates are disabled for
+    assert max(support) < 0.054 and st.distance_x < 0.40, (max(support), st.distance_x)
+    assert st.climb_max_m == pytest.approx(max(support)) and st.descent_m >= 0.0
+    assert st.seconds > 2.0 and not st.fell                     # no spurious fall from the height check
+
+
+def test_stairs_spawn_jitter_never_moves_the_robot_onto_a_different_level():
+    """Jitter along the runway is allowed; a jitter that would put the spawn point on step 1 is refused."""
+    env = _stairs_env(spawn_jitter=0.2, seed=5)
+    hs = set()
+    for _ in range(30):
+        env.reset(command=np.zeros(3))
+        hs.add(round(env._terrain_h(env.data.qpos[0], env.data.qpos[1]), 6))
+        assert env.data.qpos[2] < 0.06                          # never lifted: it always spawns on the floor level
+    assert hs == {0.0}
+
+
+def tr_box_ids(env):
+    return env.box_ids
+
+
+def tr_landing_slot():
+    from trainer.env import terrain as tr
+
+    return tr.STAIR_LANDING_SLOT

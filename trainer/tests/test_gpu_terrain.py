@@ -196,3 +196,65 @@ def test_training_path_boxes_collide_per_env():
     gx = np.asarray(st.data.geom_xpos)[:, ids[:24], 2]
     assert (gx > -0.1).all(), "box geoms parked in the batched data"
     assert len({tuple(np.round(np.asarray(st.data.geom_xpos)[i, ids[0]], 4)) for i in range(4)}) == 4
+
+
+# ── stairs (2026-09-10) ──────────────────────────────────────────────────────
+
+def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_on_the_platform():
+    """Two stairs worlds under Warp, the engine that TRAINS: (a) 'down' profile -- the robot spawns ON the 54 mm
+    platform, its feet contact the platform geom, the torso stays a standing height above it for 50 steps;
+    (b) 'up_down' -- a robot dropped just before the first riser and pushed forward strikes the step boxes
+    (foot-box contact count > 0). A static box the warp kinematics never re-poses would give 0 for both."""
+    import jax.numpy as jp
+    from mujoco import mjx
+
+    from trainer.env.gpu_env import BittleGpuEnv
+    from trainer.train import compat  # noqa: F401
+
+    def stairs_cfg(profile):
+        return apply_patch(None, {"terrain": {"level": 5, "stair_steps": [3, 3], "stair_rise_m": [0.018, 0.018],
+                                              "stair_tread_m": [0.08, 0.08], "stair_profile": profile, "spawn_jitter_m": 0.0},
+                                  "dr": {"enabled": False}})
+
+    def foot_box_contacts(env, st, box_gids):
+        impl = getattr(st.data, "_impl", st.data)
+        geom = np.asarray(impl.contact__geom).reshape(-1, 2)
+        n = int(np.asarray(impl.nacon).reshape(-1).sum())
+        boxes = set(int(g) for g in np.asarray(box_gids))
+        feet = set(int(g) for g in np.asarray(env._foot_gids))
+        return sum(1 for g1, g2 in geom[:n] if ({int(g1), int(g2)} & boxes) and ({int(g1), int(g2)} & feet))
+
+    # (a) down: spawn on the platform
+    env = BittleGpuEnv(stairs_cfg("down"), num_envs=1)
+    field = tr.sample_field_numpy(np.random.default_rng(0), env.cfg.terrain)
+    env.pin_terrain(field)
+    st = jax.jit(env.reset)(jax.random.PRNGKey(0))
+    z0 = float(st.data.qpos[2])
+    assert z0 > 0.047 + 0.054 - 0.005, z0
+    step = jax.jit(env.step)
+    plat = env._box_gids[tr.STAIR_LANDING_SLOT: tr.STAIR_LANDING_SLOT + 1]
+    hits = 0
+    for _ in range(50):
+        st = step(st, jp.zeros(8))
+        hits += foot_box_contacts(env, st, plat)
+    assert hits > 100, hits
+    assert abs(float(st.data.qpos[2]) - z0) < 0.01 and not bool(st.done)
+    # (b) up_down with the first riser at x = 0: the FRONT feet (x = +0.029) spawn on step 1 (18 mm), the rear
+    # feet (x = -0.076) on the floor. The front feet must strike the step box and the support height must read
+    # half a riser -- the stair-edge case the mean-under-the-feet reference exists for.
+    env2 = BittleGpuEnv(stairs_cfg("up_down"), num_envs=1)
+    field2 = tr.field_from_protocol({"kind": "stairs", "stair_steps": 3, "stair_rise_m": 0.018, "stair_tread_m": 0.08,
+                                     "stair_profile": "up_down", "field_start_m": 0.0})
+    env2.pin_terrain(field2)
+    st2 = jax.jit(env2.reset)(jax.random.PRNGKey(1))
+    step2 = jax.jit(env2.step)
+    steps_g = env2._box_gids[:1]
+    hits2 = 0
+    for _ in range(50):
+        st2 = step2(st2, jp.zeros(8))
+        hits2 += foot_box_contacts(env2, st2, steps_g)
+    assert hits2 > 50, f"{hits2} front-foot contacts with step 1 under warp: the stair boxes are phantoms"
+    feet_xy = np.asarray(st2.data.geom_xpos)[np.asarray(env2._foot_gids)]
+    support = float(tr.support_height(np, feet_xy, field2.box_pos, field2.box_half, field2.box_yaw))
+    assert support == pytest.approx(0.009, abs=1e-3), support
+    assert not bool(st2.done)
