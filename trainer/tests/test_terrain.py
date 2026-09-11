@@ -341,13 +341,13 @@ def test_stance_timeout_grows_while_a_foot_drags_and_is_zero_for_a_healthy_gait(
     t = spec.STANCE_MAX_S
     healthy = spec.reward_terms(np, _q_for_stance([0.1, 0.2, 0.0, 0.15], [1, 1, 0, 1]), 0.25, 0.25, 0.047)
     assert healthy["stance_timeout"] == 0.0
-    dragging = spec.reward_terms(np, _q_for_stance([1.0] * 4, [1] * 4), 0.25, 0.25, 0.047)
-    assert dragging["stance_timeout"] == pytest.approx(4 * (1.0 - t))
+    dragging = spec.reward_terms(np, _q_for_stance([0.6] * 4, [1] * 4), 0.25, 0.25, 0.047)
+    assert dragging["stance_timeout"] == pytest.approx(4 * (0.6 - t))
     # exactly at the threshold: still free; one foot lifts (its clock reset by the env): its share goes
     at = spec.reward_terms(np, _q_for_stance([t] * 4, [1] * 4), 0.25, 0.25, 0.047)
     assert at["stance_timeout"] == 0.0
-    lifted = spec.reward_terms(np, _q_for_stance([1.0, 1.0, 0.0, 1.0], [1, 1, 0, 1]), 0.25, 0.25, 0.047)
-    assert lifted["stance_timeout"] == pytest.approx(3 * (1.0 - t))
+    lifted = spec.reward_terms(np, _q_for_stance([0.6, 0.6, 0.0, 0.6], [1, 1, 0, 1]), 0.25, 0.25, 0.047)
+    assert lifted["stance_timeout"] == pytest.approx(3 * (0.6 - t))
     # a ZERO command must never ask the robot to pick its feet up (statue task)
     still = spec.reward_terms(np, _q_for_stance([9.0] * 4, [1] * 4, cmd=(0.0, 0.0, 0.0)), 0.25, 0.25, 0.047)
     assert still["stance_timeout"] == 0.0
@@ -380,3 +380,18 @@ def test_the_cpu_env_stance_clock_counts_contact_and_resets_on_lift():
     for _ in range(25):
         env.step(act)
     assert env.feet_stance_time[1] < planted[1], (env.feet_stance_time, planted)
+
+
+def test_stance_timeout_is_capped_so_it_cannot_flatten_the_reward_to_the_clip_floor():
+    """weighted_reward clips the total at 0: an unbounded penalty would give a flat zero reward and NO
+    gradient. The term saturates at 4 x STANCE_OVERDUE_CAP_S however long the feet stay down, so at the
+    intended weight the step reward stays positive next to a typical tracking reward."""
+    t, cap = spec.STANCE_MAX_S, spec.STANCE_OVERDUE_CAP_S
+    for stance in (t + cap, 1.0, 9.0, 60.0):
+        terms = spec.reward_terms(np, _q_for_stance([stance] * 4, [1] * 4), 0.25, 0.25, 0.047)
+        assert terms["stance_timeout"] == pytest.approx(4 * cap)
+    worst = spec.reward_terms(np, _q_for_stance([9.0] * 4, [1] * 4), 0.25, 0.25, 0.047)
+    # a dragging robot still tracking badly: tracking 1.5 x ~0.6 against the capped penalty at -0.1
+    total = spec.weighted_reward(np, worst, {"stance_timeout": -0.1, "tracking_lin_vel": 1.5}, 0.02)
+    assert 0.0 < float(total) < 1.5, float(total)
+    assert float(spec.weighted_reward(np, worst, {"stance_timeout": -0.1}, 0.02)) == 0.0  # alone it clips

@@ -43,6 +43,12 @@ SWING_VEL_MIN = 0.02
 #: A foot planted longer than this while the robot is commanded to move is overdue to swing.
 #: 0.3 s is one and a half stride periods of the firmware trot (0.2 s); a healthy gait never reaches it.
 STANCE_MAX_S = 0.3
+#: Per-foot ceiling on the overdue time the penalty counts. UNCAPPED this term is unbounded in the
+#: episode length (a foot planted for 9 s of a 10 s episode scores 8.7 on its own, 34.8 over four feet),
+#: and ``weighted_reward`` CLIPS THE TOTAL AT 0 -- a penalty large enough to sink the sum leaves a flat
+#: zero reward with no gradient anywhere, which is worse than no term at all. Capped, the whole term is
+#: at most 4 x 0.5 = 2.0 per step, so a weight of -0.1 costs about a fifth of a typical step's reward.
+STANCE_OVERDUE_CAP_S = 0.5
 #: A joint counts as stalled at >= 90% of its torque cap while barely moving.
 STALL_TORQUE_FRACTION = 0.9
 STALL_VEL_RAD_S = 0.1
@@ -174,7 +180,7 @@ def reward_terms(xp, q: dict[str, Any], tracking_sigma: float, ang_tracking_sigm
         # still under 0.3 mm, both other terms at their bounds) -- this one grows while the foot DRAGS
         # and stops the moment it lifts. The leg can reach 74 mm through the real actuators in 0.5 s,
         # so the behaviour is available; it was the gradient that was missing.
-        "stance_timeout": xp.sum(xp.maximum(q["feet_stance_time"] - STANCE_MAX_S, 0.0)) * moving,
+        "stance_timeout": xp.sum(xp.clip(q["feet_stance_time"] - STANCE_MAX_S, 0.0, STANCE_OVERDUE_CAP_S)) * moving,
         # height gained per second up the slope; exactly 0 on flat ground
         "slope_progress": xp.maximum(xp.sum(q["global_linvel"][:2] * q["uphill_xy"]), 0.0) * moving,
         # joints pinned at the torque cap while not moving: a stalled servo (1.5 A each on the P1S)
