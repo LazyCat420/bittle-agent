@@ -258,27 +258,80 @@ positive only (falling off the flight must never pay), only while commanded to m
 second so 25 Hz and 50 Hz agree. It is exactly 0 on flat ground and on a slope, where the support
 height never changes, and its default weight is 0.
 
-### Running
+### It climbs the stairs, and comes back down
 
-| run | id | change from its parent |
-|---|---|---|
-| s5-stairs-climb-progress-30M | queued | warm from s4; `climb_progress` 5.0 and nothing else |
+Each rung below changed exactly one thing from the run above it. All are judged on the same fixed
+three-step 18 mm flight.
+
+| stairs run | distance | climb p50 | descent p50 | reached the top | descended | falls |
+|---|---|---|---|---|---|---|
+| s1 — first attempt | 0.193 m | 0.009 m | 0 | 0/20 | 0/20 | 0.00 |
+| s2 — curbs curriculum | 0.275 m | 0.032 m | 0 | 2/20 | 0/20 | 0.10 |
+| s4 — + `stance_timeout` −0.5 | 0.764 m | **0.054 m** | 0.027 m | 16/20 | 17/20 | 0.40 |
+| **s5b — + `climb_progress` 2.0** | **1.035 m** | **0.054 m** | **0.054 m** | **19/20** | **20/20** | 0.20 |
+
+(s4 and s5b are measured on the 20 s course described below; s1 and s2 on the 10 s one, where nothing
+could descend at all.)
+
+The robot walks up three 18 mm risers, crosses the landing, walks down the far side and covers a metre
+in twenty seconds. At the start of this work the same lineage stopped dead at the first riser with its
+feet never leaving the ground.
+
+## Two gates that no policy could have passed
+
+**The episode was too short for the course.** On the 10 s protocol, every one of the nine s5b episodes
+that reached the top was still standing on the landing when time ran out — between x = 0.40 and 0.60 m,
+with the descent starting at 0.69 m. The course is 0.78 m long and climbing costs time, so
+`descends_the_flight` was unreachable for reasons that had nothing to do with the robot. 20 s
+(stairs_v1 **0.2.0**) covers it with runway to spare, and the first honest descent measurement followed
+immediately.
+
+**The bar was set to the exact ceiling.** With the longer episode, s5b climbed the whole flight in 19
+of 20 episodes and descended it in 20 of 20 — and both gates still read FAIL:
+
+| gate | measured | threshold | verdict |
+|---|---|---|---|
+| climbs_the_flight | 0.05399999999999999 | 0.054 | ✗ |
+| descends_the_flight | 0.05399999999999999 | 0.054 | ✗ |
+
+`3 * 0.018` in binary floating point is `0.05399999999999999`. The thresholds were the exact geometric
+maximum the protocol allows, so a robot doing the task **perfectly** missed by 1e-17. Both bars now sit
+at 0.053 (stairs_v1 **0.2.1**), which still means the whole flight — missing one step lands at 0.036.
+
+> **A threshold at the exact ceiling of what a task permits is unpassable.** Derive the ceiling from the
+> protocol's own geometry and keep the bar strictly below it. The test added here does exactly that,
+> for every stairs scene present or future, and is sabotage-checked: moving a bar back to the ceiling
+> fails it.
+
+## Rubble: stability bought back, at a price
+
+| rubble arm | distance | swing clearance | falls | gates |
+|---|---|---|---|---|
+| b3 — `stance_timeout` −0.5 | 0.188 m | 0.74 mm | 0.25 | 10/15 |
+| b4 — + orientation −4, base_height −2 | 0.117 m | 0.35 mm | **0.05** | 11/15 |
+
+b4 takes the gate back by falling five times less often, but it gives up a third of the distance and
+half the swing clearance to do it. That is a real trade, not a win: the stiffer posture penalties make
+the robot cautious rather than capable. Dense 20 mm rubble is still unsolved.
 
 ## Open
 
-- **b3 trades stalling for falling** (0.00 → 0.25 fall rate on 20 mm rubble). That is the next rung's
-  problem, not a reason to back the weight off: a robot that moves and sometimes falls is a better
-  starting point than one that never moves. Raise `orientation` / `base_height` from b3.
-- stairs_v1 and rubble_v1 remain uncalibrated 0.1.0; `climbs_the_flight` / `descends_the_flight` are
-  course geometry, not measured targets.
-- Nothing yet descends a flight. Going down is a different problem from going up (pitch and vertical
-  speed rather than clearance) and likely needs its own rung with the `down` profile.
-- `climb_progress` at 5.0 is reasoned, not measured: one 18 mm riser crossed in a control step scores
-  0.9 m/s, so 5.0 makes a real climb worth a few steps of tracking. Read its share from the curve.
+- **Falling on stairs is the live problem**: s5b goes over in 1 episode in 5, mostly on the way down.
+  Going down is a pitch-and-vertical-speed problem, not a clearance one (`lin_vel_z`, `orientation`),
+  and b4 shows posture penalties cost distance — so the descent probably needs its own rung with the
+  `down` profile rather than a stiffer champion.
+- s5b's progress ratio is 0.43 against a 0.5 design target: it climbs, but slowly.
+- Dense rubble is unsolved: the best arm crosses 0.19 m of a 2.2 m field, and the stability fix costs
+  a third of that.
+- stairs_v1 is 0.2.1-uncalibrated and rubble_v1 0.1.0-uncalibrated. Freeze both once a policy sets a
+  bar worth keeping; the climb/descent bars are still geometry, not measured targets.
+- `climb_progress` reached only a 2.7 % reward share even after the ×10 rescale, because the share
+  scales with how much the robot actually climbs. It worked anyway — but read the share, do not assume
+  the weight.
 - **A task change re-applies the task's `config_patch` over the parent** (s1 lost r13's ±10 swing
   weights). The same-task guard from chapter 06 does not cover a cross-task warm start.
-- **Restarting the trainer service kills any job in flight**; s2's benchmark was orphaned that way and
-  its state restored by hand from a complete report. A new reward field needs a restart, so wait for
-  `/health` to show no running or queued jobs first.
+- **Restarting the trainer service kills any job in flight**, and the service loads suites, tasks and
+  the config schema at boot — so a new reward field or suite version needs a restart. Wait for
+  `/health` to report no running or queued jobs first; s2's benchmark was orphaned by not doing that.
 - The NAS container is not redeployed: another session holds uncommitted GPU-lock changes in the
   primary checkout and the deploy guard refuses an unidentifiable tree.
