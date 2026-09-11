@@ -34,17 +34,31 @@ PRIVILEGED_VERSION = 2
 
 def playground_config(cfg: TrainConfig, *, impl: str | None = None, num_envs: int = 1,
                       sim_dt: float = 0.002) -> config_dict.ConfigDict:
-    # contact budgets follow the terrain kind (rocks add box contacts); not LLM-editable
-    rough = tr.has_boxes(cfg.terrain.kind)
+    # contact budgets follow the terrain (rocks add box contacts); not LLM-editable. The per-world budget
+    # is what the warp broadphase reports as nconmax: 48 held for 24 rocks 10 cm apart, but level 6
+    # (32 rocks 7 cm apart, 8 cm across) asked for 52+ and every step of b1 logged "broadphase overflow"
+    # (2026-09-10) -- dropped contacts, i.e. phantom rocks again. Dense fields and stairs get double.
+    per_world = contact_budget_per_world(cfg)
     return config_dict.create(
         ctrl_dt=cfg.control_dt,
         sim_dt=sim_dt,
         episode_length=cfg.episode_steps,
         action_repeat=cfg.ppo.action_repeat,
         impl=impl or cfg.sim_impl,
-        naconmax=int((48 if rough else 16) * max(num_envs, 1)),
-        njmax=192 if rough else 96,
+        naconmax=int(per_world * max(num_envs, 1)),
+        njmax=per_world * 4,
     )
+
+
+def contact_budget_per_world(cfg: TrainConfig) -> int:
+    """Max contacts per world: 16 flat, 48 for the rough_v1-class field, 96 for dense rocks (> 24 boxes
+    or spacing under 0.09 m) and stairs (full-width boxes under every leg at once)."""
+    t = cfg.terrain
+    if not tr.has_boxes(t.kind):
+        return 16
+    if tr.has_stairs(t.kind) or t.n_boxes > 24 or t.box_spacing_m < 0.09:
+        return 96
+    return 48
 
 
 class BittleGpuEnv(mjx_env.MjxEnv):

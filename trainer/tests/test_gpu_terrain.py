@@ -258,3 +258,27 @@ def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_o
     support = float(tr.support_height(np, feet_xy, field2.box_pos, field2.box_half, field2.box_yaw))
     assert support == pytest.approx(0.009, abs=1e-3), support
     assert not bool(st2.done)
+
+
+def test_dense_rubble_and_stairs_fit_the_contact_budget(capfd):
+    """Level 6 (32 rocks, 7 cm apart) overflowed the 48-per-world budget on b1 (every step: 'broadphase
+    overflow ... nconmax to 52'); dropped contacts are phantom rocks. 128 envs x 150 random-action steps on
+    levels 6 and 5 must log no overflow, and the budget table must give them the doubled budget."""
+    from trainer.env.gpu_env import contact_budget_per_world
+
+    assert contact_budget_per_world(apply_patch(None, {"terrain": {"level": 0}})) == 16
+    assert contact_budget_per_world(apply_patch(None, {"terrain": {"level": 2}})) == 48
+    assert contact_budget_per_world(apply_patch(None, {"terrain": {"level": 5}})) == 96
+    assert contact_budget_per_world(apply_patch(None, {"terrain": {"level": 6}})) == 96
+    for level in (6, 5):
+        cfg = apply_patch(None, {"terrain": {"level": level}, "ppo": {"num_envs": 128}})
+        env, wenv, keys, jp = _wrapped(cfg, 128)
+        reset, step = jax.jit(wenv.reset), jax.jit(wenv.step)
+        st = reset(keys)
+        k = jax.random.PRNGKey(2)
+        for _ in range(150):
+            k, ka = jax.random.split(k)
+            st = step(st, jax.random.uniform(ka, (128, 8), minval=-1, maxval=1))
+        assert bool(jp.isfinite(st.data.qpos).all())
+        out = capfd.readouterr()
+        assert "overflow" not in (out.out + out.err).lower(), f"level {level}: {(out.out + out.err)[-300:]}"
