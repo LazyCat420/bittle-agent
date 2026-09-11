@@ -609,6 +609,16 @@
   .td-table tr[data-run] { cursor: pointer; }
   .td-table tr[data-run]:hover { background: rgba(59, 130, 246, .08); }
   .td-table tr.td-row-sel { background: rgba(59, 130, 246, .16); }
+  .td-clip { margin: 6px 0; }
+  .td-clip-img { max-width: 300px; width: 100%; border-radius: 6px; border: 1px solid var(--border); display: block; }
+  .td-clips { margin-top: 8px; font-size: 12px; }
+  .td-clips summary { cursor: pointer; color: var(--muted); }
+  .td-clips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 8px; }
+  .td-clip-card { margin: 0; cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 6px; background: var(--panel-sub); }
+  .td-clip-card.td-clip-sel { border-color: #34d399; }
+  .td-clip-card img { width: 100%; border-radius: 4px; display: block; }
+  .td-clip-card figcaption { font-size: 11px; margin-top: 4px; }
+  .td-clip-missing { height: 90px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; }
   .td-playing { color: #34d399; font-size: 10px; font-weight: 700; margin-left: 6px; }
   .td-runname { font-weight: 600; }
   .td-kv { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin: 4px 0; }

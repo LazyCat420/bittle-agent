@@ -201,3 +201,18 @@ def test_foot_clearance_term_is_one_sided():
     low = spec.reward_terms(np, dict(base, foot_clearance=np.full(4, 0.002)), 0.01, 0.25, 0.048)["foot_clearance"]
     assert high == 0.0 and exact == 0.0
     assert abs(low - 2 * 1000.0 * 0.010 ** 2) < 1e-9
+
+
+def test_field_to_json_carries_the_enabled_boxes_and_the_incline():
+    from trainer.eval.gates import load_suite
+
+    proto = load_suite("rough_v1")["protocol"]["terrain"]
+    f = tr.field_from_protocol(proto)
+    j = tr.field_to_json(f)
+    assert len(j["boxes"]) == proto["n_boxes"] and j["slope_deg"] == 0.0 and j["plane_z"] == tr.PLANE_Z
+    b = j["boxes"][0]
+    assert abs((b["pos"][2] + b["half"][2]) - (tr.PLANE_Z + proto["box_height_m"])) < 1e-6  # the top is 12 mm up
+    slope = tr.field_from_protocol({"kind": "slope", "slope_deg": 8.0, "slope_yaw_deg": 0.0})
+    js = tr.field_to_json(slope)
+    assert abs(js["slope_deg"] - 8.0) < 1e-3 and js["boxes"] == []
+    assert tr.field_to_json(tr.flat_field())["boxes"] == []

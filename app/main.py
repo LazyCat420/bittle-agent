@@ -839,10 +839,24 @@ def _proxy_stream(path: str) -> StreamingResponse:
 
 
 @app.get("/api/training/rollout/{run_id}")
-async def training_rollout(run_id: str, seed: int = 0, suite: str | None = None):
+async def training_rollout(run_id: str, seed: str = "best", suite: str | None = None):
     if not agent_harness.trainer.configured:
         raise HTTPException(status_code=503, detail="trainer_not_configured")
     return _proxy_stream(f"/runs/{run_id}/rollout?seed={seed}" + (f"&suite={suite}" if suite else ""))
+
+
+@app.get("/api/training/artifact/{run_id}/{name:path}")
+async def training_artifact(run_id: str, name: str):
+    """A file from the run directory on the trainer (benchmark/<suite>@<v>/best.gif, rollouts, logs)."""
+    if not agent_harness.trainer.configured:
+        raise HTTPException(status_code=503, detail="trainer_not_configured")
+    media = "image/gif" if name.endswith(".gif") else ("application/json" if name.endswith(".json") else "application/octet-stream")
+
+    async def gen():
+        async for chunk in agent_harness.trainer.rollout_stream(f"/runs/{run_id}/artifacts/{name}"):
+            yield chunk
+
+    return StreamingResponse(gen(), media_type=media, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/training/baselines/{name}/rollout")

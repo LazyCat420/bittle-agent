@@ -111,7 +111,7 @@ TRAINING_TOOLS: list[dict[str, Any]] = [
         "name": "bittle_replay_rollout",
         "description": "Play a benchmark rollout of a run (or a baseline gait) in the 3D viewer. Returns the summary and a viewer URL; frames never enter the chat.",
         "parameters": {"type": "object", "properties": {
-            "run_id": {"type": "string"}, "seed": {"type": "integer"},
+            "run_id": {"type": "string"}, "seed": {"type": ["integer", "string"], "description": "episode seed, or 'best' (default): the benchmark's best attempt"},
             "source": {"type": "string", "description": "'benchmark' (default) or 'baseline:<name>' e.g. baseline:opencat_trF"}},
             "required": []}}},
 ]
@@ -326,7 +326,8 @@ class TrainingTools:
         return {"ok": True, **await self.client.compare(list(args.get("run_ids") or []))}
 
     async def _replay_rollout(self, args):
-        seed = int(args.get("seed", 0) or 0)
+        raw = args.get("seed")
+        seed = "best" if raw in (None, "", "best") else int(raw)
         source = str(args.get("source") or "benchmark")
         if source.startswith("baseline:"):
             name = source.split(":", 1)[1]
@@ -334,7 +335,7 @@ class TrainingTools:
             if not base:
                 return _err("not_found", f"no baseline {name!r}")
             return {"ok": True, "source": source, "summary": {"score": base.get("score"), "reflection": base.get("reflection")},
-                    "viewer_url": f"/api/training/baselines/{name}/rollout?seed={seed}"}
+                    "viewer_url": f"/api/training/baselines/{name}/rollout?seed={0 if seed == 'best' else seed}"}
         run_id = args.get("run_id") or self.last_run_id
         if not run_id:
             return _err("missing_run_id", "give a run_id or train first")

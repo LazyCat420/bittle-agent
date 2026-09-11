@@ -9,6 +9,8 @@ one LLM tool call can span minutes. The LLM only ever sends config patches.
 
 from __future__ import annotations
 
+import json
+
 import os
 import subprocess
 import sys
@@ -298,17 +300,56 @@ def get_benchmark(run_id: str, suite: str | None = None, full: bool = False) -> 
 
 
 @app.get("/runs/{run_id}/rollout")
-def get_rollout(run_id: str, seed: int = 0, suite: str | None = None) -> Any:
+def get_rollout(run_id: str, seed: str = "best", suite: str | None = None) -> Any:
+    """``seed=best`` (default) = the benchmark's best attempt (report ``best_seed``, else the longest
+    recorded episode). The rollout always carries ``source.field`` (the boxes / gravity the viewer
+    draws): rollouts recorded before 2026-09-11 get it rebuilt from the protocol here."""
     if not store.exists(run_id):
         raise HTTPException(404, f"run {run_id!r} not found")
     suite = suite or store.run_suite(run_id)
     rep = store.benchmark(run_id, suite)
     if not rep:
         raise HTTPException(404, "benchmark the run first")
-    path = store.rollout_path(run_id, suite, rep["suite_version"], seed)
+    version = rep["suite_version"]
+    if seed == "best":
+        seed_i = rep.get("best_seed")
+        if seed_i is None or not store.rollout_path(run_id, suite, version, int(seed_i)).is_file():
+            seed_i = _best_recorded_seed(run_id, suite, version)
+        if seed_i is None:
+            raise HTTPException(404, "no recorded rollouts")
+    else:
+        try:
+            seed_i = int(seed)
+        except ValueError:
+            raise HTTPException(422, f"seed must be an integer or 'best', got {seed!r}")
+    path = store.rollout_path(run_id, suite, version, int(seed_i))
     if not path.is_file():
-        raise HTTPException(404, f"no recorded rollout for seed {seed}")
-    return FileResponse(path, media_type="application/json")
+        raise HTTPException(404, f"no recorded rollout for seed {seed_i}")
+    body = json.loads(path.read_text())
+    src = body.setdefault("source", {})
+    if "field" not in src:
+        from .env import terrain as tr
+        from .eval.evaluator import protocol_kwargs
+
+        proto = rep.get("protocol") or {}
+        if proto.get("terrain"):
+            src["field"] = tr.field_to_json(protocol_kwargs(proto)["terrain"])
+    src["best"] = bool(rep.get("best_seed") == int(seed_i))
+    return JSONResponse(body)
+
+
+def _best_recorded_seed(run_id: str, suite: str, version: str) -> int | None:
+    d = store.benchmark_dir(run_id, suite, version) / "rollouts"
+    best, best_d = None, -1e9
+    for p in sorted(d.glob("seed_*.json")) if d.is_dir() else []:
+        try:
+            summ = json.loads(p.read_text()).get("summary") or {}
+        except Exception:
+            continue
+        dist = float(summ.get("distance_m", -1e9)) - (1e6 if summ.get("fell") else 0.0)
+        if dist > best_d:
+            best, best_d = int(p.stem.split("_")[1]), dist
+    return best
 
 
 @app.get("/baselines")

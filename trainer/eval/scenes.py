@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 
 from ..config import TrainConfig
+from ..env import terrain as tr
 from .evaluator import EpisodeStats, aggregate, evaluate_protocol, protocol_kwargs
 from .gates import suite_scenes
 
@@ -55,7 +56,7 @@ def run_suite_scenes(cfg: TrainConfig, controller, suite: dict[str, Any], *, n_e
             raise ValueError(f"suite {suite.get('suite')!r}: scene {name!r} reuses seed_start {seed0}")
         seeds_used.add(seed0)
         common = protocol_kwargs(proto)
-        src = dict(source or {}, terrain=proto["terrain"], command=cmd)
+        src = dict(source or {}, terrain=proto["terrain"], command=cmd, field=tr.field_to_json(common["terrain"]))
         if name:
             src["scene"] = name
         stats, ro = evaluate_protocol(cfg, controller, n_episodes=n, seed_start=seed0, seconds=seconds, command=cmd,

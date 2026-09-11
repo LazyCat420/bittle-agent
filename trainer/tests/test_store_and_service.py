@@ -192,3 +192,19 @@ def test_same_task_child_inherits_the_parent_tuning_instead_of_the_task_defaults
     assert rung.status_code == 202, rung.text
     rcfg = client.get(f"/runs/{rung.json()['run_id']}").json()["config"]
     assert rcfg["task"] == "house_walk" and rcfg["terrain"]["level"] == 4 and rcfg["reward"]["weights"]["foot_clearance"] == -0.5
+
+
+def test_rollout_best_seed_and_field_are_served(client):
+    """The viewer asks for the best attempt and gets the terrain it was recorded on."""
+    sub = client.post("/runs", json={"name": "r", "task": "rough_walk", "config_patch": {"ppo": {"num_timesteps": 5000}}})
+    rid = sub.json()["run_id"]
+    client.get(f"/runs/{rid}", params={"wait_s": 10, "until": "trained"})
+    rep = client.post(f"/runs/{rid}/benchmark", json={"wait_s": 20}).json()
+    assert rep["suite"] == "rough_v1"
+    ro = client.get(f"/runs/{rid}/rollout", params={"seed": "best"})
+    assert ro.status_code == 200, ro.text
+    body = ro.json()
+    assert body["schema"] == "bittle.rollout.v1" and "field" in body["source"]
+    assert len(body["source"]["field"]["boxes"]) == 24 and "best" in body["source"]
+    assert client.get(f"/runs/{rid}/rollout", params={"seed": "0"}).status_code == 200
+    assert client.get(f"/runs/{rid}/rollout", params={"seed": "x"}).status_code == 422

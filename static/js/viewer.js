@@ -266,6 +266,7 @@ export class BittleViewer {
     this.rootMotionEnabled = false;
     this._groundSolverSuspended = true;
     this.resetRobotPosition();
+    this._showRolloutTerrain(rollout.source && rollout.source.field);
     const ok = this.playSequence(frames, { name: options.name || `rollout ${rollout.source?.run_id || rollout.source?.baseline || ''}`.trim(),
                                           description: rollout.summary ? `${(rollout.summary.distance_m ?? 0).toFixed ? rollout.summary.distance_m.toFixed(2) : rollout.summary.distance_m} m` : '',
                                           loop: Boolean(options.loop) });
@@ -277,6 +278,38 @@ export class BittleViewer {
     this.activeRollout = null;
     this.rootMotionEnabled = true;
     this._groundSolverSuspended = false;
+    this._showRolloutTerrain(null);
+  }
+
+  /**
+   * Draw the terrain a benchmark rollout was recorded on. Rocks are boxes on the floor; an incline
+   * is a tilted-world gravity vector in the physics (the floor stays flat, gravity leans), so the
+   * viewer leans the camera's up-vector by the same angle: the floor then reads as a ramp and the
+   * recorded body pose is exactly right on it. Passing null restores the flat arena.
+   */
+  _showRolloutTerrain(field) {
+    if (!this.obstacleCourse) return;
+    if (!field) {
+      if (this.obstacleCourse.currentPreset === 'replay_field') this.obstacleCourse.clear();
+      if (this._tiltedUp) {
+        this.camera.up.set(0, 1, 0);
+        this.controls.maxPolarAngle = Math.PI / 2 - 0.02;
+        this._tiltedUp = false;
+      }
+      return;
+    }
+    this.obstacleCourse.loadField(field);
+    const g = field.gravity || [0, 0, -9.81];
+    const n = Math.hypot(g[0], g[1], g[2]) || 1;
+    // up = -gravity, MuJoCo (x, y, z) -> viewer (x, z, -y)
+    const up = new THREE.Vector3(-g[0] / n, -g[2] / n, g[1] / n);
+    const tilted = up.angleTo(new THREE.Vector3(0, 1, 0)) > 0.005;
+    this.camera.up.copy(tilted ? up : new THREE.Vector3(0, 1, 0));
+    this.controls.maxPolarAngle = tilted ? Math.PI : Math.PI / 2 - 0.02;
+    this._tiltedUp = tilted;
+    // frame the robot with the first rocks ahead of it; the follow logic keeps it in view afterwards
+    const r = this.robotGroup.position;
+    this.animateCameraTo(new THREE.Vector3(r.x + 0.10, r.y + 0.42, r.z + 0.78), new THREE.Vector3(r.x + 0.22, 0.02, r.z));
   }
 
   /** Apply the recorded base pose for the current rollout frame (MuJoCo Z-up -> Three.js Y-up). */

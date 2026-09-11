@@ -228,7 +228,11 @@ class JobManager:
                            "foot_clearance_p50_mm": 11.0, "body_clearance_min_mm": 30.0,
                            "n_episodes": 20, "episode_seconds": 10, "fake": True}
                 report = evaluate_gates(metrics, suite, curriculum_stage=int(cfg.get("curriculum_stage", 0)))
-                report.update({"run_id": run_id, "n_episodes": 20, "seeds": list(range(20)), "sim": "fake"})
+                from ..eval.gates import suite_protocol
+
+                report.update({"run_id": run_id, "n_episodes": 20, "seeds": list(range(20)), "sim": "fake",
+                               "protocol": suite_protocol(suite), "best_seed": 0,
+                               "episodes": [{"seed": 0, "distance_x": 0.8, "fell": False, "scene": ""}]})
                 self.store.write_benchmark(run_id, suite["suite"], str(suite["version"]), report)
                 rp = self.store.rollout_path(run_id, suite["suite"], str(suite["version"]), 0)
                 rp.parent.mkdir(parents=True, exist_ok=True)

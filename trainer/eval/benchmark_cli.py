@@ -22,7 +22,7 @@ from ..policy.mlp import NumpyPolicy
 from ..store.runs import RunStore
 from ..tasks import TASKS
 from .evaluator import DR_PRESETS, PolicyController, aggregate, evaluate_protocol, preset_params, protocol_kwargs
-from .gates import evaluate_gates, load_suite
+from .gates import evaluate_gates, load_suite, suite_protocol
 from .scenes import run_suite_scenes
 
 REPO = Path(__file__).resolve().parent.parent.parent
@@ -88,7 +88,10 @@ def baseline_context(store: RunStore, suite_name: str, metrics: dict, gait: str 
 
 
 def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None, n_episodes: int | None = None,
-                  dr_sweep: bool = False, dual_sim: bool = False, record_n: int = 3) -> dict:
+                  dr_sweep: bool = False, dual_sim: bool = False, record_n: int | None = None,
+                  render_clip: bool = True) -> dict:
+    """``record_n`` None = record EVERY episode's rollout (so the viewer can replay the best attempt);
+    ``render_clip`` writes ``best.gif`` for the best episode next to the report."""
     cfg = TrainConfig.model_validate(store.config(run_id)).resolved()
     suite_name = suite_name or store.run_suite(run_id)
     suite = load_suite(suite_name)
@@ -97,6 +100,8 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
     groups: set[str] = set()
 
     # 1 + 2. every scene of the suite (one for a classic suite) + its stand-still sub-protocol
+    if record_n is None:
+        record_n = int(n_episodes or suite_protocol(suite)["n_episodes"])
     metrics, stats, rollouts, proto = run_suite_scenes(cfg, ctrl, suite, n_episodes=n_episodes, record_n=record_n,
                                                        source={"run_id": run_id, "suite": suite_name}, stand_still=True)
     n = int(proto["n_episodes"])
@@ -186,11 +191,24 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
     report.update({"run_id": run_id, "n_episodes": n, "seeds": [s.seed for s in stats],
                    "sim": f"mujoco-cpu/bittle_{common['variant']}.xml", "protocol": proto,
                    "task": cfg.task, "episodes": [s.to_dict() for s in stats], "config_hash": cfg.config_hash()})
+    from .render import best_episode_seed
+
+    report["best_seed"] = best_episode_seed(report)
     store.write_benchmark(run_id, suite["suite"], str(suite["version"]), report)
     for seed, ro in rollouts.items():
         p = store.rollout_path(run_id, suite["suite"], str(suite["version"]), seed)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(ro))
+    if render_clip:
+        try:
+            from .render import render_best_clip
+
+            clip = render_best_clip(store, run_id, report)
+            if clip:
+                report["best_clip"] = clip
+                store.write_benchmark(run_id, suite["suite"], str(suite["version"]), report)
+        except Exception as exc:  # a clip is a nicety; the benchmark result must land regardless
+            print(f"best clip not rendered: {exc!r}")
     return report
 
 

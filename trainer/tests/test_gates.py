@@ -288,3 +288,16 @@ def test_reflection_stops_the_swing_loop_when_the_swing_weights_are_at_their_bou
     refl = _rough_report({"foot_clearance_p50_mm": 0.57}, ctx)["reflection"]
     assert "AT THEIR BOUNDS" in refl and "STOP spending cycles on this gate" in refl
     assert "raise reward.weights.feet_air_time" not in refl
+
+
+def test_best_episode_seed_prefers_the_longest_non_fallen_primary_episode():
+    from trainer.eval.render import best_episode_seed
+
+    rep = {"protocol": {"scene": ""}, "episodes": [
+        {"seed": 0, "distance_x": 0.9, "fell": True, "scene": ""},
+        {"seed": 1, "distance_x": 0.4, "fell": False, "scene": ""},
+        {"seed": 2, "distance_x": 0.6, "fell": False, "scene": ""},
+        {"seed": 1000, "distance_x": 1.5, "fell": False, "scene": "other"}]}
+    assert best_episode_seed(rep) == 2
+    assert best_episode_seed({"episodes": []}) is None
+    assert best_episode_seed({"episodes": [{"seed": 7, "distance_x": 0.1, "fell": True}]}) == 7

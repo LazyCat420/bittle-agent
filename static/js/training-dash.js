@@ -171,6 +171,7 @@ export class TrainingDashboard {
             <span class="td-muted">tick runs to compare · click a row for detail</span></div>
           <div class="td-tablewrap"><table class="td-table" id="tdRuns"></table></div>
           <div class="td-muted" id="tdBaselines"></div>
+          <details class="td-clips" id="tdClipsWrap"><summary>🎞 best-attempt clips (every run in this suite)</summary><div class="td-clips-grid" id="tdClips"></div></details>
         </section>
         <section class="td-card">
           <div class="td-head"><span>📈 Run detail</span><span id="tdDetailTitle" class="td-muted"></span></div>
@@ -267,6 +268,7 @@ export class TrainingDashboard {
       const r = this.runs.find(x => x.run_id === id);
       if (r && r.gates_total) this.replay(id, r.suite);
     });
+    this.renderClips();
     t.querySelectorAll('input[data-cmp]').forEach(cb => cb.onchange = () => {
       cb.checked ? this.compare.add(cb.dataset.cmp) : this.compare.delete(cb.dataset.cmp);
       this.root.querySelector('#tdCompareCount').textContent = `${this.compare.size} selected`;
@@ -279,6 +281,17 @@ export class TrainingDashboard {
   }
 
   // ── detail ─────────────────────────────────────────────────────────
+  renderClips() {
+    const el = this.root.querySelector('#tdClips');
+    if (!el) return;
+    const runs = this.runs.filter(r => r.gates_total && r.suite_version);
+    if (!runs.length) { el.innerHTML = '<span class="td-muted">no benchmarked runs</span>'; return; }
+    el.innerHTML = runs.map(r => `<figure class="td-clip-card ${r.run_id === this.selected ? 'td-clip-sel' : ''}" data-run="${esc(r.run_id)}">
+        <img loading="lazy" alt="${esc(r.name)}" src="/api/training/artifact/${encodeURIComponent(r.run_id)}/benchmark/${encodeURIComponent(r.suite + '@' + r.suite_version)}/best.gif" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'td-clip-missing',textContent:'no clip'}))">
+        <figcaption><b>${esc(r.name)}</b><br><span class="td-muted">${esc(r.suite)} · ${r.gates_passed}/${r.gates_total} · ${fmt(r.dist_p50, 2)} m</span></figcaption></figure>`).join('');
+    el.querySelectorAll('.td-clip-card').forEach(c => c.onclick = () => { this.loadDetail(c.dataset.run); this.replay(c.dataset.run, this.runs.find(x => x.run_id === c.dataset.run)?.suite); });
+  }
+
   async loadDetail(runId, quiet = false) {
     this.selected = runId;
     if (!quiet) this.renderRuns();
@@ -310,6 +323,7 @@ export class TrainingDashboard {
       <canvas id="tdDistCurve" class="td-canvas"></canvas>
       ${bench ? `<div class="td-kv"><span><b>${esc(bench.suite)}@${esc(bench.suite_version)}</b></span><span class="${bench.passed ? 'td-ok' : 'td-warn'}"><b>${bench.gates_passed}/${bench.gates_total} gates</b> · score ${fmt(bench.score, 2)}</span>
           <span>${fmt(bench.metrics?.forward_distance_p50, 2)} m · falls ${fmt(bench.metrics?.fall_rate, 2)} · ${fmt(bench.metrics?.energy_proxy_w, 2)} W · peak joint ${fmt(bench.metrics?.peak_joint_speed_rad_s, 2)} rad/s</span></div>
+        ${bench.suite_version ? `<div class="td-clip"><img class="td-clip-img" loading="lazy" alt="best attempt clip" src="/api/training/artifact/${encodeURIComponent(runId)}/benchmark/${encodeURIComponent(bench.suite + '@' + bench.suite_version)}/best.gif" onerror="this.parentNode.innerHTML='<span class=td-muted>no clip yet (benchmark again to render best.gif)</span>'"><div class="td-muted td-tiny">best attempt${bench.best_seed !== undefined && bench.best_seed !== null ? ' · seed ' + esc(bench.best_seed) : ''} · the same episode the viewer replays</div></div>` : ''}
         <canvas id="tdGateBars" class="td-canvas td-canvas-tall"></canvas>
         <details><summary>gate table (${gates.length})</summary><table class="td-table td-tiny">${gates.map(g => `<tr class="${g.pass ? 'td-ok' : 'td-bad'}"><td>${g.pass ? '✓' : '✗'}</td><td>${esc(g.gate)}</td><td>${fmt(g.value, 3)}</td><td>${esc(g.op)} ${Array.isArray(g.threshold) ? esc(JSON.stringify(g.threshold)) : esc(g.threshold)}</td><td class="td-muted">${esc(g.term || '')}</td></tr>`).join('')}</table></details>
         <div class="td-reflection">${esc(bench.reflection || '')}</div>` : '<div class="td-muted">no benchmark yet</div>'}
@@ -366,7 +380,7 @@ export class TrainingDashboard {
     if (seqName) seqName.textContent = `loading ${label}…`;
     const token = (this._replayToken = (this._replayToken || 0) + 1);
     try {
-      const ro = await getJSON(`/api/training/rollout/${encodeURIComponent(runId)}?seed=0${suite ? '&suite=' + encodeURIComponent(suite) : ''}`);
+      const ro = await getJSON(`/api/training/rollout/${encodeURIComponent(runId)}?seed=best${suite ? '&suite=' + encodeURIComponent(suite) : ''}`);
       if (token !== this._replayToken) return; // a newer replay request superseded this one
       const ok = this.viewer.playRollout(ro, { loop: false, name: label });
       if (ok) { this.playingRun = runId; this.renderRuns(); }

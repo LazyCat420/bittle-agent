@@ -110,6 +110,37 @@ export class ObstacleCourse {
     this.currentPreset = COURSE_PRESETS.NONE;
   }
 
+  /**
+   * A benchmark rollout's terrain (bittle.rollout.v1 source.field): the boxes the physics engine
+   * placed, in MuJoCo world metres (x forward, y left, z up; floor at plane_z). Viewer axes:
+   * x -> x, z -> y (up), y -> -z. The box tops sit at pos.z + half.z above plane_z.
+   */
+  loadField(field) {
+    this.clear();
+    if (!field || !Array.isArray(field.boxes) || field.boxes.length === 0) return;
+    this.currentPreset = 'replay_field';
+    const planeZ = Number.isFinite(field.plane_z) ? field.plane_z : -0.01;
+    const rock = this.materials.rock || (this.materials.rock = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.85, metalness: 0.05 }));
+    const top = this.materials.rockTop || (this.materials.rockTop = new THREE.MeshStandardMaterial({ color: 0xb59a6b, roughness: 0.8, metalness: 0.05 }));
+    for (const b of field.boxes) {
+      const [mx, my, mz] = b.pos;
+      const [hx, hy, hz] = b.half;
+      const topZ = mz + hz - planeZ;           // height of the box top above the floor (m)
+      if (topZ <= 0) continue;
+      const yawRad = -THREE.MathUtils.degToRad(b.yaw_deg || 0);  // y flips, so the yaw flips
+      // draw only the part above the floor: a slab of height topZ whose centre is topZ/2 above the floor
+      const geo = new THREE.BoxGeometry(2 * hx, topZ, 2 * hy);
+      const mesh = new THREE.Mesh(geo, [rock, rock, top, rock, rock, rock]);
+      mesh.position.set(mx, topZ / 2 + 0.0005, -my);
+      mesh.rotation.y = yawRad;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const r = Math.hypot(hx, hy);
+      this.colliders.push({ type: 'rock', minX: mx - r, maxX: mx + r, minZ: -my - r, maxZ: -my + r, elevation: topZ, yaw: yawRad, hx, hy, x: mx, z: -my });
+    }
+  }
+
   loadPreset(presetName) {
     this.clear();
     this.currentPreset = presetName;
@@ -392,7 +423,13 @@ export class ObstacleCourse {
     if (this.currentPreset === COURSE_PRESETS.NONE) return 0;
 
     for (const c of this.colliders) {
-      if (c.type === 'step' || c.type === 'landing') {
+      if (c.type === 'rock') {
+        // rotate the query into the box frame (yaw about the up axis)
+        const dx = x - c.x, dz = z - c.z;
+        const cs = Math.cos(-c.yaw), sn = Math.sin(-c.yaw);
+        const lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
+        if (Math.abs(lx) <= c.hx && Math.abs(lz) <= c.hy) return c.elevation;
+      } else if (c.type === 'step' || c.type === 'landing') {
         if (x >= c.minX && x <= c.maxX && z >= c.minZ && z <= c.maxZ) {
           return c.elevation;
         }

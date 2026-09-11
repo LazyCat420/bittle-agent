@@ -154,6 +154,25 @@ class TerrainField:
         return int(np.sum(self.box_pos[:, 2] > -0.5))
 
 
+def field_to_json(field: TerrainField) -> dict[str, Any]:
+    """The field as the 3D viewer draws it: enabled boxes in MuJoCo world metres (x forward, y left,
+    z up; the floor plane sits at PLANE_Z), plus the gravity vector so a tilted-world incline can be
+    shown by tilting the camera's up-vector."""
+    g = np.asarray(field.gravity, dtype=float)
+    gn = g / max(float(np.linalg.norm(g)), 1e-9)
+    slope = float(np.degrees(np.arccos(np.clip(-gn[2], -1.0, 1.0))))
+    yaw = float(np.degrees(np.arctan2(-gn[1], -gn[0]))) if slope > 1e-3 else 0.0
+    boxes = []
+    for i in range(int(field.box_pos.shape[0])):
+        if field.box_pos[i, 2] <= -0.5:
+            continue
+        boxes.append({"pos": [round(float(v), 5) for v in field.box_pos[i]],
+                      "half": [round(float(v), 5) for v in field.box_half[i]],
+                      "yaw_deg": round(float(np.degrees(field.box_yaw[i])), 2)})
+    return {"gravity": [round(float(v), 5) for v in g], "slope_deg": round(slope, 3), "slope_yaw_deg": round(yaw, 2),
+            "plane_z": PLANE_Z, "boxes": boxes}
+
+
 def flat_field(k: int = MAX_BOXES) -> TerrainField:
     return TerrainField(gravity=np.array([0.0, 0.0, -G]), box_pos=np.tile(PARKED_POS, (k, 1)),
                         box_half=np.tile(PARKED_HALF, (k, 1)), box_yaw=np.zeros(k))

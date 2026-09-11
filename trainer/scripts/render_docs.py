@@ -26,7 +26,6 @@ from trainer.eval.evaluator import GaitController, PolicyController, StandContro
 from trainer.eval.gates import load_suite, suite_protocol, suite_scenes  # noqa: E402
 from trainer.policy.mlp import NumpyPolicy  # noqa: E402
 
-W, H, FPS, SECONDS = 300, 225, 12, 5.0
 
 
 def _scan_runs(runs_dir: Path) -> list[dict]:
@@ -58,53 +57,7 @@ def _scene_names(suite: str) -> list[str]:
     return [n for n, _ in suite_scenes(load_suite(suite)) if n]
 
 
-def _camera(d: mujoco.MjData, m: mujoco.MjModel) -> mujoco.MjvCamera:
-    cam = mujoco.MjvCamera()
-    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-    cam.distance = 0.42 if m.nbody < 40 else 0.55  # the terrain variants carry 32 box bodies: frame wider
-    cam.azimuth = 150
-    cam.elevation = -18
-    cam.lookat[:] = d.xpos[m.body("torso").id] + np.array([0.0, 0.0, -0.01])
-    return cam
-
-
-def render_episode(env, controller, *, seed: int, command, out_gif: Path, label: str) -> dict:
-    env.rng = np.random.default_rng(seed)
-    obs = env.reset(command=np.asarray(command, dtype=np.float64))
-    controller.reset(env)
-    m, d = env.model, env.data
-    renderer = mujoco.Renderer(m, height=H, width=W)
-    every = max(1, int(round(env.cfg.control_hz / FPS)))
-    frames = []
-    steps = int(SECONDS * env.cfg.control_hz)
-    x0 = float(d.qpos[0])
-    fell = False
-    for t in range(steps):
-        kind, val = controller.act(obs, env, t)
-        obs, r, done, info = env.step(np.zeros(8), target_deg=val) if kind == "target" else env.step(val)
-        if t % every == 0:
-            renderer.update_scene(d, camera=_camera(d, m))
-            frames.append(Image.fromarray(renderer.render()))
-        if done:
-            fell = True
-            break
-    renderer.close()
-    dist = float(d.qpos[0] - x0)
-    _annotate(frames, f"{label}  {dist:+.2f} m / {min(SECONDS, (t + 1) / env.cfg.control_hz):.0f} s" + ("  FELL" if fell else ""))
-    q = [f.quantize(colors=64, method=Image.Quantize.MEDIANCUT) for f in frames]
-    q[0].save(out_gif, save_all=True, append_images=q[1:], duration=int(1000 / FPS), loop=0, optimize=True)
-    return {"distance_m": round(dist, 3), "fell": fell, "frames": len(frames), "gif": out_gif.name}
-
-
-def _annotate(frames: list[Image.Image], text: str) -> None:
-    from PIL import ImageDraw
-
-    for im in frames:
-        dr = ImageDraw.Draw(im)
-        dr.rectangle([0, 0, W, 16], fill=(20, 20, 20))
-        dr.text((4, 2), text, fill=(240, 240, 240))
-
-
+from trainer.eval.render import FPS, H, SECONDS, W, _annotate, _camera, render_episode  # noqa: E402,F401
 def render_model_stills(out: Path) -> None:
     for variant, groups, title in (("cpu", {0: 1, 1: 0, 4: 0}, "bittle_cpu.xml — visual meshes"),
                                    ("cpu", {0: 0, 1: 1, 4: 1}, "bittle_cpu.xml — mesh collision geoms + foot spheres"),
@@ -415,8 +368,10 @@ def main() -> int:
         run_cfg = TrainConfig.model_validate(json.loads((runs_dir / rid / "config.json").read_text()))
         env, cmd = _suite_env(run_cfg, r["suite"])
         pol = PolicyController(NumpyPolicy.load(runs_dir / rid / "policy" / "policy.npz"))
-        summary[rid] = render_episode(env, pol, seed=0, command=cmd, out_gif=out / f"policy_{r['name']}.gif",
-                                      label=f"{r['name']} ({r['suite']})")
+        # the run's BEST benchmark attempt (same seed = same episode on the CPU env), not always seed 0
+        best = (_report(runs_dir, rid, r["suite"]) or {}).get("best_seed")
+        summary[rid] = render_episode(env, pol, seed=int(best) if best is not None else 0, command=cmd,
+                                      out_gif=out / f"policy_{r['name']}.gif", label=f"{r['name']} ({r['suite']})")
         # a scenes suite: one clip per scene, on that scene's ground, with its command and pushes
         for scene in (_scene_names(r["suite"]) if rid in best_ids else []):
             env, cmd = _suite_env(run_cfg, r["suite"], scene=scene)
