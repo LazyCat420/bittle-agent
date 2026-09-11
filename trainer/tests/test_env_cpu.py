@@ -300,3 +300,40 @@ def tr_landing_slot():
     from trainer.env import terrain as tr
 
     return tr.STAIR_LANDING_SLOT
+
+
+def test_stance_timeout_scores_a_real_gait_above_a_dragging_one():
+    """The term's whole claim is a gradient pointing from dragging towards lifting, so check it on two
+    REPLAYED behaviours rather than hand-built numbers: the firmware trot (which does pick its feet up,
+    however little) against holding STAND while commanded to walk. The stander must saturate the penalty
+    and the trot must collect far less; at the intended weight the trot's weighted reward is strictly
+    higher, and neither is driven to the clip floor (where no gradient would survive)."""
+    from trainer.config import apply_patch
+    from trainer.env import spec
+    from trainer.eval.evaluator import GaitController, StandController
+
+    cfg = apply_patch(None, {"dr": {"enabled": False}})
+    cmd = np.array([0.12, 0.0, 0.0])
+    weights = {"tracking_lin_vel": 1.5, "stance_timeout": -0.5}
+
+    def replay(controller):
+        env = BittleCpuEnv(cfg, envelope_tier="tested", seed=0)
+        obs = env.reset(command=cmd)
+        controller.reset(env)
+        term = rew = 0.0
+        steps = 250  # 5 s
+        for t in range(steps):
+            kind, val = controller.act(obs, env, t)
+            obs, _, done, info = (env.step(np.zeros(8), target_deg=val) if kind == "target" else env.step(val))[:4]
+            term += info.terms["stance_timeout"]
+            rew += float(spec.weighted_reward(np, info.terms, weights, env.cfg.control_dt))
+            if done:
+                break
+        return term / steps, rew / steps
+
+    trot_term, trot_rew = replay(GaitController.from_opencat("trF"))
+    stand_term, stand_rew = replay(StandController())
+    assert stand_term > 3 * trot_term, (trot_term, stand_term)
+    assert stand_term > 0.5 * 4 * spec.STANCE_OVERDUE_CAP_S, stand_term   # the stander saturates the cap
+    assert trot_rew > stand_rew, (trot_rew, stand_rew)                     # the gradient points at walking
+    assert stand_rew > 0.0, "the weighted reward hit the clip floor: no gradient would survive there"
