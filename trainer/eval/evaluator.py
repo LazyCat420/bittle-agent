@@ -340,8 +340,13 @@ def protocol_kwargs(proto: dict[str, Any]) -> dict[str, Any]:
     """Env-level kwargs shared by every sub-protocol of a suite: its fixed terrain + spawn jitter,
     and a fixed push schedule when the protocol has one (statue_v1)."""
     pt = proto.get("terrain") or {"kind": "flat"}
+    model_name = str(proto.get("model", ""))
+    if "basketball" in model_name:
+        variant = "basketball"
+    else:
+        variant = tr.variant_for(pt.get("kind", "flat"), "cpu")
     out = {"terrain": tr.field_from_protocol(pt), "spawn_jitter_m": float(pt.get("spawn_jitter_m", 0.0)),
-           "variant": tr.variant_for(pt.get("kind", "flat"), "cpu")}
+           "variant": variant}
     push = proto.get("push")
     if push:
         ep = dr_mod.nominal_episode_params()

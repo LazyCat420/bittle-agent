@@ -1,0 +1,44 @@
+# Ball Balance Suite: Bittle dynamically balanced on an unanchored, free-rolling basketball.
+# Ball: radius 0.12 m, mass 0.60 kg, thin hollow shell inertia I = 0.00576 kg.m^2, condim=6 friction.
+# Goal: Maintain dynamic stance atop the ball for 10.0 s without falling off or letting the ball roll away.
+suite: ball_v1
+version: 1.0.0-uncalibrated
+include: [_servo_safety]
+protocol:
+  n_episodes: 20
+  seed_start: 0
+  episode_seconds: 10.0
+  command: [0.0, 0.0, 0.0]
+  model: bittle_basketball.xml
+  dr: nominal
+  terrain:
+    kind: flat
+gates:
+  - name: balance_survival_fall_rate
+    metric: fall_rate
+    op: "<="
+    threshold: 0.20
+    unit: fraction
+    term: orientation
+    hint: "robot paws slipped off the ball or torso contacted: raise orientation / base_height"
+  - name: ball_position_drift
+    metric: centre_drift_m
+    op: "<="
+    threshold: 0.50
+    unit: m
+    term: stand_still
+    hint: "keep ball under center of mass without rolling away"
+  - name: body_stability_tilt
+    metric: mean_tilt_deg
+    op: "<="
+    threshold: 15.0
+    unit: deg
+    term: orientation
+    hint: "keep body attitude level on the curved sphere surface"
+  - name: body_stability_vz
+    metric: rms_vz
+    op: "<="
+    threshold: 0.10
+    unit: m/s
+    term: lin_vel_z
+    hint: "minimize vertical oscillation on the ball"

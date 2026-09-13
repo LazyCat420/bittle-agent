@@ -160,6 +160,21 @@ TASKS: dict[str, Task] = {
                       "commands": {"vx": [-0.20, -0.05], "vy": [0.0, 0.0], "wz": [0.0, 0.0]},
                       "reward": {"weights": {"tracking_lin_vel": 2.0, "stall": -0.05}}},
     ),
+    "ball_balance": Task(
+        name="ball_balance",
+        goal="balance atop an unanchored free-rolling basketball (r=12cm, m=0.6kg) for 10 s without falling",
+        suite="ball_v1",
+        aliases=("ball", "basketball", "rolling ball", "sphere", "ball balance"),
+        prerequisites=("flat_walk",),
+        config_keys=("reward.weights.stand_still", "reward.weights.orientation", "reward.weights.base_height",
+                     "reward.weights.feet_slip", "reflex.arm", "reflex.max_trim_deg", "ppo.num_timesteps"),
+        baseline="stand",
+        config_patch={"task": "ball_balance", "terrain": {"level": 0},
+                      "commands": {"vx": [0.0, 0.0], "vy": [0.0, 0.0], "wz": [0.0, 0.0]},
+                      "reward": {"weights": {"stand_still": -1.0, "orientation": -5.0, "base_height": -3.0,
+                                             "feet_air_time": 0.0, "feet_slip": -1.0, "stall": -0.05}},
+                      "ppo": {"num_timesteps": 3000000}},
+    ),
 }
 
 
