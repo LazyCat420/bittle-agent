@@ -60,4 +60,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Serialize CUDA ownership with the local music renderer. The service launches
+    # a fresh process for each run, so this also covers an already-running service.
+    import fcntl
+    with open("/tmp/sun-rtx3090ti.gpu.lock", "a") as gpu_lock:
+        fcntl.flock(gpu_lock, fcntl.LOCK_EX)
+        sys.exit(main())
