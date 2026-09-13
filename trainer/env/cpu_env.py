@@ -289,12 +289,22 @@ class BittleCpuEnv:
     def base_state(self) -> dict[str, Any]:
         d = self.data
         q = d.qpos[3:7]
-        return {
+        st = {
             "pos": d.qpos[0:3].tolist(),
             "quat_wxyz": q.tolist(),
             "rpy_deg": [float(np.degrees(x)) for x in _quat_to_rpy(q)],
             "joint_deg": jm.mjcf_rad_to_agent_deg(d.qpos[self.qpos_idx]).tolist(),
         }
+        if "basketball" in self.variant:
+            try:
+                bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "basketball")
+                if bid >= 0:
+                    st["ball_pos"] = d.xpos[bid].tolist()
+                    st["ball_quat_wxyz"] = d.xquat[bid].tolist()
+                    st["ball_rpy_deg"] = [float(np.degrees(x)) for x in _quat_to_rpy(d.xquat[bid])]
+            except Exception:
+                pass
+        return st
 
 
 

@@ -106,13 +106,15 @@ def build_basketball_xml() -> str:
     key = root.find("keyframe").find("key")
     if key is not None:
         qpos_vals = [float(x) for x in key.get("qpos").split()]
-        # Adjust robot torso x and z to center over ball:
-        # Bittle center of foot stance is x ≈ -0.0231, so shifting torso x to +0.0231 centers feet at x=0
-        qpos_vals[0] = 0.0231
+        # Center robot torso so that the foot stance midpoint is precisely at x=0 (the ball apex).
+        # On flat ground at stand posture, front feet are at x = +0.06312, rear feet at x = -0.04188.
+        # Midpoint of stance is x = +0.01062, so torso must be placed at x = -0.01062.
+        # This places all 4 paws at equal radial distance r = 0.06259 m from the apex,
+        # with ball surface height z = 0.21238 m. With foot capsule radius 0.006 m,
+        # torso z = 0.26965 m achieves exact zero-penetration grazing contact on all 4 paws.
+        qpos_vals[0] = -0.01062
         qpos_vals[1] = 0.0
-        # Elevate torso: ball top is 0.23 m, torso settled height on flat ground is 0.047 m,
-        # with foot drop on sphere curve (~0.023 m), initial torso z is ~0.254 m
-        qpos_vals[2] = 0.254
+        qpos_vals[2] = 0.26965
 
         # Append basketball freejoint qpos: (x, y, z, qw, qx, qy, qz)
         ball_qpos = [0.0, 0.0, BALL_Z_CENTER, 1.0, 0.0, 0.0, 0.0]

@@ -334,6 +334,10 @@ def get_rollout(run_id: str, seed: str = "best", suite: str | None = None) -> An
         proto = rep.get("protocol") or {}
         if proto.get("terrain"):
             src["field"] = tr.field_to_json(protocol_kwargs(proto)["terrain"])
+    if suite == "ball_v1" or (rep.get("protocol") or {}).get("model") == "bittle_basketball.xml":
+        field = src.setdefault("field", {"plane_z": -0.01, "boxes": []})
+        field.setdefault("ball", {"radius": 0.12, "pos": [0.0, 0.0, 0.11]})
+        field.setdefault("model", "bittle_basketball.xml")
     src["best"] = bool(rep.get("best_seed") == int(seed_i))
     return JSONResponse(body)
 

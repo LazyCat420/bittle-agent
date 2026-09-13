@@ -330,7 +330,7 @@
     <contact name="jaw_1_ball_found" body1="jaw_1" geom2="basketball_geom" reduce="mindist" num="1" data="found" />
   </sensor>
   <keyframe>
-    <key name="stand" qpos="0.0231 0 0.254 1 0 0 0 -0.7854 1.4835 0.7854 1.4835 -0.7854 1.4835 0.7854 1.4835 0 0 0.11 1 0 0 0" ctrl="-0.785398 1.48353 -0.785398 1.48353 0.785398 1.48353 0.785398 1.48353" />
+    <key name="stand" qpos="-0.01062 0 0.26965 1 0 0 0 -0.7854 1.4835 0.7854 1.4835 -0.7854 1.4835 0.7854 1.4835 0 0 0.11 1 0 0 0" ctrl="-0.785398 1.48353 -0.785398 1.48353 0.785398 1.48353 0.785398 1.48353" />
   </keyframe>
   <contact>
     <exclude body1="torso" body2="servos_rf_1" />

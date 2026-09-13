@@ -35,10 +35,10 @@ def test_basketball_suite_evaluation():
     common = protocol_kwargs(proto)
     assert common["variant"] == "basketball"
 
-    # Evaluate 2 short episodes (1.0 s) to verify end-to-end evaluation pipeline
+    # Evaluate 2 short episodes (1.0 s) to verify end-to-end evaluation pipeline with rollout recording
     stats, rollouts = evaluate_protocol(
         cfg, ctrl, n_episodes=2, seed_start=0, seconds=1.0,
-        command=[0.0, 0.0, 0.0], **common
+        command=[0.0, 0.0, 0.0], record_seeds={0}, **common
     )
 
     assert len(stats) == 2
@@ -48,3 +48,11 @@ def test_basketball_suite_evaluation():
         assert isinstance(ep.centre_drift_m, float)
         assert isinstance(ep.tilt_deg, float)
         assert not np.isnan(ep.tilt_deg)
+
+    assert 0 in rollouts, "Rollout seed 0 was not recorded"
+    ro = rollouts[0]
+    assert len(ro["frames"]) > 0, "No frames recorded in rollout"
+    first_frame = ro["frames"][0]
+    assert "ball_pos_m" in first_frame, "ball_pos_m missing from rollout frame"
+    assert len(first_frame["ball_pos_m"]) == 3, f"Invalid ball_pos_m: {first_frame['ball_pos_m']}"
+    assert "ball_rpy_deg" in first_frame, "ball_rpy_deg missing from rollout frame"

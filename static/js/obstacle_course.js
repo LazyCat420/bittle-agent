@@ -10,8 +10,75 @@ export const COURSE_PRESETS = {
   MINI_STAIRS: 'mini_stairs',
   RAMP_BRIDGE: 'ramp_bridge',
   CRAWL_TUNNEL: 'crawl_tunnel',
-  AGILITY_SLALOM: 'agility_slalom'
+  AGILITY_SLALOM: 'agility_slalom',
+  BASKETBALL: 'basketball'
 };
+
+function createBasketballTexture() {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // Base orange leather gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0, '#f97316');
+  grad.addColorStop(0.5, '#ea580c');
+  grad.addColorStop(1, '#c2410c');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  // Subtle pebbled leather grain
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+  for (let i = 0; i < 3000; i++) {
+    const rx = Math.random() * 1024;
+    const ry = Math.random() * 512;
+    ctx.fillRect(rx, ry, 1.5, 1.5);
+  }
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+  for (let i = 0; i < 3000; i++) {
+    const rx = Math.random() * 1024;
+    const ry = Math.random() * 512;
+    ctx.fillRect(rx, ry, 1.5, 1.5);
+  }
+
+  // Black seam lines
+  ctx.strokeStyle = '#18181b';
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+
+  // Equator
+  ctx.beginPath();
+  ctx.moveTo(0, 256);
+  ctx.lineTo(1024, 256);
+  ctx.stroke();
+
+  // Meridians
+  for (let x = 0; x <= 1024; x += 256) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 512);
+    ctx.stroke();
+  }
+
+  // Curved side ribs
+  ctx.lineWidth = 10;
+  for (const cx of [256, 768]) {
+    ctx.beginPath();
+    ctx.arc(cx, 128, 160, 0.3 * Math.PI, 0.7 * Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, 384, 160, 1.3 * Math.PI, 1.7 * Math.PI);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+}
 
 export class ObstacleCourse {
   constructor(scene) {
@@ -107,7 +174,84 @@ export class ObstacleCourse {
       if (obj.geometry) obj.geometry.dispose();
     }
     this.colliders = [];
+    this.basketballMesh = null;
+    this.basketballShadow = null;
     this.currentPreset = COURSE_PRESETS.NONE;
+  }
+
+  /**
+   * Build high-fidelity 3D basketball with textured orange pebbled leather,
+   * black rib seam geometry, and ground contact shadow.
+   */
+  buildBasketball(config = {}) {
+    const r = config.radius || 0.12;
+    const [px, py, pz] = config.pos || [0.0, 0.0, 0.11];
+    const planeZ = Number.isFinite(config.plane_z) ? config.plane_z : -0.01;
+    // Floor is at y=0. Ball center sits at (pz - planeZ) above the floor.
+    const centerY = (pz - planeZ);
+
+    const ballGroup = new THREE.Group();
+    ballGroup.name = 'basketball_entity';
+
+    // 1. Sphere with textured pebbled leather
+    const texture = createBasketballTexture();
+    const mat = new THREE.MeshStandardMaterial({
+      map: texture,
+      roughness: 0.55,
+      metalness: 0.08,
+    });
+    const geo = new THREE.SphereGeometry(r, 64, 32);
+    const sphereMesh = new THREE.Mesh(geo, mat);
+    sphereMesh.castShadow = true;
+    sphereMesh.receiveShadow = true;
+    ballGroup.add(sphereMesh);
+
+    // 2. 3D Seam Ribs (Black rubber toroidal strips for geometric relief)
+    const ribMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    const ribThick = 0.0022;
+    const ribRad = r + 0.0006;
+
+    // Equator rib
+    const eqGeo = new THREE.TorusGeometry(ribRad, ribThick, 10, 64);
+    const eqMesh = new THREE.Mesh(eqGeo, ribMat);
+    eqMesh.rotation.x = Math.PI / 2;
+    sphereMesh.add(eqMesh);
+
+    // Meridian rib 1
+    const m1Mesh = new THREE.Mesh(eqGeo, ribMat);
+    sphereMesh.add(m1Mesh);
+
+    // Meridian rib 2
+    const m2Mesh = new THREE.Mesh(eqGeo, ribMat);
+    m2Mesh.rotation.y = Math.PI / 2;
+    sphereMesh.add(m2Mesh);
+
+    ballGroup.position.set(px, centerY, -py);
+
+    // 3. Ground contact shadow disc
+    const shadowGeo = new THREE.CircleGeometry(r * 0.92, 32);
+    const shadowMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    });
+    const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+    shadowMesh.rotation.x = -Math.PI / 2;
+    shadowMesh.position.set(px, 0.0008, -py);
+    this.group.add(shadowMesh);
+
+    this.group.add(ballGroup);
+    this.basketballMesh = ballGroup;
+    this.basketballShadow = shadowMesh;
+
+    this.colliders.push({
+      type: 'basketball',
+      radius: r,
+      x: px,
+      z: -py,
+      elevation: centerY + r,
+    });
   }
 
   /**
@@ -117,27 +261,38 @@ export class ObstacleCourse {
    */
   loadField(field) {
     this.clear();
-    if (!field || !Array.isArray(field.boxes) || field.boxes.length === 0) return;
+    if (!field) return;
+    const isBall = Boolean(field.ball || field.model === 'bittle_basketball.xml');
+    const hasBoxes = Array.isArray(field.boxes) && field.boxes.length > 0;
+    if (!isBall && !hasBoxes) return;
     this.currentPreset = 'replay_field';
     const planeZ = Number.isFinite(field.plane_z) ? field.plane_z : -0.01;
-    const rock = this.materials.rock || (this.materials.rock = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.85, metalness: 0.05 }));
-    const top = this.materials.rockTop || (this.materials.rockTop = new THREE.MeshStandardMaterial({ color: 0xb59a6b, roughness: 0.8, metalness: 0.05 }));
-    for (const b of field.boxes) {
-      const [mx, my, mz] = b.pos;
-      const [hx, hy, hz] = b.half;
-      const topZ = mz + hz - planeZ;           // height of the box top above the floor (m)
-      if (topZ <= 0) continue;
-      const yawRad = -THREE.MathUtils.degToRad(b.yaw_deg || 0);  // y flips, so the yaw flips
-      // draw only the part above the floor: a slab of height topZ whose centre is topZ/2 above the floor
-      const geo = new THREE.BoxGeometry(2 * hx, topZ, 2 * hy);
-      const mesh = new THREE.Mesh(geo, [rock, rock, top, rock, rock, rock]);
-      mesh.position.set(mx, topZ / 2 + 0.0005, -my);
-      mesh.rotation.y = yawRad;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      const r = Math.hypot(hx, hy);
-      this.colliders.push({ type: 'rock', minX: mx - r, maxX: mx + r, minZ: -my - r, maxZ: -my + r, elevation: topZ, yaw: yawRad, hx, hy, x: mx, z: -my });
+
+    if (isBall) {
+      const bConf = Object.assign({ plane_z: planeZ }, field.ball || { radius: 0.12, pos: [0.0, 0.0, 0.11] });
+      this.buildBasketball(bConf);
+    }
+
+    if (hasBoxes) {
+      const rock = this.materials.rock || (this.materials.rock = new THREE.MeshStandardMaterial({ color: 0x8b7355, roughness: 0.85, metalness: 0.05 }));
+      const top = this.materials.rockTop || (this.materials.rockTop = new THREE.MeshStandardMaterial({ color: 0xb59a6b, roughness: 0.8, metalness: 0.05 }));
+      for (const b of field.boxes) {
+        const [mx, my, mz] = b.pos;
+        const [hx, hy, hz] = b.half;
+        const topZ = mz + hz - planeZ;           // height of the box top above the floor (m)
+        if (topZ <= 0) continue;
+        const yawRad = -THREE.MathUtils.degToRad(b.yaw_deg || 0);  // y flips, so the yaw flips
+        // draw only the part above the floor: a slab of height topZ whose centre is topZ/2 above the floor
+        const geo = new THREE.BoxGeometry(2 * hx, topZ, 2 * hy);
+        const mesh = new THREE.Mesh(geo, [rock, rock, top, rock, rock, rock]);
+        mesh.position.set(mx, topZ / 2 + 0.0005, -my);
+        mesh.rotation.y = yawRad;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+        const r = Math.hypot(hx, hy);
+        this.colliders.push({ type: 'rock', minX: mx - r, maxX: mx + r, minZ: -my - r, maxZ: -my + r, elevation: topZ, yaw: yawRad, hx, hy, x: mx, z: -my });
+      }
     }
   }
 
@@ -157,6 +312,9 @@ export class ObstacleCourse {
         break;
       case COURSE_PRESETS.AGILITY_SLALOM:
         this.buildAgilitySlalom();
+        break;
+      case COURSE_PRESETS.BASKETBALL:
+        this.buildBasketball();
         break;
       case COURSE_PRESETS.NONE:
       default:

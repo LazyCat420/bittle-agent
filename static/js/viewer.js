@@ -307,9 +307,13 @@ export class BittleViewer {
     this.camera.up.copy(tilted ? up : new THREE.Vector3(0, 1, 0));
     this.controls.maxPolarAngle = tilted ? Math.PI : Math.PI / 2 - 0.02;
     this._tiltedUp = tilted;
-    // frame the robot with the first rocks ahead of it; the follow logic keeps it in view afterwards
-    const r = this.robotGroup.position;
-    this.animateCameraTo(new THREE.Vector3(r.x + 0.10, r.y + 0.42, r.z + 0.78), new THREE.Vector3(r.x + 0.22, 0.02, r.z));
+    // Frame basketball balancing centrally; otherwise frame rocks ahead of the robot
+    if (field.ball || field.model === 'bittle_basketball.xml') {
+      this.animateCameraTo(new THREE.Vector3(0.0, 0.36, 0.68), new THREE.Vector3(0.0, 0.16, 0.0));
+    } else {
+      const r = this.robotGroup.position;
+      this.animateCameraTo(new THREE.Vector3(r.x + 0.10, r.y + 0.42, r.z + 0.78), new THREE.Vector3(r.x + 0.22, 0.02, r.z));
+    }
   }
 
   /** Apply the recorded base pose for the current rollout frame (MuJoCo Z-up -> Three.js Y-up). */
@@ -325,6 +329,29 @@ export class BittleViewer {
     this.robotGroup.position.set(mx, mz + 0.01, -my); // floor plane sits at z=-0.01 in the MJCF
     this.robotYaw = yaw;
     this.setRobotOrientation(roll, pitch);
+
+    // Update dynamic basketball position and rotation if present
+    if (this.obstacleCourse && this.obstacleCourse.basketballMesh && frame.ball_pos_m) {
+      const [bx, by, bz] = frame.ball_pos_m;
+      this.obstacleCourse.basketballMesh.position.set(bx, bz + 0.01, -by);
+      if (this.obstacleCourse.basketballShadow) {
+        this.obstacleCourse.basketballShadow.position.set(bx, 0.0008, -by);
+      }
+      if (frame.ball_quat_wxyz) {
+        const [bw, bx_q, by_q, bz_q] = frame.ball_quat_wxyz;
+        // MuJoCo quaternion (w, x, y, z) -> Three.js (x, z, -y, w)
+        this.obstacleCourse.basketballMesh.quaternion.set(bx_q, bz_q, -by_q, bw);
+      } else if (frame.ball_rpy_deg) {
+        const brpy = frame.ball_rpy_deg;
+        this.obstacleCourse.basketballMesh.rotation.set(
+          THREE.MathUtils.degToRad(brpy[0]),
+          -THREE.MathUtils.degToRad(brpy[2]),
+          -THREE.MathUtils.degToRad(brpy[1]),
+          'YZX'
+        );
+      }
+    }
+
     if (this.onPoseUpdate) {
       this.onPoseUpdate({ x: mx, y: mz + 0.01, z: -my, yaw: this.robotYaw, pitch: this.robotPitch });
     }

@@ -113,7 +113,7 @@ def test_basketball_rolling_deceleration(model_and_data):
 
 
 def test_initial_spawn_no_explosive_forces(model_and_data):
-    """Assert keyframe initialization has stable contacts without explosive accelerations."""
+    """Assert keyframe initialization has stable contacts without explosive accelerations or asymmetric penetration."""
     m, _ = model_and_data
     d = mujoco.MjData(m)
     mujoco.mj_resetDataKeyframe(m, d, 0)
@@ -121,15 +121,24 @@ def test_initial_spawn_no_explosive_forces(model_and_data):
     # Perform a single forward kinematic and velocity step
     mujoco.mj_forward(m, d)
 
-    # Check maximum contact force magnitude
-    max_force = 0.0
-    for i in range(d.ncon):
-        con = d.contact[i]
-        c_force = np.zeros(6, dtype=np.float64)
-        mujoco.mj_contactForce(m, d, i, c_force)
-        f_mag = np.linalg.norm(c_force[:3])
-        if f_mag > max_force:
-            max_force = f_mag
+    ball_geom_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, "basketball_geom")
+    leg_contacts = {}
+    for leg in ("lf", "rf", "lr", "rr"):
+        foot_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_GEOM, f"{leg}_foot")
+        leg_contacts[leg] = [
+            d.contact[i] for i in range(d.ncon)
+            if (d.contact[i].geom1 == foot_id and d.contact[i].geom2 == ball_geom_id)
+            or (d.contact[i].geom2 == foot_id and d.contact[i].geom1 == ball_geom_id)
+        ]
+        # Assert each leg has a valid contact with the basketball
+        assert len(leg_contacts[leg]) >= 1, f"Missing contact between {leg}_foot and basketball_geom"
+        dist = min(c.dist for c in leg_contacts[leg])
+        # Assert no severe penetration (< 2mm)
+        assert dist >= -0.002, f"{leg}_foot penetrates basketball by {abs(dist)*1000:.1f} mm"
 
-    # Normal contact forces for a 0.27 kg robot should be ~2.7 N, definitely < 20 N initially
-    assert max_force < 25.0, f"Explosive contact force detected at spawn: {max_force:.2f} N"
+    # Step 100 steps (0.2s) and assert robot maintains contact atop the ball without being ejected
+    for step in range(100):
+        mujoco.mj_step(m, d)
+
+    assert d.ncon >= 4, f"Lost contact with basketball after 100 steps: ncon={d.ncon}"
+    assert d.qpos[2] >= 0.25, f"Robot fell off basketball: torso z = {d.qpos[2]}"

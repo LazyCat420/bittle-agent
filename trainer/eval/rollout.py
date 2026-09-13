@@ -31,6 +31,11 @@ class RolloutRecorder:
             "contacts": [int(bool(c)) for c in contact],
             "cmd": [round(float(x), 3) for x in cmd],
         }
+        if "ball_pos" in base:
+            frame["ball_pos_m"] = [round(float(x), 5) for x in base["ball_pos"]]
+            frame["ball_rpy_deg"] = [round(float(x), 2) for x in base["ball_rpy_deg"]]
+            if "ball_quat_wxyz" in base:
+                frame["ball_quat_wxyz"] = [round(float(x), 5) for x in base["ball_quat_wxyz"]]
         if limb_contact is not None:
             # shank/thigh on the ground, per sensor (the "stumble" evidence: which limb caught the edge)
             frame["limb_contacts"] = [int(bool(c)) for c in limb_contact]
