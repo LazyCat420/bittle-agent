@@ -51,7 +51,10 @@ class BittleCpuEnv:
         ``terrain_override`` pins the terrain field (a benchmark protocol); ``spawn_jitter_m``
         overrides the config's per-episode spawn offset."""
         self.cfg = config.resolved()
-        self.variant = variant or tr.variant_for(self.cfg.terrain.kind, "cpu")
+        if variant is None:
+            self.variant = "basketball" if self.cfg.task == "ball_balance" else tr.variant_for(self.cfg.terrain.kind, "cpu")
+        else:
+            self.variant = variant
         self.terrain_override = terrain_override
         self.spawn_jitter_m = self.cfg.terrain.spawn_jitter_m if spawn_jitter_m is None else float(spawn_jitter_m)
         self.xml_path = GENERATED / f"bittle_{self.variant}.xml"

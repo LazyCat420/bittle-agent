@@ -68,7 +68,8 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         """``fixed_command`` pins every episode to one (vx, vy, wz) -- the benchmark-protocol ("bar") eval."""
         self.cfg = config.resolved()
         self._fixed_cmd = None if fixed_command is None else jp.array([float(c) for c in fixed_command])
-        variant = variant or tr.variant_for(self.cfg.terrain.kind, "gpu")
+        if variant is None:
+            variant = "basketball" if self.cfg.task == "ball_balance" else tr.variant_for(self.cfg.terrain.kind, "gpu")
         pg = playground_config(self.cfg, impl=impl, num_envs=num_envs, sim_dt=sim_dt)
         super().__init__(pg)
         self._xml_path = str(GENERATED / f"bittle_{variant}.xml")
