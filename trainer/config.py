@@ -308,6 +308,16 @@ class PPOConfig(_Strict):
         return v
 
 
+class ReflexConfig(_Strict):
+    arm: Literal["none", "conventional", "fly", "null"] = "none"
+    max_trim_deg: float = Field(6.0, ge=0.0, le=12.0)
+    kp_pitch: float = Field(8.0, ge=0.0, le=50.0)
+    kd_pitch: float = Field(2.0, ge=0.0, le=20.0)
+    kp_roll: float = Field(8.0, ge=0.0, le=50.0)
+    kd_roll: float = Field(2.0, ge=0.0, le=20.0)
+    haltere_jerk_thresh: float = Field(15.0, ge=1.0, le=100.0)
+
+
 class ObsConfig(_Strict):
     history_n: int = Field(3, ge=1, le=10)
     phase_clock: bool = False
@@ -325,6 +335,7 @@ class TrainConfig(_Strict):
     task: str = Field("flat_walk", min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_]*$")
     dr: DRConfig = Field(default_factory=DRConfig)
     ppo: PPOConfig = Field(default_factory=PPOConfig)
+    reflex: ReflexConfig = Field(default_factory=ReflexConfig)
     episode_seconds: float = Field(10.0, ge=2.0, le=60.0)
     control_hz: Literal[25, 50] = 50
     action_scale_deg: float = Field(6.0, ge=1.0, le=20.0)

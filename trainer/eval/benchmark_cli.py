@@ -106,6 +106,24 @@ def benchmark_run(store: RunStore, run_id: str, *, suite_name: str | None = None
     suite_name = suite_name or store.run_suite(run_id)
     suite = load_suite(suite_name)
     policy = NumpyPolicy.load(store.policy_path(run_id))
+    if cfg.reflex.arm == "conventional":
+        from ..policy.conventional_reflex import ConventionalReflex
+        from ..policy.wrapper import ReflexAugmentedPolicy
+        policy = ReflexAugmentedPolicy(policy, ConventionalReflex(kp_pitch=cfg.reflex.kp_pitch, kd_pitch=cfg.reflex.kd_pitch,
+                                                                 kp_roll=cfg.reflex.kp_roll, kd_roll=cfg.reflex.kd_roll,
+                                                                 max_trim_deg=cfg.reflex.max_trim_deg),
+                                       action_scale_deg=cfg.action_scale_deg)
+    elif cfg.reflex.arm == "fly":
+        from ..policy.fly_reflex import FlyReflex
+        from ..policy.wrapper import ReflexAugmentedPolicy
+        policy = ReflexAugmentedPolicy(policy, FlyReflex(haltere_jerk_thresh=cfg.reflex.haltere_jerk_thresh,
+                                                        max_trim_deg=cfg.reflex.max_trim_deg),
+                                       action_scale_deg=cfg.action_scale_deg)
+    elif cfg.reflex.arm == "null":
+        from ..policy.null_reflex import NullReflex
+        from ..policy.wrapper import ReflexAugmentedPolicy
+        policy = ReflexAugmentedPolicy(policy, NullReflex(max_trim_deg=cfg.reflex.max_trim_deg),
+                                       action_scale_deg=cfg.action_scale_deg)
     ctrl = PolicyController(policy)
     groups: set[str] = set()
 
