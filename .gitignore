@@ -12,6 +12,7 @@ storage/movesets/*.json
 !storage/movesets/.gitkeep
 
 # RL trainer (GPU box)
+.venv-trainer
 .venv-trainer/
 runs/
 storage/research/*.json
