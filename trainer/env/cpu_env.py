@@ -252,14 +252,13 @@ class BittleCpuEnv:
         boxes = self._boxes()
         limb = np.array([float(self.sensor(n)[0] > 0) for n in self.limb_found]) if self.limb_found else np.zeros(8)
         # the support surface under the feet, and how far it rose since the last control step (climb_progress).
-        # _quantities runs exactly once per step, so advancing the clock here is safe.
-        support_h = float(tr.support_height(np, feet_pos, *boxes))
+        support_h = float(np.mean(feet_pos[:, 2])) if "basketball" in self.variant else float(tr.support_height(np, feet_pos, *boxes))
         support_rise = support_h - self.prev_support_h
         self.prev_support_h = support_h
         return {
             "up_world": self.sensor("torso_upvector"),
             # the torso's height reference: mean terrain height under the FEET (continuous across a stair edge)
-            "terrain_h": float(tr.support_height(np, feet_pos, *boxes)),
+            "terrain_h": support_h,
             "torque_cap": m.actuator_forcerange[:, 1],
             "foot_clearance": tr.foot_clearance(np, feet_pos, *boxes),
             "limb_contact": limb,

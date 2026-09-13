@@ -53,6 +53,8 @@ def playground_config(cfg: TrainConfig, *, impl: str | None = None, num_envs: in
 def contact_budget_per_world(cfg: TrainConfig) -> int:
     """Max contacts per world: 16 flat, 48 for the rough_v1-class field, 96 for dense rocks (> 24 boxes
     or spacing under 0.09 m) and stairs (full-width boxes under every leg at once)."""
+    if cfg.task == "ball_balance":
+        return 64
     t = cfg.terrain
     if not tr.has_boxes(t.kind):
         return 16
@@ -276,10 +278,11 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         feet_pos = data.geom_xpos[self._foot_gids]
         limb = (jp.array([data.sensordata[a] > 0 for a in self._limb_found]).astype(jp.float32)
                 if self._limb_found else jp.zeros(8))
+        support_h = jp.mean(feet_pos[:, 2]) if "basketball" in self._xml_path else tr.support_height(jp, feet_pos, *boxes)
         q = {
             "up_world": self._sensor(data, "torso_upvector"),
             # the torso's height reference: mean terrain height under the FEET (continuous across a stair edge)
-            "terrain_h": tr.support_height(jp, feet_pos, *boxes),
+            "terrain_h": support_h,
             "torque_cap": self.mjx_model.actuator_forcerange[:, 1],
             "foot_clearance": tr.foot_clearance(jp, feet_pos, *boxes),
             "limb_contact": limb,
@@ -300,7 +303,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
             "target_deg": target,
             "feet_air_time": feet_air_time,
             "feet_stance_time": feet_stance_time,
-            "support_rise": tr.support_height(jp, feet_pos, *boxes) - info["prev_support_h"],
+            "support_rise": support_h - info["prev_support_h"],
             "first_contact": first_contact.astype(jp.float32),
             "contact": contact.astype(jp.float32),
             "feet_vel_xy": data.sensordata[self._foot_vel][:, :2],
@@ -321,7 +324,7 @@ class BittleGpuEnv(mjx_env.MjxEnv):
         info["act"] = act
         info["feet_air_time"] = feet_air_time * (~contact)
         info["feet_stance_time"] = feet_stance_time * contact
-        info["prev_support_h"] = tr.support_height(jp, feet_pos, *boxes)
+        info["prev_support_h"] = support_h
         info["last_contact"] = contact
         info["body_contact_steps"] = body_steps
         info["step"] = info["step"] + 1
