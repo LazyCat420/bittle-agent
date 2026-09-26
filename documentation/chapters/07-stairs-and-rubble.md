@@ -1,10 +1,24 @@
 ---
 part: RL walking trainer
 status: in-progress
-updated: 2026-09-10
+updated: 2026-09-26
+review-by: 2026-10-26
 ---
 
 # Stairs and rubble: two harder floors, and the height reference the stairs broke
+
+> **Reviewed 2026-09-26 — still live, and nothing below was worked on since.**
+> Checked rather than assumed: the 27 commits after this chapter was written
+> all landed on **2026-09-12** and all belong to a different task — the
+> basketball / fly-reflex benchmark now filed as
+> [ch.08](08-fly-brain-vs-conventional-reflex.md). Nothing touched the stairs
+> descent, the rubble field, or the two uncalibrated suites. The repo has been
+> quiet since 2026-09-12, so every item under *Open* below is unchanged.
+>
+> A `review-by:` is set for the first time. Without one this file was invisible
+> to the staleness clock for 16 days, which is the same defect
+> braindeadbot-client ch.04 records — a chapter with no review date is judged
+> only by `STALE_DAYS`, and that is slower than this repo moves when it moves.
 
 ## The question
 
