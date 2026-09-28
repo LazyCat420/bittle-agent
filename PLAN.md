@@ -99,6 +99,12 @@ the *hardware* safer. We ship a fast kinematic sim that models joint state, limi
 timing — enough to validate command flow end-to-end — and leave a `SimBackend` interface
 that PyBullet can implement later. Flagged rather than silently dropped.
 
+> **Superseded 2026-09-05.** A physics sim did land — MuJoCo Warp with Brax PPO, in
+> `trainer/`. It took the multi-week project this paragraph declined, and the reasoning
+> above still explains why it was declined *first*. See
+> `documentation/chapters/01-rl-walking-training.md` onward, and chapter 09 for how this
+> paragraph came to be out of date without anyone noticing.
+
 **Out:** BLE. Serial is what `ardSerial.py` supports and what the protocol is defined
 against; BLE would be a second unverified transport.
 
