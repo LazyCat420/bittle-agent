@@ -1,8 +1,18 @@
 # Root-Cause Diagnostic & Fix Plan: 3D Terrain Rendering in Simulation Viewport
 
-**Worktree:** `/home/lazycat/github/projects/sun/bittle-agent/.worktrees/wt-fix-terrain`  
-**Branch:** `fix/terrain-render-framing`  
-**Status:** Investigation Complete & Verified via Browser Diagnostics — Awaiting User Approval (Order of Operations Step 1)
+**Worktree:** `/home/lazycat/github/projects/sun/bittle-agent/.worktrees/wt-fix-terrain` *(reaped)*  
+**Branch:** `fix/terrain-render-framing` *(merged)*  
+**Status:** **SHIPPED 2026-09-06** — `db66b71` (obstacles aligned to +X, camera
+auto-framing), tests in `tests/test_obstacles.py`. Indexed by
+[`documentation/chapters/09-the-digital-twin-viewer-and-its-seven-root-plans.md`](documentation/chapters/09-the-digital-twin-viewer-and-its-seven-root-plans.md).
+
+> The line below said *"Awaiting User Approval"* for 23 days after the fix
+> shipped. ch.09 spotted it on 2026-09-28 and chose to leave the root plans
+> where they are — correctly — but left the status line itself misleading, so
+> anyone opening this file rather than the chapter still read a shipped fix as
+> a pending one. Marked here by the 2026-09-29 review. The original line, for
+> the record: *"Investigation Complete & Verified via Browser Diagnostics —
+> Awaiting User Approval (Order of Operations Step 1)"*.
 
 ---
 
