@@ -1,9 +1,10 @@
 """Web research tools for the GLM harness.
 
 Lets the agent look things up while it tunes a training run: web search
-(DuckDuckGo lite, keyless, ~1 s), arXiv paper search, page reading, and a
-small persistent notebook under ``storage/research/`` so findings survive
-across sessions. Outbound fetches are guarded against private/LAN targets.
+(lazy-agent-service's shared keyless search), arXiv paper search, page
+reading, and a small persistent notebook under ``storage/research/`` so
+findings survive across sessions. Page fetches are guarded against
+private/LAN targets.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 
@@ -33,7 +34,7 @@ RESEARCH_TOOL_NAMES = (
 RESEARCH_TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {
         "name": "bittle_web_search",
-        "description": "Search the web (DuckDuckGo). Use it to find how others tuned quadruped RL (reward weights, PPO settings, domain randomisation), sim-to-real reports for Petoi Bittle / OpenCat, MuJoCo Warp or Brax issues, etc.",
+        "description": "Search the web. Use it to find how others tuned quadruped RL (reward weights, PPO settings, domain randomisation), sim-to-real reports for Petoi Bittle / OpenCat, MuJoCo Warp or Brax issues, etc.",
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string"}, "limit": {"type": "integer", "description": "1-10, default 6"}},
             "required": ["query"]}}},
@@ -150,64 +151,39 @@ def html_to_text(html: str) -> tuple[str, str]:
     return ex.title.strip(), ex.text()
 
 
-# ── DuckDuckGo lite parser ─────────────────────────────────────────────────
+# ── Web search ─────────────────────────────────────────────────────────────
 
-class _DDGParser(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.results: list[dict[str, str]] = []
-        self._cur: dict[str, str] | None = None
-        self._in_link = False
-        self._in_snippet = False
-        self._row_sponsored = False
-
-    def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
-        cls = a.get("class", "") or ""
-        if tag == "tr":
-            self._row_sponsored = "sponsored" in cls
-        if tag == "a" and "result-link" in cls and not self._row_sponsored:
-            href = a.get("href", "") or ""
-            if href.startswith("//"):
-                href = "https:" + href
-            # DDG wraps organic results as /l/?uddg=<target> (relative or absolute)
-            pu = urlparse(href)
-            if pu.path == "/l/" and "uddg" in parse_qs(pu.query):
-                href = parse_qs(pu.query)["uddg"][0]
-            self._cur = {"title": "", "url": href, "snippet": ""}
-            self._in_link = True
-        if tag == "td" and "result-snippet" in cls and self.results:
-            self._in_snippet = True
-
-    def handle_endtag(self, tag):
-        if tag == "a" and self._in_link and self._cur is not None:
-            self._cur["title"] = self._cur["title"].strip()
-            self.results.append(self._cur)
-            self._cur = None
-            self._in_link = False
-        if tag == "td" and self._in_snippet:
-            self._in_snippet = False
-
-    def handle_data(self, data):
-        if self._in_link and self._cur is not None:
-            self._cur["title"] += data
-        elif self._in_snippet and self.results:
-            self.results[-1]["snippet"] = (self.results[-1]["snippet"] + data).strip()
+class SearchUnavailable(Exception):
+    """The shared search answered, but did not run the search (rate-limited,
+    busy, or Exa unreachable). Different from "the web has nothing on this"."""
 
 
-async def ddg_search(query: str, limit: int = 6, *, timeout: float = 12.0) -> list[dict[str, str]]:
-    url = f"https://lite.duckduckgo.com/lite/?q={quote_plus(query)}"
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
-        resp = await client.get(url)
+async def shared_web_search(query: str, limit: int = 6, *, base_url: str,
+                            timeout: float = 30.0) -> list[dict[str, str]]:
+    """Web results from lazy-agent-service's POST /execute/web_search.
+
+    That is Exa's keyless API behind one cache and one rate limit for every
+    service on the network. This used to scrape lite.duckduckgo.com, but the
+    free search engines bot-block this network's one public IP (the workstation
+    and the NAS share it): the scrape came back empty, and every attempt
+    deepened a block that every service in the house shares. The service paces
+    Exa calls 1.5 s apart and answers `busy` past 20 s of queueing, hence the
+    30 s timeout.
+    """
+    url = f"{base_url.rstrip('/')}/execute/web_search"
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json={"query": query, "limit": limit})
         resp.raise_for_status()
-    parser = _DDGParser()
-    parser.feed(resp.text)
-    seen, out = set(), []
-    for r in parser.results:
-        if r["url"] in seen or not r["url"].startswith("http"):
+        body = resp.json()
+    if body.get("status") != "ok":
+        raise SearchUnavailable(f"{body.get('status')}: {body.get('error') or 'no detail'}")
+    out = []
+    for r in body.get("results") or []:
+        link = str(r.get("url") or "")
+        if not link.startswith("http"):
             continue
-        seen.add(r["url"])
-        out.append(r)
+        out.append({"title": str(r.get("title") or "").strip(), "url": link,
+                    "snippet": str(r.get("snippet") or "").strip()})
         if len(out) >= limit:
             break
     return out
@@ -307,7 +283,11 @@ class ResearchTools:
 
     async def _web_search(self, args):
         limit = int(min(max(args.get("limit", 6) or 6, 1), 10))
-        results = await ddg_search(str(args["query"]), limit)
+        try:
+            results = await shared_web_search(str(args["query"]), limit,
+                                              base_url=self.settings.search_service_url)
+        except SearchUnavailable as exc:
+            return {"ok": False, "error": "search_unavailable", "detail": str(exc)[:300]}
         return {"ok": True, "query": args["query"], "results": results, "count": len(results)}
 
     async def _search_papers(self, args):

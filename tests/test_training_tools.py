@@ -327,19 +327,48 @@ def test_research_disabled_flag(tmp_path):
     assert run(rt.execute("bittle_web_search", {"query": "x"}))["error"] == "web_research_disabled"
 
 
-def test_ddg_parser_extracts_results():
-    from app.research_tools import _DDGParser
+def _shared_search_stub(monkeypatch, body):
+    """Route research_tools' httpx calls to a stub of /execute/web_search."""
+    import httpx
 
-    html = ('<table><tr class="result-sponsored"><td><a class="result-link" href="//ad.example">Ad</a></td></tr>'
-            '<tr><td><a rel="nofollow" href="/l/?uddg=https%3A%2F%2Fexample.com%2Fa&amp;rut=1" class="result-link">Example A</a></td></tr>'
-            '<tr><td class="result-snippet">A snippet.</td></tr></table>')
-    p = _DDGParser()
-    p.feed(html)
-    assert p.results == [{"title": "Example A", "url": "https://example.com/a", "snippet": "A snippet."}]
-    # absolute redirect form seen live
-    p2 = _DDGParser()
-    p2.feed('<tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Fx%2Fy&amp;rut=2">X</a></td></tr>')
-    assert p2.results[0]["url"] == "https://github.com/x/y"
+    from app import research_tools
+
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json=body)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(research_tools.httpx, "AsyncClient",
+                        lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    return seen
+
+
+def test_web_search_asks_the_shared_search(monkeypatch, tmp_path):
+    """bittle_web_search used to scrape lite.duckduckgo.com, which bot-blocks
+    this network's IP. It now asks lazy-agent-service's shared search."""
+    from app.research_tools import ResearchTools
+
+    seen = _shared_search_stub(monkeypatch, {"status": "ok", "results": [
+        {"title": "Bittle PPO", "url": "https://example.com/a", "snippet": "sigma 0.25", "published": "", "author": ""},
+        {"title": "no link", "url": "", "snippet": "dropped"},
+    ]})
+    rt = ResearchTools(Settings(search_service_url="http://hub.test:5591/"), notes_dir=tmp_path)
+    res = run(rt.execute("bittle_web_search", {"query": "bittle ppo", "limit": 3}))
+    assert res == {"ok": True, "query": "bittle ppo", "count": 1,
+                   "results": [{"title": "Bittle PPO", "url": "https://example.com/a", "snippet": "sigma 0.25"}]}
+    assert [str(r.url) for r in seen] == ["http://hub.test:5591/execute/web_search"]
+    assert json.loads(seen[0].content) == {"query": "bittle ppo", "limit": 3}
+
+
+def test_web_search_reports_a_search_that_did_not_run(monkeypatch, tmp_path):
+    from app.research_tools import ResearchTools
+
+    _shared_search_stub(monkeypatch, {"status": "rate_limited", "results": [], "error": "searches resume in 40 s"})
+    rt = ResearchTools(Settings(search_service_url="http://hub.test:5591"), notes_dir=tmp_path)
+    res = run(rt.execute("bittle_web_search", {"query": "bittle ppo"}))
+    assert res == {"ok": False, "error": "search_unavailable", "detail": "rate_limited: searches resume in 40 s"}
 
 
 def test_read_url_rewrites_github_and_arxiv():
