@@ -35,3 +35,8 @@ The scrape came back empty, and every attempt added to a block that every servic
   - `test_web_search_reports_a_search_that_did_not_run`: a rate-limited search returns `search_unavailable`.
 - With the URL pointed back at DuckDuckGo lite, the first test fails.
 - `tests/`: 179 passed.
+
+
+## `/execute` API key (2026-10-11)
+
+`shared_web_search` (`app/research_tools.py`) sends `x-api-key` from `EXECUTE_API_KEY` when set (`631a7c5`); lazy-tool-service now answers 401 without it. The container is stopped on the NAS, so it picks the key up from `.env` on its next deploy. Rollout record and rotation: lazy-agent-service ch.11, Item 3.
