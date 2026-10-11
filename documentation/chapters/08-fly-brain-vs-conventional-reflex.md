@@ -1,9 +1,11 @@
 ---
 part: RL walking trainer
 status: in-progress
-updated: 2026-09-26
-review-by: 2026-10-10
+updated: 2026-10-11
+review-by: 2026-10-25
 ---
+
+> **Docs audit 2026-10-11:** still live. No bittle-agent commit has touched the fly-brain A/B since 0ce3ab9 (2026-09-26); the saturated metric and "What is left" below are unchanged.
 
 # Fly brain vs. conventional reflex: the four arms are built, and the pilot cannot tell them apart
 
