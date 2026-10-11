@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import re
 import socket
 import time
@@ -171,8 +172,12 @@ async def shared_web_search(query: str, limit: int = 6, *, base_url: str,
     30 s timeout.
     """
     url = f"{base_url.rstrip('/')}/execute/web_search"
+    # lazy-tool-service /execute requires EXECUTE_API_KEY once set server-side
+    # (W3 of the harness audit); harmless while the server key is unset.
+    key = os.getenv("EXECUTE_API_KEY", "").strip()
+    headers = {"x-api-key": key} if key else None
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json={"query": query, "limit": limit})
+        resp = await client.post(url, json={"query": query, "limit": limit}, headers=headers)
         resp.raise_for_status()
         body = resp.json()
     if body.get("status") != "ok":
