@@ -4,7 +4,7 @@ Safety-gated control plane for a [Petoi Bittle](https://www.petoi.com/) quadrupe
 An LLM can make the robot move — but **it never touches the serial port**.
 
 ```
-LLM ──MCP tool──▶ lazy-tool-service ──HTTP──▶ bittle-agent ──▶ SAFETY ──▶ sim | serial
+LLM ──MCP tool──▶ lazy-agent-service ──HTTP──▶ bittle-agent ──▶ SAFETY ──▶ sim | serial
 ```
 
 Simulation is the default target. Moving a real servo requires a deployment-level

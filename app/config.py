@@ -61,7 +61,7 @@ class Settings:
     allow_web_research: bool = _flag("BITTLE_ALLOW_WEB_RESEARCH", True)
     #: lazy-agent-service, whose POST /execute/web_search answers bittle_web_search.
     search_service_url: str = os.getenv(
-        "BITTLE_SEARCH_SERVICE_URL", os.getenv("LAZY_TOOL_SERVICE_URL", "http://10.0.0.16:5591"))
+        "BITTLE_SEARCH_SERVICE_URL", os.getenv("LAZY_AGENT_SERVICE_URL", "http://10.0.0.16:5591"))
 
     @property
     def requires_confirm_token(self) -> bool:

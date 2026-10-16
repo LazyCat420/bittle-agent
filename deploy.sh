@@ -2,7 +2,7 @@
 # ============================================================
 # Bittle Agent — Build & Deploy to Synology NAS
 #
-# Thin wrapper — all logic lives in ../deploy-kit/lib.sh
+# Thin wrapper — all logic lives in ../../deploy-kit/lib.sh
 # ============================================================
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -51,4 +51,4 @@ EXTRA_SSH_SYNC() {
   ok ".env.example and GoldSpark cluster config synced"
 }
 
-source "${SCRIPT_DIR}/../deploy-kit/lib.sh"
+source "${SCRIPT_DIR}/../../deploy-kit/lib.sh"

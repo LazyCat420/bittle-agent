@@ -1,4 +1,4 @@
-"""Bridge client for lazy-tool-service.
+"""Bridge client for lazy-agent-service.
 
 Maps the MCP tool names in bittle.json onto bittle-agent's HTTP API. This is the
 only thing the tool layer needs; the model never sees a serial port, a token, or
@@ -177,7 +177,7 @@ class BittleClient:
 
 _client = BittleClient()
 
-#: Dispatch table consumed by lazy-tool-service. Names must match mcp/bittle.json.
+#: Dispatch table consumed by lazy-agent-service. Names must match mcp/bittle.json.
 TOOLS = {
     "bittle_list_capabilities": lambda **kw: _client.list_capabilities(),
     "bittle_status": lambda target="sim", **kw: _client.status(target),
