@@ -22,3 +22,8 @@ uvicorn==0.52.4
 httpx==0.28.1
 PyYAML==6.0.3
 pytest==9.1.1
+# Security-critical transitives pinned explicitly (dependency refresh 2026-10-22).
+# pillow: via brax/matplotlib/mediapy; werkzeug: via brax -> Flask; certifi: via httpx.
+pillow==13.0.0
+werkzeug==3.1.9
+certifi==2026.10.19

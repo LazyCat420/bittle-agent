@@ -1,5 +1,12 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.4
+fastapi==0.161.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.1
 pyserial==3.5
 httpx==0.28.1
+# Security-critical transitives pinned explicitly (dependency refresh 2026-10-22).
+starlette==1.9.0
+certifi==2026.10.19
+h11==0.16.0
+idna==3.20
+# Ships in the python:3.11 venv (venv bundles setuptools < 3.12); PYSEC-2026-3447 fixed in 83.0.0, pinned to newest.
+setuptools==84.2.1
