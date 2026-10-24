@@ -1,4 +1,5 @@
 import os
+import json
 import sys
 from pathlib import Path
 
@@ -9,6 +10,19 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
+
+@pytest.fixture
+def gpu_pacer(request):
+    import jax
+    from trainer.tests.gpu_pacing import GpuPacer
+
+    pacer = GpuPacer(float(os.getenv('GPU_TEST_DUTY', '100')), jax.block_until_ready)
+    yield pacer
+    if output := os.getenv('GPU_PACING_REPORT_DIR'):
+        path = Path(output)
+        path.mkdir(parents=True, exist_ok=True)
+        (path / (request.node.name + '.json')).write_text(json.dumps(pacer.stats()))
 
 
 def pytest_configure(config):

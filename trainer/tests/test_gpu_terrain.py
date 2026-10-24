@@ -70,7 +70,7 @@ def test_per_world_boxes_are_batched_under_warp():
     assert bool(jp.isfinite(st.data.qpos).all())
 
 
-def test_gpu_and_cpu_terrain_height_agree():
+def test_gpu_and_cpu_terrain_height_agree(gpu_pacer):
     import jax.numpy as jp
 
     f = tr.sample_field_numpy(np.random.default_rng(4), apply_patch(None, {"terrain": {"level": 3}}).terrain)
@@ -78,12 +78,12 @@ def test_gpu_and_cpu_terrain_height_agree():
     for _ in range(200):
         x, y = rng.uniform(0, 2.5), rng.uniform(-0.3, 0.3)
         a = tr.terrain_height(np, x, y, f.box_pos, f.box_half, f.box_yaw)
-        b = tr.terrain_height(jp, jp.float32(x), jp.float32(y), jp.asarray(f.box_pos), jp.asarray(f.box_half), jp.asarray(f.box_yaw))
+        b = gpu_pacer.run(tr.terrain_height, jp, jp.float32(x), jp.float32(y), jp.asarray(f.box_pos), jp.asarray(f.box_half), jp.asarray(f.box_yaw))
         assert abs(float(a) - float(b)) < 1e-6
 
 
 @pytest.mark.slow
-def test_rough_slope_terrain_no_nan_512_envs_1000_steps(capfd):
+def test_rough_slope_terrain_no_nan_512_envs_1000_steps(capfd, gpu_pacer):
     """512 envs x 1000 random-action steps on rocks + slope: finite state, no contact overflow."""
     cfg = apply_patch(None, {"terrain": {"level": 3}, "ppo": {"num_envs": 512}})
     env, wenv, keys, jp = _wrapped(cfg, 512)
@@ -92,7 +92,7 @@ def test_rough_slope_terrain_no_nan_512_envs_1000_steps(capfd):
     k = jax.random.PRNGKey(1)
     for _ in range(1000):
         k, ka = jax.random.split(k)
-        st = step(st, jax.random.uniform(ka, (512, 8), minval=-1, maxval=1))
+        st = gpu_pacer.run(step, st, jax.random.uniform(ka, (512, 8), minval=-1, maxval=1))
     assert bool(jp.isfinite(st.data.qpos).all()) and bool(jp.isfinite(st.data.qvel).all())
     assert bool((jp.abs(st.data.qvel) < 1e3).all())
     assert bool(jp.isfinite(st.obs["state"]).all()) and bool(jp.isfinite(st.obs["privileged_state"]).all())
@@ -155,7 +155,7 @@ def _foot_box_contacts(env, st) -> int:
 
 
 @pytest.mark.gpu
-def test_the_feet_actually_collide_with_the_boxes_under_warp():
+def test_the_feet_actually_collide_with_the_boxes_under_warp(gpu_pacer):
     """The engine, not the analytic height, must feel the rocks: a robot standing on the pinned rough_v1
     field with a box under a foot reports a foot-box contact and the box geom sits where the field says
     (before 2026-09-10 the static box geoms stayed parked at z=-1 in data: 0 contacts, feet through rocks)."""
@@ -179,7 +179,7 @@ def test_the_feet_actually_collide_with_the_boxes_under_warp():
     step = jax.jit(env.step)
     hits = 0
     for _ in range(25):  # half a second: the robot settles onto the slab
-        st = step(st, jp.zeros(8))
+        st = gpu_pacer.run(step, st, jp.zeros(8))
         hits += _foot_box_contacts(env, st)
     assert hits > 0, "no foot-box contact under warp: the rocks are phantoms"
     torso_z = float(st.data.qpos[2])
@@ -200,7 +200,7 @@ def test_training_path_boxes_collide_per_env():
 
 # ── stairs (2026-09-10) ──────────────────────────────────────────────────────
 
-def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_on_the_platform():
+def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_on_the_platform(gpu_pacer):
     """Two stairs worlds under Warp, the engine that TRAINS: (a) 'down' profile -- the robot spawns ON the 54 mm
     platform, its feet contact the platform geom, the torso stays a standing height above it for 50 steps;
     (b) 'up_down' -- a robot dropped just before the first riser and pushed forward strikes the step boxes
@@ -235,7 +235,7 @@ def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_o
     plat = env._box_gids[tr.STAIR_LANDING_SLOT: tr.STAIR_LANDING_SLOT + 1]
     hits = 0
     for _ in range(50):
-        st = step(st, jp.zeros(8))
+        st = gpu_pacer.run(step, st, jp.zeros(8))
         hits += foot_box_contacts(env, st, plat)
     assert hits > 100, hits
     assert abs(float(st.data.qpos[2]) - z0) < 0.01 and not bool(st.done)
@@ -251,7 +251,7 @@ def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_o
     steps_g = env2._box_gids[:1]
     hits2 = 0
     for _ in range(50):
-        st2 = step2(st2, jp.zeros(8))
+        st2 = gpu_pacer.run(step2, st2, jp.zeros(8))
         hits2 += foot_box_contacts(env2, st2, steps_g)
     assert hits2 > 50, f"{hits2} front-foot contacts with step 1 under warp: the stair boxes are phantoms"
     feet_xy = np.asarray(st2.data.geom_xpos)[np.asarray(env2._foot_gids)]
@@ -260,7 +260,7 @@ def test_the_feet_collide_with_the_stair_steps_under_warp_and_the_spawn_stands_o
     assert not bool(st2.done)
 
 
-def test_dense_rubble_and_stairs_fit_the_contact_budget(capfd):
+def test_dense_rubble_and_stairs_fit_the_contact_budget(capfd, gpu_pacer):
     """Level 6 (32 rocks, 7 cm apart) overflowed the 48-per-world budget on b1 (every step: 'broadphase
     overflow ... nconmax to 52'); dropped contacts are phantom rocks. 128 envs x 150 random-action steps on
     levels 6 and 5 must log no overflow, and the budget table must give them the doubled budget."""
@@ -278,7 +278,7 @@ def test_dense_rubble_and_stairs_fit_the_contact_budget(capfd):
         k = jax.random.PRNGKey(2)
         for _ in range(150):
             k, ka = jax.random.split(k)
-            st = step(st, jax.random.uniform(ka, (128, 8), minval=-1, maxval=1))
+            st = gpu_pacer.run(step, st, jax.random.uniform(ka, (128, 8), minval=-1, maxval=1))
         assert bool(jp.isfinite(st.data.qpos).all())
         out = capfd.readouterr()
         assert "overflow" not in (out.out + out.err).lower(), f"level {level}: {(out.out + out.err)[-300:]}"
