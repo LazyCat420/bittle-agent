@@ -1,9 +1,20 @@
 ---
 part: RL walking trainer
-status: in-progress
-updated: 2026-10-11
-review-by: 2026-10-25
+status: blocked
+updated: 2026-10-26
+review-by: 2026-11-09
 ---
+
+> **Docs audit 2026-10-26: blocked on one owner question. Re-design the saturated Stage 2
+> metric and run it, or abandon the A/B?**
+>
+> - This is the second audit in a row with no movement. No bittle-agent commit since
+>   `0ce3ab9` (2026-09-26) touches the A/B; since then only a deps refresh (`70d5170`), the
+>   reorg (`88620fa`), the `/execute` key (`631a7c5`) and web search (`d7d69ff`) landed.
+> - `research/fly-brain` has no bittle, reflex or basketball commit since 2026-09-26 either.
+>
+> The review date is not simply re-armed: an answer is needed. "Abandon" means
+> `abandoned`, with "What is left" kept as the record.
 
 > **Docs audit 2026-10-11:** still live. No bittle-agent commit has touched the fly-brain A/B since 0ce3ab9 (2026-09-26); the saturated metric and "What is left" below are unchanged.
 

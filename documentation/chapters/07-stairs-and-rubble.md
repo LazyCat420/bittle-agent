@@ -1,11 +1,24 @@
 ---
 part: RL walking trainer
-status: in-progress
-updated: 2026-09-26
-review-by: 2026-10-26
+status: blocked
+updated: 2026-10-26
+review-by: 2026-11-09
 ---
 
 # Stairs and rubble: two harder floors, and the height reference the stairs broke
+
+> **Docs audit 2026-10-26: blocked on one owner question. Resume the stairs and rubble
+> runs, or abandon them?**
+>
+> - No work in 30 days. Since 2026-09-26, bittle-agent `origin/main` has only a
+>   dependency refresh (`70d5170`), the workspace reorg (`88620fa`), the `/execute`
+>   key (`631a7c5`), web search (`d7d69ff`) and docs commits.
+> - Nothing touched the stairs descent, the rubble field or the two uncalibrated suites.
+> - The bittle-agent container has been `exited` on the NAS since before 2026-10-26.
+>
+> Re-arming the review date a second time without an answer would hide that. If the answer
+> is "abandon", write `abandoned` and keep the *Open* list below as the record of where the
+> work stopped.
 
 > **Reviewed 2026-09-26 — still live, and nothing below was worked on since.**
 > Checked rather than assumed: the 27 commits after this chapter was written
